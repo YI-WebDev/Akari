@@ -56,21 +56,21 @@
   // Component.seed() from design/Akari Terminal.dc.html, mapped onto the PLAN §2 item model.
   function seed() {
     return [
-      L('github', 'work', 'github.com', 'haruka.dev@gmail.com', 'v8#Lq2!mTz9@rWk4pE', 285, { fav: true, totp: T('JBSWY3DPEHPK3PXP', 'GitHub', 'haruka.dev@gmail.com'), url: 'https://github.com/login', lastUsedAt: today(2 * HOUR), createdAt: date('2023/03/12'), updatedAt: date('2025/09/18') }),
-      L('google', 'personal', 'accounts.google.com', 'haruka.sato@gmail.com', 'Sora-Kumo-Hoshi-42', 250, {
-        fav: true, totp: T('GEZDGNBVGY3TQOJQ', 'Google', 'haruka.sato@gmail.com'), lastUsedAt: morning, createdAt: date('2019/11/03'), updatedAt: date('2025/04/22'),
+      L('github', 'work', 'github.com', 'haruka.dev@example.com', 'v8#Lq2!mTz9@rWk4pE', 285, { fav: true, totp: T('JBSWY3DPEHPK3PXP', 'GitHub', 'haruka.dev@example.com'), url: 'https://github.com/login', lastUsedAt: today(2 * HOUR), createdAt: date('2023/03/12'), updatedAt: date('2025/09/18') }),
+      L('google', 'personal', 'accounts.google.com', 'haruka.sato@example.com', 'Sora-Kumo-Hoshi-42', 250, {
+        fav: true, totp: T('GEZDGNBVGY3TQOJQ', 'Google', 'haruka.sato@example.com'), lastUsedAt: morning, createdAt: date('2019/11/03'), updatedAt: date('2025/04/22'),
         passkeys: [
-          { credentialId: 'cred-google-1', rpId: 'google.com', userHandle: 'dXNlcg', userName: 'haruka.sato@gmail.com', userDisplayName: 'Haruka Sato', publicKey: 'pk', alg: -7, signCount: 4, createdAt: date('2025/03/02'), lastUsedAt: now - 3 * DAY },
-          { credentialId: 'cred-google-2', rpId: 'accounts.google.com', userHandle: 'dXNlcjI', userName: 'sato.family@gmail.com', userDisplayName: 'Sato Family', publicKey: 'pk', alg: -7, signCount: 0, createdAt: date('2025/08/11'), lastUsedAt: null },
+          { credentialId: 'cred-google-1', rpId: 'google.com', userHandle: 'dXNlcg', userName: 'haruka.sato@example.com', userDisplayName: 'Haruka Sato', publicKey: 'pk', alg: -7, signCount: 4, createdAt: date('2025/03/02'), lastUsedAt: now - 3 * DAY },
+          { credentialId: 'cred-google-2', rpId: 'accounts.google.com', userHandle: 'dXNlcjI', userName: 'sato.family@example.com', userDisplayName: 'Sato Family', publicKey: 'pk', alg: -7, signCount: 0, createdAt: date('2025/08/11'), lastUsedAt: null },
         ],
       }),
-      L('claude', 'personal', 'claude.ai', 'haruka.sato@gmail.com', 'c1aude!Notes#88wq', 45, { lastUsedAt: now - DAY, note: 'API キーは「開発メモ」ノートに保存', createdAt: date('2024/08/19'), updatedAt: date('2025/08/19') }),
+      L('claude', 'personal', 'claude.ai', 'haruka.sato@example.com', 'c1aude!Notes#88wq', 45, { lastUsedAt: now - DAY, note: 'API キーは「開発メモ」ノートに保存', createdAt: date('2024/08/19'), updatedAt: date('2025/08/19') }),
       L('figma', 'work', 'figma.com', 'haruka@studio-mori.jp', 'Fr4m3s&Vect0rs!', 20, { lastUsedAt: now - 3 * DAY }),
       L('notion', 'work', 'notion.so', 'haruka@studio-mori.jp', 'n0tion-Desk-Lamp-7', 95, { totp: T('KRSXG5CTMVRXEZLU', 'Notion', 'haruka@studio-mori.jp'), lastUsedAt: now - 4 * DAY }),
-      L('amazon', 'personal', 'amazon.co.jp', 'haruka.sato@gmail.com', 'amz2024', 70, { lastUsedAt: now - 8 * DAY, createdAt: date('2016/02/14'), updatedAt: date('2018/07/01') }),
+      L('amazon', 'personal', 'amazon.co.jp', 'haruka.sato@example.com', 'amz2024', 70, { lastUsedAt: now - 8 * DAY, createdAt: date('2016/02/14'), updatedAt: date('2018/07/01') }),
       L('mercari', 'personal', 'jp.mercari.com', '080-1234-5678', 'mercari1234', 25, { lastUsedAt: now - 9 * DAY, createdAt: date('2020/01/09'), updatedAt: date('2020/01/09') }),
       L('netflix', 'family', 'netflix.com', 'family@sato-home.jp', 'Popcorn&Kotatsu_31', 15, { lastUsedAt: now - 9 * DAY - 6 * HOUR }),
-      L('rakuten', 'personal', 'rakuten.co.jp', 'haruka.sato@gmail.com', 'R@kuten!Ichiba2025', 5, { lastUsedAt: now - 15 * DAY }),
+      L('rakuten', 'personal', 'rakuten.co.jp', 'haruka.sato@example.com', 'R@kuten!Ichiba2025', 5, { lastUsedAt: now - 15 * DAY }),
       L('slack', 'work', 'studio-mori.slack.com', 'haruka@studio-mori.jp', 'S1ack#Mori!Team', 330, { totp: T('MFRGGZDFMZTWQ2LK', 'Slack', 'haruka@studio-mori.jp'), lastUsedAt: now - 16 * DAY }),
       L('aws', 'work', 'aws.amazon.com', 'admin@studio-mori.jp', 'X9!vQ#2mL$8wZr&4Tp', 55, { fav: true, totp: T('NBSWY3DPO5XXE3DE', 'AWS', 'admin'), note: 'ルートアカウント。普段は IAM ユーザーでログインする。', lastUsedAt: now - 22 * DAY,
         extra: [{ label: 'アカウント ID', value: '1234-5678-9012', secret: false }, { label: 'MFA 復旧コード', value: '7KQ2-M9XP-4RTV', secret: true }] }),
@@ -90,7 +90,7 @@
         cardholder: 'HARUKA SATO', number: '4980123456789011', expiry: '2025-03', cvv: '902', pin: '',
       }, { note: '更新前のカード。2025 年 3 月で期限切れ。' }),
       X('identity-home', 'identity', 'personal', '佐藤 遥', 200, {
-        fullName: '佐藤 遥', lastName: '佐藤', firstName: '遥', middleName: '', email: 'haruka.sato@gmail.com', phone: '090-1234-5678',
+        fullName: '佐藤 遥', lastName: '佐藤', firstName: '遥', middleName: '', email: 'haruka.sato@example.com', phone: '090-1234-5678',
         birthDate: '1992-04-18', company: 'スタジオ森', jobTitle: 'デザイナー', postalCode: '150-0001', country: '日本',
         state: '東京都', city: '渋谷区', address1: '神宮前 3-14-5', address2: 'メゾン原宿 402', website: 'https://haruka.studio-mori.jp',
       }),
@@ -104,7 +104,7 @@
         host: '203.0.113.24', port: '22', username: 'deploy', password: 'Vps#Deploy-2026!q', url: 'https://secure.sakura.ad.jp/vps/',
       }),
       X('lic-affinity', 'softwareLicense', 'personal', 'Affinity Designer 2', 300, {
-        product: 'Affinity Designer', version: '2.5', licenseKey: 'AFD2-7KQ9-M3XP-8RTV-WN42', licensee: '佐藤 遥', email: 'haruka.sato@gmail.com',
+        product: 'Affinity Designer', version: '2.5', licenseKey: 'AFD2-7KQ9-M3XP-8RTV-WN42', licensee: '佐藤 遥', email: 'haruka.sato@example.com',
         purchaseDate: '2024-11-29', expiry: '', url: 'https://affinity.serif.com',
       }),
       X('ssh-deploy', 'sshKey', 'work', 'デプロイ鍵（ed25519）', 90, {
@@ -241,7 +241,7 @@
       needUnlocked(); await sleep(800);
       if (m.masterPassword === 'wrong') throw AkErr('BAD_PASSWORD');
       var t = Date.now();
-      db.items.push(L('imp1-' + t, 'personal', 'booking.com', 'haruka.sato@gmail.com', 'Tabi!Kyoto#2026', 200, { createdAt: t, updatedAt: t }));
+      db.items.push(L('imp1-' + t, 'personal', 'booking.com', 'haruka.sato@example.com', 'Tabi!Kyoto#2026', 200, { createdAt: t, updatedAt: t }));
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
       return { count: 2 };
     },

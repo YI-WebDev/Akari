@@ -15,8 +15,8 @@ const ROOT = join(HERE, '..', '..');
 // A Chrome password export: the first row is already in the seed vault (github), so it is a duplicate.
 const CHROME_CSV = [
   'name,url,username,password,note',
-  'github.com,https://github.com/login,haruka.dev@gmail.com,v8#Lq2!mTz9@rWk4pE,',
-  'booking.com,https://www.booking.com/,haruka.sato@gmail.com,Tabi!Kyoto#2026,',
+  'github.com,https://github.com/login,haruka.dev@example.com,v8#Lq2!mTz9@rWk4pE,',
+  'booking.com,https://www.booking.com/,haruka.sato@example.com,Tabi!Kyoto#2026,',
   'linear.app,https://linear.app/login,haruka@studio-mori.jp,L1near-Issue-Board,',
   'note.com,https://note.com/login,haruka_mori,Kaku-Yomu-77!,',
   'zoom.us,https://zoom.us/signin,haruka@studio-mori.jp,Zm!Meet-0420,',
@@ -626,7 +626,7 @@ const scenarios = {
     await shot(page, 'detail-identity');
     expect(await page.locator('.f-row:has-text("生年月日") .f-value').textContent() === '1992/04/18', 'date shown YYYY/MM/DD');
     expect(await page.locator('.box.tpl .f-row .f-label').first().textContent() === '氏名', 'rows follow the template order (氏名 first)');
-    expect(await page.locator('.row[data-id="identity-home"] .row-user').textContent() === '佐藤 遥 · haruka.sato@gmail.com', 'identity subtitle');
+    expect(await page.locator('.row[data-id="identity-home"] .row-user').textContent() === '佐藤 遥 · haruka.sato@example.com', 'identity subtitle');
     await page.evaluate(() => { document.getElementById('cardScroll').scrollTop = 600; });
     await quiet(page);
     await shot(page, 'detail-identity-address');
