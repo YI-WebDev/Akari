@@ -116,7 +116,9 @@ function setBusy(on) {
 }
 
 const uvForm = () => document.querySelector(`[data-screen="${current}"] [data-uv]`);
-const needsUv = () => !!info && !info.locked && info.uv === 'required' && !info.verified
+// 'preferred' (the default) is verified too, like platform authenticators do: sites such as
+// Google accept a passkey without a password only when the UV flag is set.
+const needsUv = () => !!info && !info.locked && info.uv !== 'discouraged' && !info.verified
   && !(info.kind === 'create' && info.excluded);
 
 function renderUv() {

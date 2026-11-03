@@ -28,7 +28,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/content/autofill.js"],
+      "js": ["src/content/shadow-ui.js", "src/content/autofill.js"],
       "run_at": "document_idle",
       "all_frames": true
     },
@@ -41,7 +41,7 @@
     },
     {
       "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
-      "js": ["src/content/webauthn-bridge.js"],
+      "js": ["src/content/shadow-ui.js", "src/content/webauthn-bridge.js"],
       "run_at": "document_start",
       "all_frames": false
     }

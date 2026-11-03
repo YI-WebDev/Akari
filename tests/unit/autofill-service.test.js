@@ -169,7 +169,7 @@ test('autofill/fill: injects the content script when the tab has none, then retr
   assert.deepEqual(await svc.fill({ tabId: 1, itemId: 'i1' }), { filled: true });
   assert.equal(chrome.calls.executeScript.length, 1);
   assert.deepEqual(chrome.calls.executeScript[0].target, { tabId: 1, frameIds: [0] });
-  assert.deepEqual(chrome.calls.executeScript[0].files, ['src/content/autofill.js']);
+  assert.deepEqual(chrome.calls.executeScript[0].files, ['src/content/shadow-ui.js', 'src/content/autofill.js']);
 });
 
 test('autofill/fill: unreachable tab -> filled:false, not an error', async () => {

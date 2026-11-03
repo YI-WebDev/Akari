@@ -324,20 +324,22 @@ test('service: user verification needs the master password in this window', asyn
   const { credential: c2 } = await p2;
   assert.equal(fromB64url(c2.response.authenticatorData)[32], 0x5d); // UP | UV | BE | BS | AT
 
-  // Proof is per request: a later 'preferred' sign-in without proof gets UV=0.
-  const getOptions = { challenge: toB64url(rand(32)), rpId: RP_ID, userVerification: 'preferred' };
-  const p3 = svc.handleGet({ options: getOptions }, contentSender());
+  // Proof is per request: a later window gets no carried-over proof.
+  const p3 = svc.handleCreate({ options: createOptions({ user: { id: toB64url(utf8('user-3')), name: 'carol', displayName: 'Carol' } }) }, contentSender());
   const w3 = await nextWindow(chrome, 3);
-  const info3 = await svc.handleRequest({ reqId: w3.reqId }, windowSender(w3.win));
-  assert.equal(info3.verified, false, 'proof from an earlier request does not carry over');
-  await svc.handleRespond({ reqId: w3.reqId, approve: true, credentialId: c2.id }, windowSender(w3.win));
-  const { credential: a3 } = await p3;
-  assert.equal(fromB64url(a3.response.authenticatorData)[32], 0x19); // UP | BE | BS
+  assert.equal((await svc.handleRequest({ reqId: w3.reqId }, windowSender(w3.win))).verified, false, 'proof from an earlier request does not carry over');
+  await svc.handleRespond({ reqId: w3.reqId, approve: false }, windowSender(w3.win));
+  await rejectsWith(p3, 'NOT_ALLOWED');
+
+  // A pick on the page card needs an unlocked vault, which took the master password: UV even for 'preferred' (Google).
+  const getOptions = { challenge: toB64url(rand(32)), rpId: RP_ID, userVerification: 'preferred' };
+  const { credential: a4 } = await svc.handleAssert({ options: getOptions, credentialId: c2.id }, contentSender());
+  assert.equal(fromB64url(a4.response.authenticatorData)[32], 0x1d); // UP | UV | BE | BS
   const bobKey = vault.data.items.find((i) => i.username === 'bob').passkeys[0].publicKey;
   const auth = await verifyAuthenticationResponse({
-    response: a3, expectedChallenge: getOptions.challenge, expectedOrigin: ORIGIN, expectedRPID: RP_ID,
+    response: a4, expectedChallenge: getOptions.challenge, expectedOrigin: ORIGIN, expectedRPID: RP_ID,
     credential: { id: c2.id, publicKey: fromB64url(bobKey), counter: 0 },
-    requireUserVerification: false,
+    requireUserVerification: true,
   });
   assert.equal(auth.verified, true);
 });
@@ -395,23 +397,27 @@ test('service: register then sign in end to end', async () => {
   assert.equal(vault.data.items[0].passkeys.length, 1);
   assert.equal(vault.data.items[0].passkeys[0].credentialId, credential2.id);
 
-  // Sign in.
+  // Sign in while unlocked: no window, the page card lists the passkeys and signs the user's pick.
   const getOptions = { challenge: toB64url(rand(32)), rpId: RP_ID, allowCredentials: [], userVerification: 'required' };
-  const pGet = svc.handleGet({ options: getOptions }, contentSender());
-  const third = await nextWindow(chrome, 3);
-  const getInfo = await svc.handleRequest({ reqId: third.reqId }, windowSender(third.win));
-  assert.equal(getInfo.kind, 'get');
-  assert.equal(getInfo.candidates.length, 1);
-  assert.equal(getInfo.candidates[0].credentialId, credential2.id);
-  assert.equal(getInfo.candidates[0].userName, 'alice@example.com');
-  assert.ok(!JSON.stringify(getInfo).includes('privateKey'));
+  for (const mediation of [undefined, 'conditional']) {
+    const { inline } = await svc.handleGet({ options: getOptions, mediation }, contentSender());
+    assert.equal(inline.rpId, RP_ID);
+    assert.equal(inline.candidates.length, 1);
+    assert.equal(inline.candidates[0].credentialId, credential2.id);
+    assert.equal(inline.candidates[0].userName, 'alice@example.com');
+    assert.equal(inline.candidates[0].vaultName, '仕事');
+    assert.ok(!JSON.stringify(inline).includes('privateKey'));
+  }
+  assert.equal(chrome.created.length, 2, 'no window for a sign-in while unlocked');
   assert.ok(!JSON.stringify(info).includes('privateKey'));
+  await rejectsWith(svc.handleGet({ options: getOptions, mediation: 'silent' }, contentSender()), 'FALLBACK');
 
-  await rejectsWith(svc.handleRespond({ reqId: third.reqId, approve: true, credentialId: credential2.id }, windowSender(third.win)), 'UV_REQUIRED');
-  await svc.handleVerify({ reqId: third.reqId, masterPassword: 'pw' }, windowSender(third.win));
-  await rejectsWith(svc.handleRespond({ reqId: third.reqId, approve: true, credentialId: 'nope' }, windowSender(third.win)), 'INVALID');
-  await svc.handleRespond({ reqId: third.reqId, approve: true, credentialId: credential2.id }, windowSender(third.win));
-  const { credential: assertion } = await pGet;
+  await rejectsWith(svc.handleAssert({ options: getOptions, credentialId: 'nope' }, contentSender()), 'INVALID');
+  await rejectsWith(svc.handleAssert({ options: { ...getOptions, rpId: 'evil.com' }, credentialId: credential2.id }, contentSender()), 'SECURITY');
+  await rejectsWith(svc.handleAssert({ options: getOptions, credentialId: credential2.id }, contentSender({ frameId: 2 })), 'SECURITY');
+  await rejectsWith(svc.handleAssert({ options: getOptions, credentialId: credential2.id },
+    contentSender({ origin: 'https://other.example.org', url: 'https://other.example.org/' })), 'SECURITY');
+  const { credential: assertion } = await svc.handleAssert({ options: getOptions, credentialId: credential2.id }, contentSender());
   const stored = vault.data.items[0].passkeys[0];
   const auth = await verifyAuthenticationResponse({
     response: assertion, expectedChallenge: getOptions.challenge, expectedOrigin: ORIGIN, expectedRPID: RP_ID,
@@ -435,6 +441,11 @@ test('service: locked vault opens the window, which lists after unlock', async (
         privateKey: 'secret', publicKey: 'x', alg: -7, createdAt: 5, lastUsedAt: null }] }],
   });
   const svc = createPasskeyService({ chrome, vault });
+  // While locked nothing is known about this site's passkeys: autofill stays with the browser,
+  // and the page card cannot sign.
+  await rejectsWith(svc.handleGet({ options: { challenge: 'AQID' }, mediation: 'conditional' }, contentSender()), 'FALLBACK');
+  await rejectsWith(svc.handleAssert({ options: { challenge: 'AQID' }, credentialId }, contentSender()), 'LOCKED');
+  assert.equal(chrome.created.length, 0);
   const pGet = svc.handleGet({ options: { challenge: 'AQID' } }, contentSender());
   const { win, reqId } = await nextWindow(chrome, 1);
   const before = await svc.handleRequest({ reqId }, windowSender(win));
