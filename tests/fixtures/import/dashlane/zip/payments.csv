@@ -1,0 +1,3 @@
+type,account_name,account_holder,cc_number,code,expiration_month,expiration_year,routing_number,account_number,country,state,note
+payment_card,三井住友カード,TARO YAMADA,4980000000000000,456,05,2030,,,JP,,家族カード
+bank,ゆうちょ銀行,山田 太郎,,,,,,1234567,JP,,

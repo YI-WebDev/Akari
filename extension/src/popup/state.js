@@ -50,7 +50,9 @@ export const liveToken = () => S.epoch;
 export const live = (token) => S.phase === 'main' && S.epoch === token;
 
 // Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
-const WRITES = new Set([MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_CHANGE_PASSWORD]);
+const WRITES = new Set([
+  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+]);
 let writing = 0;
 
 /** send() that routes LOCKED errors to the lock screen. */

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   createVault, createVaultRecord, openVaultRecord, sealData, exportBackup, importBackup, normalizeData,
   mergeData, makeItem, validateItem, sanitizeItem, defaultData, normalizeUrl, checkRecord,
+  addImportedItems, passkeyFromImport, MAX_IMPORT_ITEMS,
 } from '../../extension/src/lib/vault.js';
+import { createCredential, getAssertion } from '../../extension/src/lib/webauthn.js';
 import { exportDek } from '../../extension/src/lib/crypto.js';
 import { fromB64, toB64, toB64url, randomBytes } from '../../extension/src/shared/bytes.js';
 
@@ -258,4 +260,133 @@ test('sanitizeItem removes passkey private keys without touching the original', 
   assert.equal(clean.passkeys[0].publicKey, 'UFVC'.repeat(20));
   assert.equal(item.passkeys[0].privateKey, PRIV);
   assert.equal(clean.password, 's3cret!');
+});
+
+// ---- import from other managers ---------------------------------------------
+
+/** An ImportedItem passkey as importers produce it: real PKCS8 key, no public key. */
+async function importedPasskey(over = {}) {
+  const cred = await createCredential({ rpId: over.rpId || 'github.com', userHandle: randomBytes(16), clientDataHash: randomBytes(32) });
+  return {
+    pk: {
+      credentialId: toB64url(cred.credentialId), rpId: 'github.com', userHandle: toB64url(randomBytes(16)),
+      userName: 'hina', userDisplayName: 'Hina', privateKey: toB64url(cred.privateKey), createdAt: 2000, ...over,
+    },
+    cred,
+  };
+}
+
+test('passkeyFromImport derives the COSE public key and applies the backup checks', async () => {
+  const { pk, cred } = await importedPasskey({ extra: 'x' });
+  const out = await passkeyFromImport(pk, 5000);
+  assert.deepEqual(Object.keys(out).sort(), ['alg', 'createdAt', 'credentialId', 'lastUsedAt', 'privateKey', 'publicKey', 'rpId',
+    'signCount', 'userDisplayName', 'userHandle', 'userName']);
+  assert.equal(out.publicKey, toB64url(cred.cosePublicKey));
+  assert.equal(out.privateKey, pk.privateKey);
+  assert.deepEqual([out.alg, out.signCount, out.createdAt, out.lastUsedAt], [-7, 0, 2000, null]);
+  // Usable for sign-in.
+  const a = await getAssertion({ passkey: out, rpId: 'github.com', clientDataHash: randomBytes(32) });
+  assert.equal(a.signature[0], 0x30);
+
+  assert.equal((await passkeyFromImport({ ...pk, createdAt: undefined }, 5000)).createdAt, 5000);
+  assert.equal((await passkeyFromImport({ ...pk, createdAt: 9e15 }, 5000)).createdAt, 5000, 'clamped to now');
+  const p384 = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-384' }, true, ['sign']);
+  const p384Key = toB64url(new Uint8Array(await crypto.subtle.exportKey('pkcs8', p384.privateKey)));
+  for (const bad of [
+    null, 'str', { ...pk, privateKey: toB64url(randomBytes(138)) }, { ...pk, privateKey: p384Key },
+    { ...pk, privateKey: undefined }, { ...pk, credentialId: 'short' }, { ...pk, rpId: 'Evil.COM' },
+    { ...pk, userHandle: toB64url(randomBytes(65)) }, { ...pk, userName: 'x'.repeat(257) },
+  ]) assert.equal(await passkeyFromImport(bad, 5000), null, String(JSON.stringify(bad)).slice(0, 80));
+});
+
+test('passkeyFromImport: rpId must be localhost or a registrable, non-public-suffix domain (no IPs)', async () => {
+  const { pk } = await importedPasskey();
+  for (const rpId of ['github.com', 'accounts.google.com', 'amazon.co.jp', 'user.github.io', 'localhost']) {
+    assert.equal((await passkeyFromImport({ ...pk, rpId }, 5000))?.rpId, rpId, rpId);
+  }
+  for (const rpId of ['com', 'co.jp', 'github.io', 'appspot.com', '127.0.0.1', '10.0.0.1', '::1', '[::1]',
+    'router.local', 'example.invalidtld', 'intranet', '', 'Example.com', 'a..b', null]) {
+    assert.equal(await passkeyFromImport({ ...pk, rpId }, 5000), null, String(rpId));
+  }
+  // The addImportedItems path drops such passkeys but keeps the item.
+  const data = defaultData(1000);
+  const res = await addImportedItems(data, [
+    { type: 'login', title: 'io', url: 'https://github.io', username: 'u', password: 'p', passkeys: [{ ...pk, rpId: 'github.io' }] },
+  ], 'personal', 5000);
+  assert.deepEqual(res, { added: 1, duplicates: 0, invalid: 0, passkeys: 0 });
+});
+
+test('addImportedItems: validation, duplicates (existing and in-batch), timestamps, vault', async () => {
+  const data = defaultData(1000);
+  data.items.push(
+    makeItem({ title: 'Mine', url: 'https://github.com/login', username: 'hina', password: 'pw1' }, 1000),
+    makeItem({ type: 'note', title: 'Memo', note: 'body' }, 1000),
+  );
+  const now = 50_000;
+  const res = await addImportedItems(data, [
+    { type: 'login', title: 'GitHub', url: 'https://GITHUB.com/other', username: 'hina', password: 'pw1' }, // dup of Mine (same host)
+    { type: 'login', title: 'GitHub 2', url: 'github.com', username: 'hina', password: 'pw2', fav: true, createdAt: 100, updatedAt: 9e15 },
+    { type: 'login', title: 'GitHub 2 again', url: 'https://github.com', username: 'hina', password: 'pw2' }, // in-batch dup
+    { type: 'note', title: 'Memo', note: 'body', url: '' }, // dup note
+    { type: 'note', title: 'Memo', note: 'other body' },
+    { type: 'login', title: 'App', url: 'androidapp://com.example', username: 'u', password: 'p', note: 'n' },
+    { title: '  ' + 'T'.repeat(300), username: 'long-title' },
+    { type: 'login', title: 'TOTP', totp: { secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30, issuer: '', label: '' } },
+    { type: 'card', title: 'bad type' },
+    { type: 'login', title: 'bad pw', password: 'x'.repeat(1025) },
+    { type: 'login', title: 'bad totp', totp: { secret: '!!' } },
+    { type: 'login', title: 'bad fav', fav: 'yes' },
+    null,
+    'string',
+    { type: 'login', title: 'evil fields', id: 'fixed-id', hue: 9999, vault: 'work', passkeys: 'nope', lastUsedAt: 5 },
+  ], 'family', now);
+  assert.deepEqual(res, { added: 6, duplicates: 3, invalid: 6, passkeys: 0 });
+  const added = data.items.slice(2);
+  assert.equal(added.length, 6);
+  assert.ok(added.every((it) => it.vault === 'family' && it.passkeys.length === 0 && typeof it.id === 'string'));
+  const gh2 = added.find((i) => i.title === 'GitHub 2');
+  assert.equal(gh2.url, 'https://github.com');
+  assert.equal(gh2.fav, true);
+  assert.deepEqual([gh2.createdAt, gh2.updatedAt, gh2.passwordUpdatedAt], [100, now, now], 'updatedAt clamped to now');
+  const app = added.find((i) => i.title === 'App');
+  assert.equal(app.url, '');
+  assert.equal(app.note, 'n\n\nURL: androidapp://com.example', 'non-http URL kept in the note');
+  assert.equal(added.find((i) => i.username === 'long-title').title.length, 200, 'long titles are cut');
+  assert.equal(added.find((i) => i.title === 'TOTP').totp.secret, 'JBSWY3DPEHPK3PXP');
+  const evil = added.find((i) => i.title === 'evil fields');
+  assert.notEqual(evil.id, 'fixed-id');
+  assert.equal(evil.vault, 'family');
+  assert.ok(evil.hue >= 0 && evil.hue <= 359);
+  assert.equal(evil.lastUsedAt, null);
+  assert.deepEqual([evil.createdAt, evil.passwordUpdatedAt], [now, null]);
+
+  await assert.rejects(addImportedItems(data, [], 'nope', now), { code: 'INVALID' });
+  await assert.rejects(addImportedItems(data, new Array(MAX_IMPORT_ITEMS + 1).fill({}), 'personal', now), { code: 'INVALID' });
+  assert.equal(MAX_IMPORT_ITEMS, 20000);
+});
+
+test('addImportedItems: passkeys pass the strict checks and never duplicate credentialId or rpId+userHandle', async () => {
+  const existing = await importedPasskey();
+  const data = defaultData(1000);
+  const mine = makeItem({ title: 'Mine', url: 'https://github.com', username: 'a', password: '1' }, 1000);
+  mine.passkeys.push(await passkeyFromImport(existing.pk, 1000));
+  data.items.push(mine);
+
+  const fresh = (await importedPasskey()).pk;
+  const fresh2 = (await importedPasskey({ rpId: 'example.com' })).pk;
+  const sameCred = { ...(await importedPasskey()).pk, credentialId: existing.pk.credentialId };
+  const sameAccount = { ...(await importedPasskey()).pk, userHandle: existing.pk.userHandle };
+  const broken = { ...(await importedPasskey()).pk, privateKey: toB64url(randomBytes(138)) };
+  const res = await addImportedItems(data, [
+    { type: 'login', title: 'A', url: 'https://github.com', username: 'b', password: '2', passkeys: [fresh, sameCred, sameAccount, broken, { ...fresh }] },
+    { type: 'login', title: 'B', url: 'https://example.com', username: 'c', password: '3', passkeys: [fresh2, { ...fresh, userHandle: toB64url(randomBytes(8)) }] },
+    { type: 'login', title: 'dup of Mine', url: 'https://github.com', username: 'a', password: '1', passkeys: [(await importedPasskey()).pk] },
+    { type: 'login', title: 'bad list', username: 'd', passkeys: 'nope' },
+  ], 'personal', 9000);
+  assert.deepEqual(res, { added: 3, duplicates: 1, invalid: 0, passkeys: 2 });
+  assert.deepEqual(mine.passkeys.map((p) => p.credentialId), [existing.pk.credentialId], 'existing passkeys untouched');
+  const [a, b] = data.items.slice(1);
+  assert.deepEqual(a.passkeys.map((p) => p.credentialId), [fresh.credentialId]);
+  assert.deepEqual(b.passkeys.map((p) => p.credentialId), [fresh2.credentialId], 'same credentialId later in the batch is dropped');
+  assert.equal(a.passkeys[0].privateKey, fresh.privateKey);
 });

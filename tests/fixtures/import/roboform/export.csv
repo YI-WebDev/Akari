@@ -1,0 +1,6 @@
+Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2
+GitHub,https://github.com/login,^https://github.com/,alice,pw1,メモ,/Dev,"User ID$,,,txt,alice,Password$,,,pwd,pw1,TOTP KEY$,,,txt,JBSWY3DPEHPK3PXP,Security answer,,,pwd,blue,-no-name-,,,txt,extra value"
+Meeting notes,,,,,"Line1
+Line2",/Notes,
+My Identity,,,,,,,"First Name$,,,txt,太郎,Last Name$,,,txt,山田,Email$,,,txt,taro@example.jp"
+Bank,https://bank.example,,bob,s3cret,,,

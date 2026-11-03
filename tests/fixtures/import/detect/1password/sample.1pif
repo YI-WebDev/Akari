@@ -1,0 +1,2 @@
+{"uuid":"AAAA","updatedAt":1700000000,"title":"Example","securityLevel":"SL5","contentsHash":"abcd1234","typeName":"webforms.WebForm","location":"https://example.com","secureContents":{"fields":[{"value":"alice","designation":"username","name":"username","type":"T"},{"value":"pw","designation":"password","name":"password","type":"P"}]}}
+***5642bee8-a5ff-11dc-8314-0800200c9a66***

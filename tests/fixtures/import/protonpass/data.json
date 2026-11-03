@@ -1,0 +1,154 @@
+{
+  "version": "1.17.0",
+  "userId": "synthetic-user",
+  "encrypted": false,
+  "vaults": {
+    "share-0001": {
+      "name": "個人",
+      "description": "個人用の保管庫",
+      "display": { "color": 0, "icon": 0 },
+      "items": [
+        {
+          "itemId": "item-0001",
+          "shareId": "share-0001",
+          "data": {
+            "metadata": { "name": "旅行予約サイト", "note": "マイルは家族と合算", "itemUuid": "uuid-0001" },
+            "extraFields": [
+              { "fieldName": "会員番号", "type": "text", "data": { "content": "JL-0099" } },
+              { "fieldName": "予備コード", "type": "hidden", "data": { "content": "rescue-42" } },
+              { "fieldName": "2 つ目の TOTP", "type": "totp", "data": { "totpUri": "otpauth://totp/Second?secret=GEZDGNBVGY3TQOJQ" } }
+            ],
+            "type": "login",
+            "content": {
+              "itemEmail": "goro@example.jp",
+              "itemUsername": "goro",
+              "password": "Tabi-Suki-88",
+              "urls": ["https://travel.example.jp/login", "https://m.travel.example.jp"],
+              "totpUri": "otpauth://totp/Travel:goro?secret=JBSWY3DPEHPK3PXP&issuer=Travel",
+              "passkeys": [{ "keyId": "pk-1", "content": "AAAA", "domain": "travel.example.jp", "rpId": "travel.example.jp" }]
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1710000000,
+          "pinned": true
+        },
+        {
+          "itemId": "item-0002",
+          "shareId": "share-0001",
+          "data": {
+            "metadata": { "name": "病院の診察券", "note": "毎月第 2 火曜日に通院", "itemUuid": "uuid-0002" },
+            "extraFields": [],
+            "type": "note",
+            "content": {}
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "createTime": 1690000000,
+          "modifyTime": 1690000000,
+          "pinned": false
+        },
+        {
+          "itemId": "item-0003",
+          "shareId": "share-0001",
+          "data": {
+            "metadata": { "name": "デビットカード", "note": "", "itemUuid": "uuid-0003" },
+            "extraFields": [],
+            "type": "creditCard",
+            "content": {
+              "cardholderName": "GORO ITO",
+              "cardType": 0,
+              "number": "4000056655665556",
+              "verificationCode": "777",
+              "expirationDate": "2028-11",
+              "pin": "2468"
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "createTime": 1680000000,
+          "modifyTime": 1680000000,
+          "pinned": false
+        },
+        {
+          "itemId": "item-0004",
+          "shareId": "share-0001",
+          "data": {
+            "metadata": { "name": "ニュースレター用", "note": "", "itemUuid": "uuid-0004" },
+            "extraFields": [],
+            "type": "alias",
+            "content": {}
+          },
+          "state": 1,
+          "aliasEmail": "news.goro@passmail.net",
+          "createTime": 1680000000,
+          "modifyTime": 1680000000,
+          "pinned": false
+        },
+        {
+          "itemId": "item-0005",
+          "shareId": "share-0001",
+          "data": {
+            "metadata": { "name": "ゴミ箱のログイン", "note": "", "itemUuid": "uuid-0005" },
+            "extraFields": [],
+            "type": "login",
+            "content": { "itemEmail": "", "itemUsername": "trash", "password": "trash", "urls": [], "totpUri": "" }
+          },
+          "state": 2,
+          "aliasEmail": null,
+          "createTime": 1600000000,
+          "modifyTime": 1600000000,
+          "pinned": false
+        }
+      ]
+    },
+    "share-0002": {
+      "name": "仕事",
+      "description": "",
+      "display": { "color": 1, "icon": 1 },
+      "items": [
+        {
+          "itemId": "item-0006",
+          "shareId": "share-0002",
+          "data": {
+            "metadata": { "name": "社員証", "note": "", "itemUuid": "uuid-0006" },
+            "extraFields": [],
+            "type": "identity",
+            "content": {
+              "fullName": "伊藤 五郎",
+              "email": "goro@work.example.jp",
+              "phoneNumber": "",
+              "company": "灯株式会社",
+              "extraPersonalDetails": [{ "fieldName": "社員番号", "type": "text", "data": { "content": "A-5050" } }],
+              "extraSections": [
+                { "sectionName": "緊急連絡先", "sectionFields": [{ "fieldName": "電話", "type": "text", "data": { "content": "090-0000-0000" } }] }
+              ]
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "createTime": 1680000000,
+          "modifyTime": 1680000000,
+          "pinned": false
+        },
+        {
+          "itemId": "item-0007",
+          "shareId": "share-0002",
+          "data": {
+            "metadata": { "name": "古い形式のログイン", "note": "", "itemUuid": "uuid-0007" },
+            "extraFields": [],
+            "type": "login",
+            "content": { "username": "legacy", "password": "legacy-pass", "urls": ["legacy.example.jp"], "totpUri": "" }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "createTime": 1600000000,
+          "modifyTime": 1600000000,
+          "pinned": false
+        }
+      ]
+    }
+  }
+}

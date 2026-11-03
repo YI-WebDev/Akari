@@ -1,0 +1,11 @@
+{
+  "AUTHENTIFIANT": [
+    { "title": "旧サイト", "domain": "old.example.jp", "login": "", "secondaryLogin": "", "email": "taro@example.jp", "password": "old-pass", "note": "古い形式" }
+  ],
+  "SECURENOTE": [
+    { "title": "旧メモ", "content": "古いメモの本文", "category": "" }
+  ],
+  "PAYMENTMEANS_CREDITCARD": [
+    { "bank": "テスト銀行", "cardNumber": "4111111111111111", "owner": "TARO YAMADA", "expireMonth": "1", "expireYear": "2031", "securityCode": "111", "name": "旧カード" }
+  ]
+}

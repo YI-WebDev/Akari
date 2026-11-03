@@ -146,6 +146,47 @@
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
       return { count: 2 };
     },
+    // items parsed in the popup from another manager's export (PLAN §7.3)
+    'vault/importItems': async function (m) {
+      needUnlocked(); await sleep(700);
+      if (!Array.isArray(m.items) || !db.vaults.some(function (v) { return v.id === m.vault; })) throw AkErr('INVALID');
+      var t = Date.now();
+      var out = { added: 0, duplicates: 0, invalid: 0, passkeys: 0 };
+      m.items.forEach(function (it, i) {
+        if (!it || (it.type !== 'login' && it.type !== 'note') || !it.title) { out.invalid++; return; }
+        var dup = db.items.some(function (x) {
+          return x.type === it.type && (it.type === 'note'
+            ? x.title === it.title && x.note === it.note
+            : hostOf(x.url) === hostOf(it.url) && x.username === it.username && x.password === it.password);
+        });
+        if (dup) { out.duplicates++; return; }
+        var pks = (it.passkeys || []).map(function (p) { return Object.assign({}, p, { privateKey: undefined, publicKey: 'pk', alg: -7, signCount: 0, lastUsedAt: null }); });
+        out.passkeys += pks.length;
+        db.items.push(Object.assign({ url: '', username: '', password: '', note: '', totp: null, fav: false }, it, {
+          id: 'imp-' + t.toString(36) + '-' + i, vault: m.vault, hue: Math.floor(Math.random() * 360), passkeys: pks,
+          createdAt: it.createdAt || t, updatedAt: it.updatedAt || t, passwordUpdatedAt: it.password ? t : null, lastUsedAt: null,
+        }));
+        out.added++;
+      });
+      return out;
+    },
+    'vault/exportPlain': async function (m) {
+      needUnlocked(); await sleep(500);
+      if (!m.masterPassword || m.masterPassword === 'wrong') throw AkErr('BAD_PASSWORD');
+      var d = new Date(); var p = function (n) { return String(n).padStart(2, '0'); };
+      var stamp = d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
+      var q = function (v) { var s = v == null ? '' : String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      if (m.format === 'csv') {
+        var rows = [['name', 'url', 'username', 'password', 'note', 'totp', 'vault', 'favorite']].concat(db.items.map(function (x) {
+          return [x.title, x.url, x.username, x.password, x.note, x.totp ? 'otpauth://totp/?secret=' + x.totp.secret : '', x.vault, x.fav ? '1' : ''];
+        }));
+        return { text: rows.map(function (r) { return r.map(q).join(','); }).join('\r\n') + '\r\n', filename: 'akari-export-' + stamp + '.csv', count: db.items.length };
+      }
+      if (m.format === 'bitwarden') {
+        return { text: JSON.stringify({ encrypted: false, folders: db.vaults.map(function (v) { return { id: v.id, name: v.name }; }), items: db.items.map(function (x) { return { name: x.title, login: { username: x.username, password: x.password } }; }) }, null, 2), filename: 'akari-export-' + stamp + '.json', count: db.items.length };
+      }
+      throw AkErr('INVALID');
+    },
     'settings/get': function () { return clone(db.settings); },
     'settings/set': function (m) { Object.assign(db.settings, m.patch || {}); return clone(db.settings); },
     'clipboard/scheduleClear': function (m) { console.log('[mock] clipboard clear in', m.seconds, 's'); return {}; },

@@ -1,0 +1,5 @@
+name,url,username,password,note
+github.com,https://github.com/login,alice,"pw,1","メモ, ""quoted""
+second line"
+日本語サイト,https://example.co.jp/,花子,ぱすわーど,
+android app,android://hash@com.example.app/,carol,pw3,

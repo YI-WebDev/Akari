@@ -1,0 +1,2 @@
+Title,Url,Username,Password,OTPAuth
+github.com (alice),https://github.com/login,alice,hunter2,otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&digits=8

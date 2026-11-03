@@ -1,0 +1,60 @@
+{
+  "shared_folders": [
+    { "path": "家族", "manage_users": false, "manage_records": false, "can_edit": true, "can_share": false, "permissions": [] }
+  ],
+  "records": [
+    {
+      "uid": "keeper-uid-0001",
+      "title": "銀行オンライン",
+      "$type": "login",
+      "login": "saburo",
+      "password": "Kyoto-1994!",
+      "login_url": "https://bank.example.jp",
+      "notes": "第二暗証番号は別管理",
+      "custom_fields": {
+        "TFC:Keeper": "otpauth://totp/Bank:saburo?secret=JBSWY3DPEHPK3PXP&issuer=Bank",
+        "$url:予備 URL:1": "https://bank2.example.jp",
+        "合言葉": "さくら",
+        "$securityQuestion::1": [{ "question": "母の旧姓は？", "answer": "鈴木" }]
+      },
+      "folders": [{ "folder": "お金" }]
+    },
+    {
+      "uid": "keeper-uid-0002",
+      "title": "ショッピング",
+      "login": "saburo@example.jp",
+      "password": "legacy-record-pass",
+      "login_url": "shop.example.jp",
+      "notes": "",
+      "custom_fields": {
+        "$oneTimeCode::1": "otpauth://totp/Shop:saburo?secret=GEZDGNBVGY3TQOJQ&algorithm=SHA256"
+      },
+      "folders": [{ "shared_folder": "家族", "can_edit": true, "can_share": false }]
+    },
+    {
+      "uid": "keeper-uid-0003",
+      "title": "暗号化メモ",
+      "$type": "encryptedNotes",
+      "notes": "",
+      "custom_fields": { "$note::1": "鍵は玄関の植木鉢の下" }
+    },
+    {
+      "uid": "keeper-uid-0004",
+      "title": "楽天カード",
+      "$type": "bankCard",
+      "notes": "ポイント払い",
+      "custom_fields": {
+        "$paymentCard::1": { "cardNumber": "5555555555554444", "cardExpirationDate": "12/2029", "cardSecurityCode": "987" },
+        "$text:cardholderName:1": "SABURO TANAKA",
+        "$pinCode::1": "0000"
+      }
+    },
+    {
+      "uid": "keeper-uid-0005",
+      "title": "家の Wi-Fi",
+      "$type": "wifiCredentials",
+      "password": "home-wifi-pass",
+      "custom_fields": { "$text:SSID:1": "Akari-Home" }
+    }
+  ]
+}

@@ -3,12 +3,38 @@
 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import QRCode from 'qrcode';
 import { launchBrowser } from '../../tools/browser.mjs';
 import { startServer } from '../../tools/serve.mjs';
+import { encryptPgp, decryptPgp } from '../../extension/src/lib/pgp.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, '..', '..');
+
+// A Chrome password export: the first row is already in the seed vault (github), so it is a duplicate.
+const CHROME_CSV = [
+  'name,url,username,password,note',
+  'github.com,https://github.com/login,haruka.dev@gmail.com,v8#Lq2!mTz9@rWk4pE,',
+  'booking.com,https://www.booking.com/,haruka.sato@gmail.com,Tabi!Kyoto#2026,',
+  'linear.app,https://linear.app/login,haruka@studio-mori.jp,L1near-Issue-Board,',
+  'note.com,https://note.com/login,haruka_mori,Kaku-Yomu-77!,',
+  'zoom.us,https://zoom.us/signin,haruka@studio-mori.jp,Zm!Meet-0420,',
+  'freee.co.jp,https://accounts.secure.freee.co.jp/,admin@studio-mori.jp,Fr33-Kaikei#2025,経理用',
+].join('\r\n') + '\r\n';
+const BW_PROTECTED = JSON.stringify({
+  encrypted: true, passwordProtected: true, salt: 'c2FsdA==', kdfType: 0, kdfIterations: 600000,
+  encKeyValidation_DO_NOT_EDIT: '2.abc|def|ghi', data: '2.abc|def|ghi',
+});
+
+/** Settings sheet → インポート / エクスポート page. */
+async function openSheetPage(page, opener) {
+  await page.click('#vaultBtn');
+  await page.click('#openSettings');
+  await page.waitForSelector('#setSheet.open');
+  await page.waitForTimeout(500);
+  await page.click(opener);
+}
 const OUT = join(HERE, 'screenshots');
 const MOCK = join(HERE, 'mock-chrome.js');
 const only = process.argv[2] || '';
@@ -201,6 +227,182 @@ const scenarios = {
     await page.fill('#pwNext', 'kotatsu-mikan');
     await settle(page, 500);
     await shot(page, 'settings-password');
+    await ctx.close();
+  },
+  async import() {
+    const { page, ctx } = await open({ name: 'import' });
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#importOpen');
+    await page.waitForSelector('.src');
+    await settle(page, 700);
+    await shot(page, 'import-sources');
+    expect(await page.locator('.src').count() === 20, '19 sources + Akari backup');
+    expect(await page.locator('#setTrail li.cur').textContent() === '読み込み元', 'trail on step 1');
+    expect((await page.locator('.io-lead').textContent()).startsWith('別のパスワードマネージャーから移行するには'), 'lead text');
+    // keyboard: the grid is one tab stop, arrows move inside it
+    expect(await page.evaluate(() => document.activeElement?.dataset.id) === 'akari', 'first source focused');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
+    expect(await page.evaluate(() => document.activeElement?.dataset.id) === 'chrome', 'arrow keys move in a 4-column grid');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowDown');
+    expect(await page.evaluate(() => document.activeElement?.dataset.id) === 'brave', 'Home + ArrowDown');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter'); // Chrome
+    await page.waitForSelector('.drop');
+    expect(await page.locator('#impFile').getAttribute('accept') === '.csv', 'file picker accepts the source extensions');
+    await settle(page, 500);
+    await shot(page, 'import-file');
+    await page.setInputFiles('#impFile', { name: 'Chrome Passwords.csv', mimeType: 'text/csv', buffer: Buffer.from(CHROME_CSV) });
+    await page.waitForSelector('.io-stats');
+    await settle(page, 700);
+    await shot(page, 'import-preview');
+    const stats = await page.locator('.io-stats .stat-v').allTextContents();
+    expect(stats.join(',') === '6,0,0,0,0', 'preview counts: ' + stats.join(','));
+    expect(await page.locator('.io-title').count() === 4, 'four sample titles');
+    expect(await page.locator('.io-more').textContent() === 'ほか 2 件', 'more count');
+    await page.click('.vault-chip:has-text("仕事")');
+    await page.click('.io-foot .btn-primary');
+    await page.waitForSelector('.io-result');
+    await settle(page, 600);
+    await shot(page, 'import-result');
+    const result = await page.locator('.io-result .boot-k').textContent();
+    expect(result === '5 件を追加 · 重複 1 · 無効 0', 'result line: ' + result);
+    expect(/Chrome Passwords\.csv/.test(await page.locator('.io-alert').textContent()), 'reminder names the exported file');
+    await page.keyboard.press('Escape');
+    await settle(page, 600);
+    expect(await page.locator('#importPage').innerText() === '', 'import page wiped on close');
+    expect(await page.locator('.row[data-id^="imp-"]').count() === 5, 'list reloaded with the imported items');
+    await ctx.close();
+  },
+  async 'import-password'() {
+    const { page, ctx } = await open({ name: 'import-password' });
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#importOpen');
+    await page.click('.src[data-id="pgp"]');
+    await page.waitForSelector('.drop');
+    const armored = await encryptPgp(CHROME_CSV, 'kotatsu-mikan-2026', { filename: 'chrome.csv' });
+    await page.setInputFiles('#impFile', { name: 'chrome.csv.pgp', mimeType: 'application/pgp-encrypted', buffer: Buffer.from(armored) });
+    await page.waitForSelector('.io-pass:not([hidden])');
+    await settle(page, 600);
+    await shot(page, 'import-password');
+    expect(await page.locator('label[for="impPw"]').textContent() === 'パスフレーズ', 'PGP asks for a passphrase');
+    await page.fill('#impPw', 'wrong-passphrase');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.io-field.err');
+    await settle(page, 500);
+    await shot(page, 'import-password-wrong');
+    expect(await page.locator('#importPage .field-err').textContent() === 'パスフレーズが違います', 'wrong passphrase message');
+    await page.fill('#impPw', 'kotatsu-mikan-2026');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.io-stats');
+    expect((await page.locator('.io-cmd-text').textContent()).includes('--from chrome'), 'detected Chrome inside the PGP file');
+    // Bitwarden's password-protected JSON asks for a パスワード instead
+    await page.click('#setBack');
+    await page.click('#setBack');
+    await page.click('.src[data-id="bitwarden"]');
+    await page.setInputFiles('#impFile', { name: 'bitwarden_encrypted_export.json', mimeType: 'application/json', buffer: Buffer.from(BW_PROTECTED) });
+    await page.waitForSelector('.io-pass:not([hidden])');
+    expect(await page.locator('label[for="impPw"]').textContent() === 'パスワード', 'Bitwarden asks for a password');
+    // Bitwarden export with cards / identities / passkeys → notes + warnings
+    await page.click('#setBack');
+    await page.click('.src[data-id="bitwarden"]');
+    await page.setInputFiles('#impFile', { name: 'bitwarden_export.json', mimeType: 'application/json', buffer: await readFile(join(ROOT, 'tests/fixtures/import/bitwarden/export.json')) });
+    await page.waitForSelector('.io-stats');
+    await settle(page, 700);
+    await shot(page, 'import-preview-bitwarden');
+    await ctx.close();
+  },
+  async 'import-drop'() {
+    const { page, ctx } = await open({ name: 'import-drop' });
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#importOpen');
+    await page.waitForSelector('.src');
+    const drop = (name, text, phase) => page.evaluate(([n, t, p]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([t], n, { type: 'text/plain' }));
+      const sheet = document.getElementById('setSheet');
+      const target = sheet.querySelector('.src-grid, .drop') || sheet;
+      target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      if (p === 'over') return sheet.classList.contains('dragging');
+      const ev = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true });
+      target.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    }, [name, text, phase]);
+    expect(await drop('x.csv', CHROME_CSV, 'over'), 'dragover highlights the sheet');
+    await settle(page, 300);
+    await shot(page, 'import-drop');
+    // dropped on the source list: the format is detected (Chrome CSV) and parsed
+    expect(await drop('passwords.csv', CHROME_CSV, 'drop'), 'drop handled (no navigation)');
+    await page.waitForSelector('.io-stats');
+    expect((await page.locator('.io-cmd-text').textContent()).includes('--from chrome passwords.csv'), 'detected Chrome');
+    expect(!(await page.locator('#setSheet').getAttribute('class')).includes('dragging'), 'drag highlight cleared');
+    // dropped on the file step of a chosen source
+    await page.click('#setBack');
+    await page.waitForSelector('.drop');
+    expect(await drop('again.csv', CHROME_CSV, 'drop'), 'drop on the file step');
+    await page.waitForSelector('.io-stats');
+    expect((await page.locator('.io-cmd-text').textContent()).includes('again.csv'), 'file step took the dropped file');
+    await ctx.close();
+  },
+  async 'import-backup'() {
+    const { page, ctx } = await open({ name: 'import-backup' });
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#importOpen');
+    await page.click('.src[data-id="akari"]');
+    await page.waitForSelector('#impPw');
+    const backup = JSON.stringify({ format: 'akari-backup', version: 1, exportedAt: new Date().toISOString(), vault: {} }, null, 2);
+    await page.setInputFiles('#impFile', { name: 'akari-backup-20261101.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
+    await page.fill('#impPw', 'wrong');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.io-field.err');
+    await settle(page, 500);
+    await shot(page, 'import-backup');
+    expect(await page.locator('#importPage .field-err').textContent() === 'バックアップのパスワードが違います', 'backup wrong password');
+    await page.fill('#impPw', 'backup-pass');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.io-log .boot-k:has-text("2 件を読み込みました")');
+    await ctx.close();
+  },
+  async export() {
+    const { page, ctx } = await open({ name: 'export' });
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#exportOpen');
+    await page.waitForSelector('.fmt');
+    await settle(page, 700);
+    await shot(page, 'export-formats');
+    expect(await page.evaluate(() => document.activeElement?.dataset.fmt) === 'akari', 'checked format focused');
+    const [backup] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
+    expect(/^akari-backup-\d{8}\.json$/.test(backup.suggestedFilename()), 'backup download name');
+    await page.focus('.fmt[data-fmt="akari"]');
+    await page.keyboard.press('ArrowDown'); // CSV
+    expect(await page.locator('.fmt[aria-checked="true"]').getAttribute('data-fmt') === 'csv', 'arrow selects CSV');
+    await settle(page, 400);
+    await shot(page, 'export-plain');
+    expect(/暗号化されません/.test(await page.locator('#exportPage .io-alert').textContent()), 'plain warning');
+    await page.click('#exportPage .btn-primary');
+    expect(await page.locator('#exportPage .field-err').textContent() === 'マスターパスワードを入力してください', 'master password required');
+    await page.fill('#expMaster', 'wrong');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#exportPage .field-err:has-text("マスターパスワードが違います")');
+    await page.fill('#expMaster', 'akari-master');
+    await page.click('#expPgp');
+    await page.fill('#expPass', 'kotatsu-mikan-2026');
+    await page.fill('#expPass2', 'kotatsu-mikan-2025');
+    await page.click('#exportPage .btn-primary');
+    expect(await page.locator('#exportPage .field-err').textContent() === '確認用のパスフレーズが一致しません', 'passphrase mismatch');
+    await page.fill('#expPass2', 'kotatsu-mikan-2026');
+    await settle(page, 300);
+    await shot(page, 'export-pgp');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
+    expect(/^akari-export-\d{8}\.csv\.pgp$/.test(dl.suggestedFilename()), 'pgp download name: ' + dl.suggestedFilename());
+    const body = await readFile(await dl.path(), 'utf8');
+    expect(body.startsWith('-----BEGIN PGP MESSAGE-----'), 'armored PGP');
+    const plain = new TextDecoder().decode(await decryptPgp(new TextEncoder().encode(body), 'kotatsu-mikan-2026'));
+    expect(plain.startsWith('name,url,username,password,note,totp,vault,favorite'), 'decrypts to the CSV');
+    await settle(page, 400);
+    await shot(page, 'export-done');
+    expect(await page.inputValue('#expMaster') === '' && await page.inputValue('#expPass') === '', 'passwords cleared after download');
     await ctx.close();
   },
   async lock() {

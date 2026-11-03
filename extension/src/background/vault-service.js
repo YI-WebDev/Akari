@@ -12,7 +12,10 @@ import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
 import {
   createVault, openVaultRecord, readVaultData, sealData, exportBackup, importBackup,
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
+  addImportedItems, MAX_IMPORT_ITEMS,
 } from '../lib/vault.js';
+import { toCsv } from '../lib/export/csv.js';
+import { toBitwardenJson } from '../lib/export/bitwarden.js';
 
 export const VAULT_KEY = 'akari.vault';
 export const SETTINGS_KEY = 'akari.settings';
@@ -405,6 +408,28 @@ export function createVaultService({
     return { count };
   }
 
+  /** Items parsed from another manager's export (lib/import) → new items of one vault. */
+  async function importItems(items, vaultId) {
+    await ensureUnlocked();
+    if (!Array.isArray(items)) throw fail(ERR.INVALID, 'items must be an array');
+    if (items.length > MAX_IMPORT_ITEMS) throw fail(ERR.INVALID, `Too many items (max ${MAX_IMPORT_ITEMS})`);
+    if (typeof vaultId !== 'string' || !vaultId) throw fail(ERR.INVALID, 'vault required');
+    return mutateData((draft) => addImportedItems(draft, items, vaultId, now()));
+  }
+
+  /** Plaintext export (CSV / Bitwarden JSON); the master password is asked again. */
+  async function exportPlain(format, masterPassword) {
+    if (format !== 'csv' && format !== 'bitwarden') throw fail(ERR.INVALID, 'Unknown export format');
+    await ensureUnlocked();
+    if (!(await verifyMasterPassword(masterPassword))) throw fail(ERR.BAD_PASSWORD, 'Wrong master password');
+    const { data } = await ensureUnlocked();
+    const d = new Date(now());
+    const ymd = String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    return format === 'csv'
+      ? { text: toCsv(data), filename: `akari-export-${ymd}.csv`, count: data.items.length }
+      : { text: toBitwardenJson(data), filename: `akari-export-${ymd}.json`, count: data.items.length };
+  }
+
   async function status() {
     const initialized = !!(await loadRecord());
     return { initialized, locked: initialized ? await isLocked() : true };
@@ -424,6 +449,8 @@ export function createVaultService({
     [MSG.VAULT_CHANGE_PASSWORD]: (m) => changePassword(m.current, m.next),
     [MSG.VAULT_EXPORT]: () => exportVault(),
     [MSG.VAULT_IMPORT]: (m) => importVault(m.json, m.masterPassword),
+    [MSG.VAULT_IMPORT_ITEMS]: (m) => importItems(m.items, m.vault),
+    [MSG.VAULT_EXPORT_PLAIN]: (m) => exportPlain(m.format, m.masterPassword),
     [MSG.SETTINGS_GET]: () => getSettings(),
     [MSG.SETTINGS_SET]: (m) => setSettings(m.patch),
     [MSG.ACTIVITY_PING]: () => ({}),
@@ -431,7 +458,8 @@ export function createVaultService({
   // A successful call of these counts as user activity (re-arms auto-lock).
   const ACTIVE = new Set([
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY,
-    MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
+    MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
+    MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
   ]);
   const handlers = {};
   for (const [type, fn] of Object.entries(table)) {

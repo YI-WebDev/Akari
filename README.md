@@ -22,7 +22,9 @@
 | パスキー | サイトの「パスキーを登録 / パスキーでサインイン」を Akari が引き受け、確認ウィンドウで承認。保存先の保管庫を選べる。「この端末のパスキーを使う」でブラウザ標準にも切り替え可 |
 | 自動入力 | ポップアップの「このサイトで使える」→ 入力、入力欄の 灯 ボタンのメニュー、`Ctrl+Shift+L` |
 | 保存の提案 | ログイン送信後に「Akari に保存しますか？ / パスワードを更新しますか？」 |
-| 設定 | 自動ロック（1〜60 分 / ブラウザを閉じたとき）、クリップボード消去（10〜60 秒）、マスターパスワード変更、バックアップの書き出し / 読み込み |
+| インポート | 1Password（1pux / 1pif / zip）、Apple Passwords、Bitwarden（json / zip、パスワード保護 JSON）、Brave、Chrome、Dashlane（zip / csv）、Edge、Enpass、Firefox、Kaspersky（txt）、KeePass（xml）、Keeper、LastPass、NordPass、Proton Pass（zip / pgp / csv）、Roboform、Safari、汎用 CSV、PGP で暗号化されたこれらのファイル、Akari バックアップ。カードや ID など Akari にない種類はセキュアノートとして取り込み、重複は飛ばします |
+| エクスポート | Akari バックアップ（暗号化）、CSV（Chrome などで読める）、Bitwarden JSON（パスキーも含む）。平文の形式はマスターパスワードの再入力が必要で、PGP で暗号化して保存することもできます |
+| 設定 | 自動ロック（1〜60 分 / ブラウザを閉じたとき）、クリップボード消去（10〜60 秒）、マスターパスワード変更 |
 
 ## 仕組みと安全性
 
@@ -31,9 +33,12 @@
 - **信頼境界**: 復号済みデータはサービスワーカーと拡張ページだけが扱います。ページ側のスクリプトには「そのタブのサイトに一致する 1 件」しか渡しません。サイトの判定は公式の Public Suffix List（同梱）による登録可能ドメイン単位で、`bank.co.il` と `evil.co.il` のように別の持ち主のドメインは一致しません。
 - **パスキー**: ES256、attestation `none`、`signCount` 0（同期型パスキーと同じ）。`clientDataJSON` はブラウザが報告した送信元オリジンから作り、`rpId` は公開サフィックスでない親ドメインまでに制限。サイトが本人確認（`userVerification: required`）を求めるときは、確認ウィンドウでマスターパスワードを入力したときだけ UV を立てます。秘密鍵はサービスワーカーの外に出ません。
 - **自動入力の保護**: ページ読み込み時に勝手に入力しません。インラインメニューは 500 ms 以上はっきり見えている状態でないとクリックを受け付けず、透明化やおとり要素によるクリックジャッキングを拒否します。
-- **外部通信なし**: フォントを含むすべてのリソースを同梱しています。
+- **外部通信なし**: フォントを含むすべてのリソースを同梱しています。拡張ページで許可しているのは自分のスクリプトと WebAssembly（PGP の Argon2 用）だけで、JavaScript の `eval` は使えません。
+- **インポートとエクスポート**: 読み込むファイルはポップアップの中だけで解析し、取り込んだあとは中身をメモリから消します。平文で書き出すときはマスターパスワードを確かめ直します。
 
 ## 既知の制限
+
+- インポート: KeePass は XML 書き出しのみ（.kdbx は不可）。Bitwarden の Argon2id で保護された JSON、パスワード付き ZIP、公開鍵で暗号化された PGP は読めません。添付ファイルと Proton Pass のパスキーは取り込みません。フォルダーは保管庫に分けず、選んだ 1 つの保管庫に入ります。
 
 - パスキーの「自動入力 UI（conditional mediation）」と iframe 内の WebAuthn はブラウザ標準に任せています。
 - 自動入力はポップアップ / ショートカットではトップフレームのみ。TOTP の自動入力はしません。
@@ -52,10 +57,10 @@ node tests/ui/screenshot.mjs        # 画面のスクリーンショット（tes
 ```
 
 E2E は Chrome 137 以降で `--load-extension` が使えないため、CDP の `Extensions.loadUnpacked` で読み込みます（`tests/e2e/helpers.js`）。
-設計の詳細は [PLAN.md](PLAN.md)、デザインの原本は `design/` にあります。
 
 ## サードパーティ
 
 - [jsQR](https://github.com/cozmo/jsQR)（Apache-2.0）— `extension/src/third_party/`（`scripts/build-jsqr.mjs` で再生成）
+- [OpenPGP.js](https://github.com/openpgpjs/openpgpjs)（LGPL-3.0-or-later）— `extension/src/third_party/openpgp.js`（`scripts/build-openpgp.mjs` で再生成）
 - [Public Suffix List](https://publicsuffix.org/)（MPL-2.0）— `extension/src/shared/psl-data.js`（`scripts/build-psl.mjs` で再生成）
 - JetBrains Mono / M PLUS 1 Code（SIL OFL 1.1）— `extension/src/assets/fonts/`

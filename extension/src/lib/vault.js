@@ -1,11 +1,13 @@
 // Encrypted vault record (PLAN.md §2), backups, and item helpers. Pure: no chrome.* access.
 
-import { toB64, fromB64, fromB64url, randomBytes, randomInt } from '../shared/bytes.js';
+import { toB64, fromB64, toB64url, fromB64url, randomBytes, randomInt } from '../shared/bytes.js';
 import { AkariError } from '../shared/api.js';
 import { ERR, DEFAULT_VAULTS } from '../shared/messages.js';
 import {
   PBKDF2_ITERATIONS, deriveKek, generateDek, wrapDek, unwrapDek, encryptJson, decryptJson,
 } from './crypto.js';
+import { encode as cborEncode } from './cbor.js';
+import { registrableDomain, isPublicSuffix, isIpAddress } from '../shared/domain.js';
 
 export const VAULT_VERSION = 1;
 export const BACKUP_FORMAT = 'akari-backup';
@@ -259,6 +261,138 @@ export function mergeData(current, incoming) {
     }
   }
   return { data, count };
+}
+
+// ---- import from other managers (PLAN.md §7.3) ----------------------------
+
+export const MAX_IMPORT_ITEMS = 20000;
+const IMPORT_FIELDS = ['type', 'title', 'url', 'username', 'password', 'note', 'totp', 'fav'];
+
+/**
+ * Passkey from another manager's export (lib/import ImportedItem: PKCS8 ES256 private
+ * key, no public key) → stored Passkey, or null. The private key must import as a
+ * P-256 ECDSA key; its COSE public key is derived from it, then the passkey goes
+ * through the same checks as a backup import. The rpId must also be a registrable
+ * domain that is not a public suffix ("com", "github.io"), or "localhost"; no IPs.
+ */
+export async function passkeyFromImport(pk, nowMs = Date.now()) {
+  if (!isObject(pk) || !lengthIn(pk.privateKey, 32, 2048) || !importableRpId(pk.rpId)) return null;
+  let publicKey;
+  try {
+    const key = await crypto.subtle.importKey('pkcs8', fromB64url(pk.privateKey), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+    const { x, y } = await crypto.subtle.exportKey('jwk', key);
+    publicKey = toB64url(cborEncode(new Map([[1, 2], [3, COSE_ALG_ES256], [-1, 1], [-2, fromB64url(x)], [-3, fromB64url(y)]])));
+  } catch {
+    return null;
+  }
+  return normalizePasskey({
+    credentialId: pk.credentialId,
+    rpId: pk.rpId,
+    userHandle: pk.userHandle,
+    userName: pk.userName ?? '',
+    userDisplayName: pk.userDisplayName ?? '',
+    privateKey: pk.privateKey,
+    publicKey,
+    alg: COSE_ALG_ES256,
+    signCount: 0,
+    createdAt: Number.isFinite(pk.createdAt) ? pk.createdAt : nowMs,
+    lastUsedAt: null,
+  }, nowMs);
+}
+
+function importableRpId(rpId) {
+  if (typeof rpId !== 'string' || !HOST_LIKE.test(rpId)) return false;
+  if (rpId === 'localhost') return true;
+  return !isIpAddress(rpId) && registrableDomain(rpId) !== null && !isPublicSuffix(rpId);
+}
+
+function hostKey(url) {
+  try {
+    return url ? new URL(url).hostname.toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Logins: same host + username + password. Notes: same title + note. A login with
+ * none of host/username/password (e.g. TOTP only) is compared like a note, plus its TOTP secret.
+ */
+function duplicateKey(it) {
+  const login = ['login', hostKey(it.url), it.username, it.password];
+  if (it.type === 'login' && login.slice(1).some(Boolean)) return login.join('\n');
+  return [it.type, it.title, it.note, it.totp?.secret ?? ''].join('\n');
+}
+
+/** Editable fields of an ImportedItem; a non-http(s) URL (androidapp://…) moves into the note. */
+function importFields(raw, vaultId) {
+  const fields = { vault: vaultId };
+  for (const k of IMPORT_FIELDS) if (raw[k] !== undefined) fields[k] = raw[k];
+  if (typeof fields.title === 'string') fields.title = fields.title.trim().slice(0, FIELD_CAPS.title);
+  if (typeof fields.url === 'string' && fields.url.trim() && (fields.note === undefined || typeof fields.note === 'string')) {
+    try {
+      normalizeUrl(fields.url);
+    } catch {
+      fields.note = [fields.note, 'URL: ' + fields.url.trim()].filter(Boolean).join('\n\n');
+      fields.url = '';
+    }
+  }
+  return fields;
+}
+
+/**
+ * Adds items parsed from another manager's export to `data` (in place) as new items
+ * of vault `vaultId`, which must exist. Items that fail validateItem are counted as
+ * invalid, duplicates of existing (or earlier) items are skipped, and passkeys are
+ * kept only when valid and not already present (credentialId or rpId + userHandle).
+ * @returns {Promise<{ added: number, duplicates: number, invalid: number, passkeys: number }>}
+ */
+export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) {
+  if (!Array.isArray(list) || list.length > MAX_IMPORT_ITEMS) throw invalid('Too many items');
+  if (!data.vaults.some((v) => v.id === vaultId)) throw invalid('Unknown vault');
+  const seen = new Set(data.items.map(duplicateKey));
+  const credIds = new Set();
+  const accounts = new Set();
+  const accountKey = (pk) => pk.rpId + '\n' + pk.userHandle;
+  for (const it of data.items) {
+    for (const pk of it.passkeys || []) {
+      credIds.add(pk.credentialId);
+      accounts.add(accountKey(pk));
+    }
+  }
+  const out = { added: 0, duplicates: 0, invalid: 0, passkeys: 0 };
+  for (const raw of list) {
+    let fields;
+    try {
+      if (!isObject(raw)) throw invalid('Item must be an object');
+      fields = validateItem(importFields(raw, vaultId));
+    } catch {
+      out.invalid++;
+      continue;
+    }
+    const createdAt = clampTs(raw.createdAt, nowMs, nowMs);
+    const updatedAt = Math.max(clampTs(raw.updatedAt, createdAt, nowMs), createdAt);
+    const item = makeItem({
+      ...fields, passkeys: [], createdAt, updatedAt, passwordUpdatedAt: fields.password ? updatedAt : null,
+    }, nowMs);
+    const key = duplicateKey(item);
+    if (seen.has(key)) {
+      out.duplicates++;
+      continue;
+    }
+    seen.add(key);
+    for (const p of Array.isArray(raw.passkeys) ? raw.passkeys : []) {
+      const pk = await passkeyFromImport(p, nowMs);
+      if (!pk || credIds.has(pk.credentialId) || accounts.has(accountKey(pk))) continue;
+      credIds.add(pk.credentialId);
+      accounts.add(accountKey(pk));
+      item.passkeys.push(pk);
+    }
+    out.passkeys += item.passkeys.length;
+    data.items.push(item);
+    out.added++;
+  }
+  return out;
 }
 
 // ---- items ----------------------------------------------------------------

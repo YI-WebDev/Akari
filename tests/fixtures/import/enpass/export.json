@@ -1,0 +1,113 @@
+{
+  "folders": [
+    { "icon": "1008", "parent_uuid": "", "title": "仕事", "updated_at": 1700000000, "uuid": "folder-0001" }
+  ],
+  "items": [
+    {
+      "archived": 0,
+      "auto_submit": 1,
+      "category": "login",
+      "createdAt": 1700000000,
+      "favorite": 1,
+      "fields": [
+        { "deleted": 0, "label": "ユーザー名", "order": 1, "sensitive": 0, "type": "username", "uid": 10, "updated_at": 1700000000, "value": "jiro" },
+        { "deleted": 0, "label": "メール", "order": 2, "sensitive": 0, "type": "email", "uid": 12, "updated_at": 1700000000, "value": "jiro@example.jp" },
+        { "deleted": 0, "label": "パスワード", "order": 3, "sensitive": 1, "type": "password", "uid": 11, "updated_at": 1700000000, "value": "Fuji-San-3776" },
+        { "deleted": 0, "label": "ウェブサイト", "order": 4, "sensitive": 0, "type": "url", "uid": 13, "updated_at": 1700000000, "value": "https://mail.example.jp" },
+        { "deleted": 0, "label": "予備のサイト", "order": 5, "sensitive": 0, "type": "url", "uid": 14, "updated_at": 1700000000, "value": "https://webmail.example.jp" },
+        { "deleted": 0, "label": "ワンタイムコード", "order": 6, "sensitive": 1, "type": "totp", "uid": 15, "updated_at": 1700000000, "value": "JBSWY3DPEHPK3PXP" },
+        { "deleted": 0, "label": "追加情報", "order": 7, "sensitive": 0, "type": "section", "uid": 16, "updated_at": 1700000000, "value": "" },
+        { "deleted": 0, "label": "秘密の質問", "order": 8, "sensitive": 0, "type": "text", "uid": 17, "updated_at": 1700000000, "value": "初めて飼ったペットは？" },
+        { "deleted": 1, "label": "古いフィールド", "order": 9, "sensitive": 0, "type": "text", "uid": 18, "updated_at": 1700000000, "value": "消したはずの値" }
+      ],
+      "icon": { "fav": "mail.example.jp", "image": { "file": "web/mail.png" }, "type": 1, "uuid": "" },
+      "note": "メインのメールアカウント",
+      "subtitle": "jiro",
+      "template_type": "login.default",
+      "title": "メール",
+      "trashed": 0,
+      "updated_at": 1710000000,
+      "uuid": "enpass-0001",
+      "folders": ["folder-0001"],
+      "attachments": [{ "kind": "image/png", "name": "qr.png", "size": 100, "data": "iVBORw0KGgo=" }]
+    },
+    {
+      "archived": 0,
+      "category": "note",
+      "createdAt": 1690000000,
+      "favorite": 0,
+      "fields": [],
+      "note": "引っ越しのチェックリスト\n・住民票\n・電気とガス",
+      "title": "引っ越しメモ",
+      "trashed": 0,
+      "updated_at": 1690000000,
+      "uuid": "enpass-0002"
+    },
+    {
+      "archived": 1,
+      "category": "creditcard",
+      "createdAt": 1680000000,
+      "favorite": 0,
+      "fields": [
+        { "deleted": 0, "label": "カード名義", "sensitive": 0, "type": "ccName", "value": "JIRO SATO" },
+        { "deleted": 0, "label": "カード番号", "sensitive": 0, "type": "ccNumber", "value": "378282246310005" },
+        { "deleted": 0, "label": "CVC", "sensitive": 1, "type": "ccCvc", "value": "1234" },
+        { "deleted": 0, "label": "有効期限", "sensitive": 0, "type": "ccExpiry", "value": "09/2027" }
+      ],
+      "note": "海外旅行用",
+      "template_type": "creditcard.default",
+      "title": "アメックス",
+      "trashed": 0,
+      "updated_at": 1680000000,
+      "uuid": "enpass-0003"
+    },
+    {
+      "archived": 0,
+      "category": "computer",
+      "createdAt": 1680000000,
+      "favorite": 0,
+      "fields": [
+        { "deleted": 0, "label": "SSID", "sensitive": 0, "type": "text", "value": "Akari-Office" },
+        { "deleted": 0, "label": "パスワード", "sensitive": 1, "type": "password", "value": "office-wifi-pass" }
+      ],
+      "note": "",
+      "template_type": "computer.wifi",
+      "title": "会社の Wi-Fi",
+      "trashed": 0,
+      "updated_at": 1680000000,
+      "uuid": "enpass-0004"
+    },
+    {
+      "archived": 0,
+      "category": "login",
+      "createdAt": 1600000000,
+      "favorite": 0,
+      "fields": [
+        { "deleted": 0, "label": "ユーザー名", "type": "username", "value": "trash" },
+        { "deleted": 0, "label": "パスワード", "type": "password", "value": "trash" }
+      ],
+      "note": "",
+      "title": "ゴミ箱のアイテム",
+      "trashed": 1,
+      "updated_at": 1600000000,
+      "uuid": "enpass-0005"
+    },
+    {
+      "archived": 0,
+      "category": "login",
+      "createdAt": 1700000000,
+      "favorite": 0,
+      "fields": [
+        { "deleted": 0, "label": "E-mail", "type": "email", "value": "only-email@example.jp" },
+        { "deleted": 0, "label": "Password", "type": "password", "value": "pw" },
+        { "deleted": 0, "label": "Website", "type": "url", "value": "https://only-email.example.jp" },
+        { "deleted": 0, "label": "One-time code", "type": "totp", "value": "otpauth://totp/OnlyEmail?secret=GEZDGNBVGY3TQOJQ&period=60" }
+      ],
+      "note": "",
+      "title": "メールだけのログイン",
+      "trashed": 0,
+      "updated_at": 1700000000,
+      "uuid": "enpass-0006"
+    }
+  ]
+}

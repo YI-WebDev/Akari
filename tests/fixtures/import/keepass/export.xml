@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- Synthetic KeePass 2.x XML export for Akari tests. -->
+<KeePassFile>
+	<Meta>
+		<Generator>KeePass</Generator>
+		<DatabaseName>テスト用データベース</DatabaseName>
+		<RecycleBinEnabled>True</RecycleBinEnabled>
+		<RecycleBinUUID>cmVjeWNsZWJpbjAwMDAwMQ==</RecycleBinUUID>
+		<CustomData />
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>cm9vdGdyb3VwMDAwMDAwMQ==</UUID>
+			<Name>データベース</Name>
+			<Notes />
+			<IconID>49</IconID>
+			<Entry>
+				<UUID>ZW50cnkwMDAwMDAwMDAwMQ==</UUID>
+				<IconID>0</IconID>
+				<Tags>仕事;重要</Tags>
+				<Times>
+					<CreationTime>2024-01-02T03:04:05Z</CreationTime>
+					<LastModificationTime>2024-05-06T07:08:09Z</LastModificationTime>
+					<LastAccessTime>2024-05-06T07:08:09Z</LastAccessTime>
+					<Expires>False</Expires>
+				</Times>
+				<String>
+					<Key>Notes</Key>
+					<Value>本番環境 &amp; 検証環境で共通。&lt;注意&gt; 90 日ごとに変更</Value>
+				</String>
+				<String>
+					<Key>Password</Key>
+					<Value ProtectInMemory="True">  Tsuki&amp;Hoshi&lt;7&gt;  </Value>
+				</String>
+				<String>
+					<Key>Title</Key>
+					<Value>クラウド管理画面</Value>
+				</String>
+				<String>
+					<Key>URL</Key>
+					<Value>https://console.example.jp/</Value>
+				</String>
+				<String>
+					<Key>UserName</Key>
+					<Value>admin@example.jp</Value>
+				</String>
+				<String>
+					<Key>otp</Key>
+					<Value ProtectInMemory="True">otpauth://totp/Console:admin?secret=JBSWY3DPEHPK3PXP&amp;issuer=Console&amp;period=30&amp;digits=6</Value>
+				</String>
+				<String>
+					<Key>KP2A_URL_1</Key>
+					<Value>https://console2.example.jp/</Value>
+				</String>
+				<String>
+					<Key>アカウント ID</Key>
+					<Value>1234-5678-9012</Value>
+				</String>
+				<Binary>
+					<Key>recovery-codes.txt</Key>
+					<Value Ref="0" />
+				</Binary>
+				<AutoType>
+					<Enabled>True</Enabled>
+					<DataTransferObfuscation>0</DataTransferObfuscation>
+				</AutoType>
+				<History>
+					<Entry>
+						<UUID>ZW50cnkwMDAwMDAwMDAwMQ==</UUID>
+						<String>
+							<Key>Title</Key>
+							<Value>クラウド管理画面（旧）</Value>
+						</String>
+						<String>
+							<Key>Password</Key>
+							<Value ProtectInMemory="True">old-password</Value>
+						</String>
+					</Entry>
+				</History>
+			</Entry>
+			<Entry>
+				<UUID>ZW50cnkwMDAwMDAwMDAwMg==</UUID>
+				<Times>
+					<CreationTime>2023-11-11T11:11:11Z</CreationTime>
+					<LastModificationTime>2023-11-11T11:11:11Z</LastModificationTime>
+				</Times>
+				<String><Key>Title</Key><Value>VPN</Value></String>
+				<String><Key>UserName</Key><Value>vpn-user</Value></String>
+				<String><Key>Password</Key><Value ProtectInMemory="True">vpn-pass</Value></String>
+				<String><Key>URL</Key><Value>vpn.example.jp</Value></String>
+				<String><Key>Notes</Key><Value /></String>
+				<String><Key>TimeOtp-Secret-Base32</Key><Value ProtectInMemory="True">GEZDGNBVGY3TQOJQ</Value></String>
+				<String><Key>TimeOtp-Length</Key><Value>8</Value></String>
+				<String><Key>TimeOtp-Period</Key><Value>60</Value></String>
+				<String><Key>TimeOtp-Algorithm</Key><Value>HMAC-SHA-256</Value></String>
+			</Entry>
+			<Entry>
+				<UUID>ZW50cnkwMDAwMDAwMDAwMw==</UUID>
+				<String><Key>Title</Key><Value>&#x91D1;&#24235;&#12398;メモ</Value></String>
+				<String><Key>Notes</Key><Value><![CDATA[暗証番号 <1234> & 鍵の場所
+2 行目]]></Value></String>
+				<String><Key>UserName</Key><Value /></String>
+				<String><Key>Password</Key><Value ProtectInMemory="True" /></String>
+				<String><Key>URL</Key><Value /></String>
+			</Entry>
+			<Group>
+				<UUID>bWFpbGdyb3VwMDAwMDAwMQ==</UUID>
+				<Name>メール</Name>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwNA==</UUID>
+					<String><Key>Title</Key><Value>Web メール</Value></String>
+					<String><Key>UserName</Key><Value>shiro</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">mail-pass</Value></String>
+					<String><Key>URL</Key><Value>https://mail.example.jp</Value></String>
+					<String><Key>TOTP Seed</Key><Value ProtectInMemory="True">JBSWY3DPEHPK3PXP</Value></String>
+					<String><Key>TOTP Settings</Key><Value>30;6</Value></String>
+				</Entry>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwNQ==</UUID>
+					<String><Key>Title</Key><Value>Steam</Value></String>
+					<String><Key>UserName</Key><Value>gamer</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">steam-pass</Value></String>
+					<String><Key>otp</Key><Value>otpauth://hotp/Steam:gamer?secret=JBSWY3DPEHPK3PXP&amp;counter=1</Value></String>
+				</Entry>
+			</Group>
+			<Group>
+				<UUID>cmVjeWNsZWJpbjAwMDAwMQ==</UUID>
+				<Name>ごみ箱</Name>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwNg==</UUID>
+					<String><Key>Title</Key><Value>削除済み 1</Value></String>
+					<String><Key>Password</Key><Value>gone</Value></String>
+				</Entry>
+				<Group>
+					<UUID>ZGVsZXRlZGdyb3VwMDAwMQ==</UUID>
+					<Name>削除したフォルダー</Name>
+					<Entry>
+						<UUID>ZW50cnkwMDAwMDAwMDAwNw==</UUID>
+						<String><Key>Title</Key><Value>削除済み 2</Value></String>
+						<String><Key>Password</Key><Value>gone</Value></String>
+					</Entry>
+				</Group>
+			</Group>
+		</Group>
+		<DeletedObjects>
+			<DeletedObject>
+				<UUID>ZGVsZXRlZDAwMDAwMDAwMQ==</UUID>
+				<DeletionTime>2024-01-01T00:00:00Z</DeletionTime>
+			</DeletedObject>
+		</DeletedObjects>
+	</Root>
+</KeePassFile>

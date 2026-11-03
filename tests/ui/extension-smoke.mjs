@@ -1,10 +1,12 @@
 // Drives the real popup page against the real service worker (unpacked extension in Chrome).
-// setup → add login (generator + TOTP) → weak password → 強化する → lock/unlock (boot log) → settings/export.
+// setup → add login (generator + TOTP) → weak password → 強化する → lock/unlock (boot log) → settings/export
+// → import a Chrome CSV (インポート) → export CSV with the master password (エクスポート) → autofill → remote lock.
 // Screenshots go to tests/ui/screenshots/ext-*.png. Usage: node tests/ui/extension-smoke.mjs
 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { launch, MASTER, ROOT, serveStatic } from '../e2e/helpers.js';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), 'screenshots');
@@ -113,7 +115,7 @@ try {
   await page.waitForTimeout(900);
   assert.equal(await page.locator('.row').count(), 1);
 
-  step('settings: clipboard clearing + export (no theme choice)');
+  step('settings: clipboard clearing + backup export (no theme choice)');
   await page.click('#vaultBtn');
   await page.click('#openSettings');
   await page.waitForSelector('#setSheet.open');
@@ -123,13 +125,18 @@ try {
   await page.waitForTimeout(400);
   const getSettings = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'settings/get' })).data);
   assert.equal((await getSettings()).clipboardClearSeconds, 60);
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportBtn')]);
-  assert.match(download.suggestedFilename(), /^akari-backup-\d{8}\.json$/);
   await page.waitForTimeout(500);
   await shot('settings');
   await page.click('[data-setting="clipboardClearSeconds"] [data-value="30"]');
   await page.waitForTimeout(300);
   assert.equal((await getSettings()).clipboardClearSeconds, 30);
+  await page.click('#exportOpen');
+  await page.waitForSelector('.fmt[data-fmt="akari"][aria-checked="true"]');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
+  assert.match(download.suggestedFilename(), /^akari-backup-\d{8}\.json$/);
+  assert.equal(JSON.parse(await readFile(await download.path(), 'utf8')).format, 'akari-backup');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
 
   step('reopen popup restores unlocked state');
   await page.reload();
@@ -138,6 +145,78 @@ try {
 
   const getAll = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items);
   const sendMsg = (type, payload) => page.evaluate(([t, p]) => chrome.runtime.sendMessage({ ...p, type: t }), [type, payload]);
+
+  step('import a Chrome CSV through settings → インポート');
+  {
+    const csv = [
+      'name,url,username,password,note',
+      'import-alpha.test,https://import-alpha.test/login,alpha@example.com,Alpha-Pass-1!x,first note',
+      ',https://import-beta.test/,beta@example.com,Beta-Pass-2!x,',
+    ].join('\n') + '\n';
+    await page.click('#vaultBtn');
+    await page.click('#openSettings');
+    await page.waitForSelector('#setSheet.open');
+    await page.click('#importOpen');
+    await page.waitForSelector('.src[data-id="chrome"]');
+    assert.equal(await page.locator('.src').count(), 20, '19 sources + Akari backup');
+    await page.click('.src[data-id="chrome"]');
+    const file = { name: 'Chrome Passwords.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) };
+    await page.setInputFiles('#impFile', file);
+    await page.waitForSelector('.io-stats', { timeout: 15000 });
+    assert.deepEqual(await page.locator('.io-stats .stat-v').allTextContents(), ['2', '0', '0', '0', '0'], 'preview counts');
+    assert.deepEqual(await page.locator('.io-title').allTextContents(), ['import-alpha.test', 'import-beta.test'], 'sample titles');
+    await page.click('.vault-chip:has-text("仕事")');
+    await page.click('.io-foot .btn-primary');
+    await page.waitForSelector('.io-result', { timeout: 15000 });
+    assert.equal(await page.locator('.io-result .boot-k').textContent(), '2 件を追加 · 重複 0 · 無効 0');
+    assert.match(await page.locator('.io-alert').textContent(), /Chrome Passwords\.csv」は削除してください/);
+    await page.waitForTimeout(400);
+    await shot('import-result');
+    // the same file again: everything is a duplicate
+    await page.click('.io-foot .btn-line'); // 続けて読み込む
+    await page.click('.src[data-id="chrome"]');
+    await page.setInputFiles('#impFile', file);
+    await page.waitForSelector('.io-stats', { timeout: 15000 });
+    await page.click('.io-foot .btn-primary');
+    await page.waitForSelector('.io-result', { timeout: 15000 });
+    assert.equal(await page.locator('.io-result .boot-k').textContent(), '0 件を追加 · 重複 2 · 無効 0');
+    await page.click('.io-foot .btn-primary'); // 閉じる
+    await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+    assert.equal(await page.locator('#importPage').innerHTML(), '', 'parsed items dropped with the sheet');
+    await page.waitForSelector('.row[data-id] .row-title:has-text("import-alpha.test")');
+    const alpha = (await getAll()).find((i) => i.title === 'import-alpha.test');
+    assert.ok(alpha, 'imported item is in the vault');
+    assert.equal(alpha.vault, 'work');
+    assert.equal(alpha.username, 'alpha@example.com');
+    assert.equal(alpha.password, 'Alpha-Pass-1!x');
+    assert.equal(alpha.note, 'first note');
+    assert.equal(await page.locator('.row').count(), 3, 'list reloaded');
+  }
+
+  step('export CSV with the master password');
+  {
+    await page.click('#vaultBtn');
+    await page.click('#openSettings');
+    await page.waitForSelector('#setSheet.open');
+    await page.click('#exportOpen');
+    await page.click('.fmt[data-fmt="csv"]');
+    assert.match(await page.locator('#exportPage .io-alert').textContent(), /暗号化されません/);
+    await page.fill('#expMaster', 'not the password');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#exportPage .field-err:has-text("マスターパスワードが違います")', { timeout: 30000 });
+    await page.fill('#expMaster', MASTER);
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.keyboard.press('Enter')]);
+    assert.match(dl.suggestedFilename(), /^akari-export-\d{8}\.csv$/);
+    const text = await readFile(await dl.path(), 'utf8');
+    assert.match(text, /^name,url,username,password,note,totp,vault,favorite\r?\n/);
+    assert.match(text, /import-alpha\.test,https:\/\/import-alpha\.test\/login,alpha@example\.com,Alpha-Pass-1!x,first note/);
+    assert.match(await page.locator('#exportPage .io-log .boot-v').textContent(), /akari-export-\d{8}\.csv · 3 件/);
+    assert.equal(await page.inputValue('#expMaster'), '', 'master password cleared after the download');
+    await page.waitForTimeout(300);
+    await shot('export-csv');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+  }
 
   step('host:port URLs are accepted and saved as https');
   for (const [input, expected] of [['localhost:3000', 'https://localhost:3000'], ['example.com:8443/login', 'https://example.com:8443/login']]) {

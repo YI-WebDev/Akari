@@ -1,0 +1,7 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+login,旅行予約サイト,"https://travel.example.jp/login, https://m.travel.example.jp",goro@example.jp,goro,"Tabi,Suki-88","マイルは
+家族と合算",otpauth://totp/Travel:goro?secret=JBSWY3DPEHPK3PXP&issuer=Travel,2023-11-14T22:13:20.000Z,2024-03-09T16:00:00.000Z,個人
+note,病院の診察券,,,,,毎月第 2 火曜日に通院,,1690000000,1690000000,個人
+alias,ニュースレター用,,news.goro@passmail.net,,,,,1680000000,1680000000,個人
+creditCard,デビットカード,,,,,カードの詳細は CSV に含まれません,,1680000000,1680000000,個人
+login,メールのみ,https://only-email.example.jp,only@example.jp,,pw,,JBSWY3DPEHPK3PXP,,,仕事

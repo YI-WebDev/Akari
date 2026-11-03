@@ -1,0 +1,1 @@
+{"encrypted":false,"folders":[{"id":"f1","name":"Work"}],"items":[{"id":"i1","folderId":"f1","type":1,"name":"GitHub","notes":null,"favorite":false,"login":{"username":"alice","password":"pw","totp":null,"uris":[{"match":null,"uri":"https://github.com"}]}}]}

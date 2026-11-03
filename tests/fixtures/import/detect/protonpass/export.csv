@@ -1,0 +1,2 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+login,GitHub,https://github.com,alice@example.com,alice,pw,,,1700000000,1700000100,Personal
