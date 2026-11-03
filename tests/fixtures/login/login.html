@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: ログイン</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 48px auto; max-width: 360px; color: #2e2520; }
+    label { display: block; margin: 14px 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    button { margin-top: 18px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+    pre { margin-top: 24px; padding: 12px; background: #f4f4f4; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>ログイン</h1>
+  <!-- ?navigate=1 redirects to welcome.html ~50ms after submit (login -> dashboard flow). -->
+  <form id="login-form" action="welcome.html" method="post">
+    <label for="username">ユーザー名またはメールアドレス</label>
+    <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
+    <label for="password">パスワード</label>
+    <input id="password" name="password" type="password" autocomplete="current-password">
+    <button id="submit" type="submit">ログイン</button>
+  </form>
+  <pre id="status" data-state="idle"></pre>
+  <script>
+    const form = document.getElementById('login-form');
+    const status = document.getElementById('status');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      // JSON of the submitted values, for E2E assertions.
+      status.textContent = JSON.stringify({
+        username: form.elements.username.value,
+        password: form.elements.password.value,
+      });
+      status.dataset.state = 'submitted';
+      if (new URLSearchParams(location.search).has('navigate')) {
+        setTimeout(() => { location.href = 'welcome.html'; }, 50);
+      }
+    });
+  </script>
+</body>
+</html>

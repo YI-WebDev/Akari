@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: SPA ログイン</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 48px auto; max-width: 360px; color: #2e2520; }
+    .row { margin: 14px 0; }
+    label { display: block; margin-bottom: 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    button { margin-top: 10px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+    pre { margin-top: 24px; padding: 12px; background: #f4f4f4; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>SPA ログイン</h1>
+  <!-- The inputs are rendered 1 s after load and there is no <form>. -->
+  <div id="root">読み込み中…</div>
+  <pre id="status" data-state="loading"></pre>
+  <script>
+    const root = document.getElementById('root');
+    const status = document.getElementById('status');
+    const state = { username: '', password: '' };
+    const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    const inputs = [];
+
+    // React-style controlled input: the framework keeps a "value tracker" that is updated whenever the
+    // value is assigned through the element (el.value = x). An input event is only treated as a user edit
+    // when the DOM value differs from the tracked one, and the DOM is re-rendered from `state`. So
+    // el.value = 'x' alone never reaches `state`; the native prototype setter + an input event does.
+    function controlled(name, type, id, autocomplete, label) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const lab = document.createElement('label');
+      lab.htmlFor = id;
+      lab.textContent = label;
+      const el = document.createElement('input');
+      Object.assign(el, { id, type, name, autocomplete });
+      let tracked = '';
+      Object.defineProperty(el, 'value', {
+        configurable: true,
+        get() { return nativeValue.get.call(this); },
+        set(v) { tracked = String(v); nativeValue.set.call(this, v); },
+      });
+      el.addEventListener('input', () => {
+        const v = nativeValue.get.call(el);
+        if (v === tracked) return;
+        tracked = v;
+        state[name] = v;
+        render();
+      });
+      el.addEventListener('blur', render);
+      row.append(lab, el);
+      inputs.push({ name, el });
+      return row;
+    }
+
+    function render() {
+      for (const { name, el } of inputs) {
+        if (nativeValue.get.call(el) !== state[name]) el.value = state[name];
+      }
+    }
+
+    function login() {
+      status.textContent = JSON.stringify({ username: state.username, password: state.password });
+      status.dataset.state = 'submitted';
+    }
+
+    setTimeout(() => {
+      const box = document.createElement('div');
+      box.id = 'login-box';
+      const button = document.createElement('button');
+      button.id = 'login-button';
+      button.type = 'button';
+      button.textContent = 'ログイン';
+      button.addEventListener('click', login);
+      const user = controlled('username', 'text', 'spa-username', 'username', 'ユーザー名');
+      const pass = controlled('password', 'password', 'spa-password', 'current-password', 'パスワード');
+      inputs[1].el.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+      box.append(user, pass, button);
+      root.replaceChildren(box);
+      status.dataset.state = 'ready';
+    }, 1000);
+  </script>
+</body>
+</html>

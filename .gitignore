@@ -1,0 +1,30 @@
+# Dependencies (test tooling only; the extension itself needs none)
+node_modules/
+
+# Generated screenshots (node tests/ui/screenshot.mjs, extension-smoke.mjs, design-shots.mjs)
+tests/ui/screenshots/
+
+# Playwright / test output
+test-results/
+playwright-report/
+*.log
+
+# Packaged extension and its signing key — never commit the key
+*.crx
+*.pem
+*.zip
+
+# Agent working state (oh-my-claudecode)
+.omc/
+
+# Local environment and secrets
+.env
+.env.*
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp.*

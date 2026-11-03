@@ -1,0 +1,98 @@
+/* Akari design tokens — design 1a "Akari Terminal" (design/Akari Terminal.dc.html):
+   monospace, a 16px grid and a warm dark palette. This is the only theme.
+   Fonts are bundled under src/assets/fonts (JetBrains Mono + M PLUS 1 Code for Japanese). */
+
+:root {
+  color-scheme: dark;
+  --font-ui: 'JetBrains Mono', 'M PLUS 1 Code', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --font-mono: 'JetBrains Mono', 'M PLUS 1 Code', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --fs-base: 12px;
+
+  /* surfaces, darkest to lightest */
+  --bg-deep: #0F0C0A;         /* inputs, generator output */
+  --bg: #14100D;              /* app background */
+  --bg-panel: #17130F;        /* stat cells */
+  --bg-raised: #1A1511;       /* header, status bar, sheets */
+  --surface: #1F1915;         /* menus, popovers */
+  --surface-hover: rgba(255, 200, 160, .05);
+  --surface-sunken: rgba(255, 214, 186, .06);
+  --surface-soft: rgba(255, 214, 186, .08);
+  --hover-on-surface: rgba(255, 200, 160, .07);
+  --grid-line: rgba(255, 214, 186, .035);   /* the 16px background grid */
+  --line: rgba(255, 214, 186, .08);          /* hairlines inside boxes */
+  --rule: rgba(255, 214, 186, .09);          /* header / column / status borders */
+  --border: rgba(255, 214, 186, .12);        /* buttons, boxes */
+  --border-strong: rgba(255, 214, 186, .16);
+  --menu-ring: rgba(255, 214, 186, .14);
+  --scrollbar: rgba(255, 214, 186, .12);
+
+  --text: #F2E8DE;
+  --text-2: #D7CABD;          /* secondary values */
+  --text-muted: #B9AA9B;      /* icon buttons, secondary labels */
+  --text-dim: #9C8D7F;        /* row subtitles */
+  --text-soft: #8A7B6D;       /* field labels, hints */
+  --text-faint: #7D6F62;      /* placeholders */
+
+  --accent: #FF7A45;          /* 灯 */
+  --accent-strong: #FF9A6E;   /* hover, links */
+  --accent-deep: #FF9A6E;
+  --accent-ink: #FFC0A4;      /* text on accent tint */
+  --accent-soft: rgba(255, 122, 69, .12);
+  --accent-soft-hover: rgba(255, 122, 69, .18);
+  --accent-tint: rgba(255, 122, 69, .1);
+  --accent-tint-border: rgba(255, 122, 69, .45);
+  --accent-line: rgba(255, 122, 69, .55);    /* hovered borders */
+  --highlight: #FF7A45;       /* search match background */
+  --link: #FF9A6E;
+  --link-hover: #FFC0A4;
+  --focus-border: rgba(255, 122, 69, .7);
+  --focus-ring: 0 0 0 3px rgba(255, 122, 69, .15);
+  --on-accent: #14100D;
+
+  --success: #9BD67E;
+  --danger: #FF6B5B;
+  --danger-text: #F4CFC8;
+  --danger-soft: rgba(255, 107, 91, .08);
+  --danger-border: rgba(255, 107, 91, .32);
+  --fav: #FFC25C;
+  --totp: #FFB08F;
+  --info: #8EC5FF;
+  --info-soft: rgba(142, 197, 255, .1);
+  --ok-soft: rgba(155, 214, 126, .1);
+  --ok-deep: #9BD67E;
+
+  /* password strength: level 0..4 */
+  --lv0: #4A3E35; --lv1: #FF6B5B; --lv2: #FFC25C; --lv3: #D9D36A; --lv4: #9BD67E;
+  --lv0-bg: rgba(255, 214, 186, .06); --lv1-bg: rgba(255, 107, 91, .12); --lv2-bg: rgba(255, 194, 92, .12);
+  --lv3-bg: rgba(217, 211, 106, .12); --lv4-bg: rgba(155, 214, 126, .12);
+  --seg-off: rgba(255, 214, 186, .08);
+
+  /* generator character colours */
+  --ch-letter: #F2E8DE; --ch-digit: #FF9A6E; --ch-symbol: #FFC25C;
+
+  --toggle-on-track: #FF7A45; --toggle-off-track: rgba(255, 214, 186, .15);
+
+  /* item tiles: oklch(L C <hue>) at three strengths, hue per item */
+  --tile-bg: rgba(255, 214, 186, .06);
+  --tile-l: 0.85; --tile-c: 0.11;            /* tile glyph */
+  --tile-bg-l: 0.72; --tile-bg-c: 0.12;      /* tile fill (13 %) and border (32 %) */
+  --vault-l: 0.8; --vault-c: 0.13;           /* vault dot */
+
+  --toast-bg: #F2E8DE; --toast-text: #14100D; --toast-sub: #5E5046;
+  --scrim: rgba(8, 6, 5, .66);
+  --blob-1: rgba(255, 122, 69, .2); --blob-2: rgba(255, 122, 69, .07);
+
+  --shadow-card: none;
+  --shadow-row: none;
+  --shadow-menu: 0 18px 40px rgba(0, 0, 0, .55);
+  --shadow-sheet: 0 -24px 50px rgba(0, 0, 0, .5);
+  --shadow-accent: 0 0 14px rgba(255, 122, 69, .5);
+  --shadow-accent-hover: 0 0 18px rgba(255, 122, 69, .6);
+  --shadow-toast: 0 14px 34px rgba(0, 0, 0, .55);
+  --shadow-chip: none;
+
+  --r-row: 5px; --r-card: 6px; --r-menu: 8px; --r-sheet: 0; --r-pill: 4px; --r-tile: 6px;
+  --spring: cubic-bezier(.3, 1.5, .5, 1);
+  --spring-soft: cubic-bezier(.2, .9, .2, 1);
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}

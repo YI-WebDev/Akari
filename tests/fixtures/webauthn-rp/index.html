@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Akari WebAuthn test RP</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 32px; max-width: 640px; }
+    input, button { font: inherit; padding: 6px 10px; margin: 4px 4px 4px 0; }
+    #status { font-weight: 700; font-size: 18px; margin: 16px 0 8px; }
+    pre { background: #f4f1ec; padding: 12px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>WebAuthn test RP</h1>
+  <label>Username <input id="username" value="alice@example.com" autocomplete="off"></label>
+  <div>
+    <button id="register">Register passkey</button>
+    <button id="login">Sign in (username)</button>
+    <button id="login-discoverable">Sign in (discoverable)</button>
+  </div>
+  <div id="status" data-state="idle">idle</div>
+  <pre id="checks"></pre>
+  <pre id="log"></pre>
+
+  <script>
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+
+    const toB64url = (buf) => {
+      const bytes = new Uint8Array(buf);
+      let s = '';
+      for (const b of bytes) s += String.fromCharCode(b);
+      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+    const fromB64url = (str) => {
+      const s = str.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(s + '='.repeat((4 - (s.length % 4)) % 4));
+      return Uint8Array.from(bin, (c) => c.charCodeAt(0)).buffer;
+    };
+
+    function setStatus(state, text) {
+      $('status').dataset.state = state;
+      $('status').textContent = text || state;
+    }
+
+    async function post(path, body) {
+      const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+      return res.json();
+    }
+
+    // Serialize the way @simplewebauthn/browser does (getters + response methods),
+    // so this also exercises the object shape, not just toJSON().
+    function registrationToJSON(cred) {
+      const r = cred.response;
+      return {
+        id: cred.id,
+        rawId: toB64url(cred.rawId),
+        type: cred.type,
+        authenticatorAttachment: cred.authenticatorAttachment || undefined,
+        clientExtensionResults: cred.getClientExtensionResults(),
+        response: {
+          clientDataJSON: toB64url(r.clientDataJSON),
+          attestationObject: toB64url(r.attestationObject),
+          transports: typeof r.getTransports === 'function' ? r.getTransports() : [],
+          publicKeyAlgorithm: typeof r.getPublicKeyAlgorithm === 'function' ? r.getPublicKeyAlgorithm() : undefined,
+          publicKey: typeof r.getPublicKey === 'function' && r.getPublicKey() ? toB64url(r.getPublicKey()) : undefined,
+          authenticatorData: typeof r.getAuthenticatorData === 'function' ? toB64url(r.getAuthenticatorData()) : undefined,
+        },
+      };
+    }
+
+    function authenticationToJSON(cred) {
+      const r = cred.response;
+      return {
+        id: cred.id,
+        rawId: toB64url(cred.rawId),
+        type: cred.type,
+        authenticatorAttachment: cred.authenticatorAttachment || undefined,
+        clientExtensionResults: cred.getClientExtensionResults(),
+        response: {
+          clientDataJSON: toB64url(r.clientDataJSON),
+          authenticatorData: toB64url(r.authenticatorData),
+          signature: toB64url(r.signature),
+          userHandle: r.userHandle ? toB64url(r.userHandle) : undefined,
+        },
+      };
+    }
+
+    function shapeChecks(cred, kind) {
+      const json = typeof cred.toJSON === 'function' ? cred.toJSON() : null;
+      return {
+        kind,
+        instanceofPublicKeyCredential: cred instanceof PublicKeyCredential,
+        responseInstanceof: kind === 'create'
+          ? cred.response instanceof AuthenticatorAttestationResponse
+          : cred.response instanceof AuthenticatorAssertionResponse,
+        authenticatorAttachment: cred.authenticatorAttachment,
+        toJSONMatchesId: !!json && json.id === cred.id && json.rawId === toB64url(cred.rawId),
+        createIsNativeLooking: /\[native code\]/.test(Function.prototype.toString.call(navigator.credentials.create)),
+        clientExtensionResults: cred.getClientExtensionResults(),
+      };
+    }
+
+    async function register() {
+      setStatus('working', 'registering…');
+      try {
+        const { flowId, options } = await post('/api/register/options', { username: $('username').value });
+        const publicKey = {
+          ...options,
+          challenge: fromB64url(options.challenge),
+          user: { ...options.user, id: fromB64url(options.user.id) },
+          excludeCredentials: (options.excludeCredentials || []).map((d) => ({ ...d, id: fromB64url(d.id) })),
+        };
+        const cred = await navigator.credentials.create({ publicKey });
+        $('checks').textContent = JSON.stringify(shapeChecks(cred, 'create'), null, 2);
+        const result = await post('/api/register/verify', { flowId, response: registrationToJSON(cred) });
+        $('log').textContent = JSON.stringify(result, null, 2);
+        setStatus(result.verified ? 'registered' : 'error', result.verified ? 'registered' : 'error: verification failed');
+      } catch (e) {
+        setStatus('error', 'error: ' + e.name + ': ' + e.message);
+      }
+    }
+
+    async function login(withUsername) {
+      setStatus('working', 'signing in…');
+      try {
+        const { flowId, options } = await post('/api/login/options', withUsername ? { username: $('username').value } : {});
+        const publicKey = {
+          ...options,
+          challenge: fromB64url(options.challenge),
+          allowCredentials: (options.allowCredentials || []).map((d) => ({ ...d, id: fromB64url(d.id) })),
+        };
+        const cred = await navigator.credentials.get({ publicKey });
+        $('checks').textContent = JSON.stringify(shapeChecks(cred, 'get'), null, 2);
+        const result = await post('/api/login/verify', { flowId, response: authenticationToJSON(cred) });
+        $('log').textContent = JSON.stringify(result, null, 2);
+        setStatus(result.verified ? 'signed-in' : 'error', result.verified ? 'signed-in' : 'error: verification failed');
+      } catch (e) {
+        setStatus('error', 'error: ' + e.name + ': ' + e.message);
+      }
+    }
+
+    $('register').addEventListener('click', register);
+    $('login').addEventListener('click', () => login(true));
+    $('login-discoverable').addEventListener('click', () => login(false));
+  </script>
+</body>
+</html>

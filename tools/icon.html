@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Akari icon</title>
+<link rel="stylesheet" href="../extension/src/assets/fonts/fonts.css">
+<style>
+  html, body { margin: 0; background: transparent; }
+  /* Design 1a brand mark: an orange square-ish tile with a dark 灯 and a soft glow ring.
+     tools/make-icons.mjs sets per size: --s canvas, --t tile, --r radius, --g glyph scale,
+     --ring ring width, --glow glow blur. */
+  .canvas {
+    --s: 128px; --t: 104px; --r: 26px; --g: .62; --ring: 4px; --glow: 18px;
+    width: var(--s); height: var(--s); display: grid; place-items: center;
+  }
+  .tile {
+    width: var(--t); height: var(--t); border-radius: var(--r);
+    background: #FF7A45; color: #14100D;
+    box-shadow: 0 0 0 var(--ring) rgba(255, 122, 69, .24), 0 0 var(--glow) rgba(255, 122, 69, .5);
+    display: grid; place-items: center;
+    font-family: 'M PLUS 1 Code', 'JetBrains Mono', monospace; font-weight: 700;
+    font-size: calc(var(--t) * var(--g)); line-height: 1;
+  }
+  .tile span { display: block; transform: translate(var(--dx, 0), var(--dy, 0)); }
+</style>
+</head>
+<body>
+<div class="canvas" id="icon"><div class="tile"><span>灯</span></div></div>
+</body>
+</html>

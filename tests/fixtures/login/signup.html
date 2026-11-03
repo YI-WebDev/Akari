@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: 新規登録</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 48px auto; max-width: 360px; color: #2e2520; }
+    label { display: block; margin: 14px 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    button { margin-top: 18px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+    pre { margin-top: 24px; padding: 12px; background: #f4f4f4; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>アカウント作成</h1>
+  <!-- New-password + confirm: Akari must not fill the password here, but should offer to save it after submit. -->
+  <form id="signup-form" action="welcome.html" method="post">
+    <label for="email">メールアドレス</label>
+    <input id="email" name="email" type="email" autocomplete="username">
+    <label for="new-password">パスワード</label>
+    <input id="new-password" name="password" type="password" autocomplete="new-password">
+    <label for="confirm-password">パスワード（確認）</label>
+    <input id="confirm-password" name="confirm" type="password" autocomplete="new-password">
+    <button id="submit" type="submit">登録</button>
+  </form>
+  <pre id="status" data-state="idle"></pre>
+  <script>
+    const form = document.getElementById('signup-form');
+    const status = document.getElementById('status');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      status.textContent = JSON.stringify({
+        email: form.elements.email.value,
+        password: form.elements.password.value,
+        confirm: form.elements.confirm.value,
+      });
+      status.dataset.state = 'submitted';
+      if (new URLSearchParams(location.search).has('navigate')) {
+        setTimeout(() => { location.href = 'welcome.html'; }, 50);
+      }
+    });
+  </script>
+</body>
+</html>

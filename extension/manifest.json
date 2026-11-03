@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Akari — パスワードマネージャー",
+  "short_name": "Akari",
+  "version": "0.1.0",
+  "description": "暗いところで鍵を照らす灯り。パスワード・認証コード（TOTP）・パスキーをまとめて守るパスワードマネージャー。",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Akari",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/sw.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "alarms", "offscreen", "clipboardWrite", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/autofill.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["src/content/webauthn-page.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["src/content/webauthn-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "autofill": {
+      "suggested_key": { "default": "Ctrl+Shift+L", "mac": "Command+Shift+L" },
+      "description": "このページに自動入力"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "akari-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Akari（灯）— Chrome 拡張のパスワードマネージャー。拡張本体は extension/ をそのまま読み込む（ビルド不要）。このファイルはテスト用の開発依存だけを管理する。",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "e2e": "node --test --test-concurrency=1 \"tests/e2e/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/m-plus-1-code": "^5.3.1",
+    "@simplewebauthn/server": "^14.0.3",
+    "jsqr": "^1.4.0",
+    "playwright": "^1.64.1",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Akari — パスキー</title>
+  <link rel="stylesheet" href="../assets/fonts/fonts.css">
+  <link rel="stylesheet" href="../shared/tokens.css">
+  <link rel="stylesheet" href="passkey.css">
+  <script type="module" src="passkey.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <span class="logo" aria-hidden="true">灯</span>
+      <span class="brand">akari<span class="blink" aria-hidden="true">_</span></span>
+      <span class="chip">
+        <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/></svg>
+        パスキー
+      </span>
+    </header>
+
+    <main class="main">
+      <section class="screen center" data-screen="loading" aria-busy="true">
+        <span class="spinner" aria-label="読み込み中"></span>
+        <span class="faint">読み込み中<span class="blink" aria-hidden="true">_</span></span>
+      </section>
+
+      <section class="screen lock" data-screen="locked" hidden>
+        <span class="scan" aria-hidden="true"></span>
+        <span class="glow" aria-hidden="true"></span>
+        <div class="lock-body">
+          <div class="lock-head">
+            <span class="orb" id="lockOrb" aria-hidden="true">灯</span>
+            <div>
+              <div class="lock-brand">akari<span class="blink" aria-hidden="true">_</span></div>
+              <div class="faint">ゼロ知識・端末内で暗号化される保管庫</div>
+            </div>
+          </div>
+          <p class="sub" id="lockedSub"></p>
+          <form id="unlockForm" class="unlock" autocomplete="off" novalidate>
+            <label class="label" for="pw"><span class="pr">&gt;</span> マスターパスワードを入力</label>
+            <div class="unlock-row">
+              <div class="pw" id="pwBox">
+                <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password" spellcheck="false">
+              </div>
+              <button type="submit" class="go" id="goBtn" title="解除" aria-label="解除">
+                <span class="go-label">解除 ⏎</span>
+                <span class="go-spin" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="hint" id="pwHint" role="status"></div>
+          </form>
+          <div class="boot" id="bootLog" aria-hidden="true"></div>
+        </div>
+        <div class="foot split">
+          <button type="button" class="btn" data-act="cancel"><span class="kbd" aria-hidden="true">esc</span>キャンセル</button>
+          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="create" hidden>
+        <div class="cmd"><span class="pr">$</span> passkey create --rp <span data-rp></span><span class="cursor" aria-hidden="true"></span></div>
+        <div class="heading">
+          <h1 class="title">パスキーを保存</h1>
+          <p class="sub">このサイトへのサインインに使うパスキーを Akari に保存します</p>
+        </div>
+        <div class="card">
+          <div class="row">
+            <span class="k">サイト</span>
+            <span class="tile" id="cSiteTile"></span>
+            <div class="col">
+              <div class="strong" id="cRpId"></div>
+              <div class="mono" id="cOrigin"></div>
+            </div>
+          </div>
+          <div class="row">
+            <span class="k">アカウント</span>
+            <span class="tile tile-user" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.6-3.6 4.6-5.4 8-5.4s6.4 1.8 8 5.4"/></svg></span>
+            <div class="col">
+              <div class="strong" id="cUserDisplay"></div>
+              <div class="muted" id="cUserName"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field" id="vaultField">
+          <div class="label"><span class="pr">&gt;</span> 保存先</div>
+          <div class="vaults" id="vaultList" role="radiogroup" aria-label="保存先の保管庫"></div>
+        </div>
+        <div class="notice" id="excludedNotice" hidden><span class="bang" aria-hidden="true">!</span><span>このアカウントのパスキーは、すでに Akari に保存されています。</span></div>
+        <form class="uv" data-uv hidden autocomplete="off" novalidate>
+          <div class="label"><span class="pr">&gt;</span> 本人確認 — マスターパスワードを入力してください</div>
+          <div class="pw pw-sm">
+            <svg class="pw-icon" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <input type="password" class="uv-pw" placeholder="••••••••" aria-label="本人確認のためのマスターパスワード" autocomplete="current-password" spellcheck="false">
+            <span class="hint" role="status"></span>
+          </div>
+        </form>
+        <div class="foot">
+          <div class="actions">
+            <button type="button" class="btn" data-act="cancel"><span class="kbd" aria-hidden="true">esc</span>キャンセル</button>
+            <button type="button" class="btn primary" data-act="primary" id="createPrimary"><span class="kbd" aria-hidden="true">⏎</span><span id="createLabel">保存する</span></button>
+          </div>
+          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="get" hidden>
+        <div class="cmd"><span class="pr">$</span> passkey get --rp <span data-rp></span><span class="cursor" aria-hidden="true"></span></div>
+        <div class="heading">
+          <h1 class="title">パスキーでサインイン</h1>
+          <p class="sub"><span class="site-inline" id="gRpId"></span> に使うアカウントを選んでください</p>
+          <p class="mono" id="gOrigin"></p>
+        </div>
+        <div class="list-head" aria-hidden="true"><span>アカウント</span><span class="rule"></span><span id="gCount"></span></div>
+        <div class="accounts" id="accountList" role="radiogroup" aria-label="アカウント"></div>
+        <form class="uv" data-uv hidden autocomplete="off" novalidate>
+          <div class="label"><span class="pr">&gt;</span> 本人確認 — マスターパスワードを入力してください</div>
+          <div class="pw pw-sm">
+            <svg class="pw-icon" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <input type="password" class="uv-pw" placeholder="••••••••" aria-label="本人確認のためのマスターパスワード" autocomplete="current-password" spellcheck="false">
+            <span class="hint" role="status"></span>
+          </div>
+        </form>
+        <div class="foot">
+          <div class="actions">
+            <button type="button" class="btn" data-act="cancel"><span class="kbd" aria-hidden="true">esc</span>キャンセル</button>
+            <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>サインイン</button>
+          </div>
+          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+        </div>
+      </section>
+
+      <section class="screen center" data-screen="empty" hidden>
+        <div class="cmd"><span class="pr">$</span> passkey get --rp <span data-rp></span></div>
+        <div class="big">0 件</div>
+        <div class="heading">
+          <h1 class="title">パスキーが見つかりません</h1>
+          <p class="sub"><span class="site-inline" id="eRpId"></span> のパスキーは Akari に保存されていません</p>
+        </div>
+        <div class="foot">
+          <div class="actions">
+            <button type="button" class="btn" data-act="cancel"><span class="kbd" aria-hidden="true">esc</span>キャンセル</button>
+            <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>この端末のパスキーを使う</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen center" data-screen="expired" hidden>
+        <div class="cmd"><span class="pr">$</span> passkey <span class="err">exit 1</span></div>
+        <div class="big">— 終了 —</div>
+        <div class="heading">
+          <h1 class="title">リクエストは終了しました</h1>
+          <p class="sub">サイト側で取り消されたか、時間切れになりました。このウィンドウは閉じてかまいません。</p>
+        </div>
+        <div class="foot">
+          <div class="actions">
+            <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>閉じる</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="status">
+      <span class="dot" id="stDot" aria-hidden="true"></span>
+      <span class="st-origin" id="stOrigin">—</span>
+      <span class="grow"></span>
+      <span>ES256</span>
+      <span>端末内で署名</span>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <div class="toast-body">
+      <span class="toast-icon" aria-hidden="true">!</span>
+      <span id="toastMsg"></span>
+    </div>
+    <div class="toast-bar" id="toastBar"></div>
+  </div>
+</body>
+</html>
