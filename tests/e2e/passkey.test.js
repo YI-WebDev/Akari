@@ -24,15 +24,15 @@ after(async () => {
 });
 
 /** Click a button on the RP page, act in the consent window, and wait for the RP status. */
-async function viaConsent(button, act, expected) {
+async function viaConsent(button, act, expected, on = page) {
   const popup = ext.context.waitForEvent('page', { predicate: (p) => p.url().includes('/src/passkey/passkey.html'), timeout: 10000 });
-  await page.click(button);
+  await on.click(button);
   const win = await popup;
   await win.waitForLoadState('domcontentloaded');
   await act(win);
-  await page.waitForFunction((s) => document.getElementById('status').dataset.state !== 'pending'
+  await on.waitForFunction((s) => document.getElementById('status').dataset.state !== 'pending'
     && document.getElementById('status').textContent.startsWith(s), expected, { timeout: 15000 });
-  return page.textContent('#status');
+  return on.textContent('#status');
 }
 
 const screen = (name) => `[data-screen="${name}"]:not([hidden])`;
@@ -114,4 +114,58 @@ test('registering again for the same account → InvalidStateError after the use
 test('the credential object looks native to the page', async () => {
   const checks = JSON.parse((await page.textContent('#checks')) || '{}');
   for (const [k, v] of Object.entries(checks)) assert.notEqual(v, false, `check ${k} failed`);
+});
+
+// Another passkey manager the way Proton Pass installs itself: keep the get() that is there
+// as its fallback, then set its own on navigator.credentials (which hides the prototype).
+function installOtherManager(log) {
+  const prior = navigator.credentials.get.bind(navigator.credentials);
+  window[log] = [];
+  navigator.credentials.get = function (o) {
+    window[log].push(o?.mediation || 'modal');
+    return prior(o);
+  };
+}
+
+test('with another passkey manager on the page, Akari is asked first and passes on what it declines', async () => {
+  const other = await ext.context.newPage();
+  try {
+    await other.addInitScript(installOtherManager, '__early'); // around document_start, like an extension
+    await other.goto(page.url());
+    await other.bringToFront();
+    assert.equal(await other.evaluate(() => navigator.credentials.get === CredentialsContainer.prototype.get), true);
+
+    const status = await viaConsent('#login', async (win) => {
+      await win.locator(`${screen('get')} .uv-pw`).fill(MASTER);
+      await win.locator(`${screen('get')} [data-act="primary"]`).click();
+    }, 'signed-in', other);
+    assert.equal(status, 'signed-in');
+    assert.deepEqual(await other.evaluate(() => window.__early), [], 'Akari answered before the other manager');
+
+    // Akari declines conditional mediation: the other manager gets it once, then the browser.
+    const conditional = () => other.evaluate(async () => {
+      const ac = new AbortController();
+      const p = navigator.credentials.get({
+        mediation: 'conditional', signal: ac.signal,
+        publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname },
+      }).then(() => 'resolved', (e) => e.name);
+      await new Promise((r) => setTimeout(r, 800));
+      ac.abort();
+      return p;
+    });
+    assert.equal(await conditional(), 'AbortError');
+    assert.deepEqual(await other.evaluate(() => window.__early), ['conditional']);
+
+    // A manager installed after Akari (it captures Akari's get as its fallback): no loop.
+    await other.evaluate(installOtherManager, '__late');
+    assert.equal(await conditional(), 'AbortError');
+    assert.deepEqual(await other.evaluate(() => [window.__early, window.__late]), [['conditional'], ['conditional']]);
+    const cancelled = await viaConsent('#login', async (win) => {
+      await win.locator(`${screen('get')} [data-act="cancel"]`).click();
+    }, 'error', other);
+    assert.match(cancelled, /NotAllowedError/);
+    assert.deepEqual(await other.evaluate(() => window.__late), ['conditional'], 'a cancel in Akari is not passed on');
+  } finally {
+    await other.close();
+  }
 });
