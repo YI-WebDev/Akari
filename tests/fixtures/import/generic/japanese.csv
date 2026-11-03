@@ -1,0 +1,4 @@
+サイト名,サイト,ユーザー名,パスワード,メモ,ワンタイム,お気に入り,カテゴリ,電話番号
+銀行,https://bank.example.jp,taro,"p,w","メモ内容
+2行目",otpauth://totp/Bank:taro?secret=JBSWY3DPEHPK3PXP,★,金融,03-1234-5678
+ショップ,https://shop.example.jp,hanako@example.jp,pw2,,,,通販,

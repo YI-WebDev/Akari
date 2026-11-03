@@ -1,0 +1,3 @@
+type,account_name,account_holder,cc_number,code,expiration_month,expiration_year,routing_number,account_number,country,issuing_bank,note
+bank,Deutsche Konto,Hanako Yamada,,,,,DEUTDEFF,DE89 3704 0044 0532 0130 00,DE,Deutsche Bank,
+paypal,PayPal,hanako@example.jp,,,,,,,,,

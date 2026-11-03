@@ -1,10 +1,13 @@
 // Left column (design 1a): 現在のタブ autofill card, grouped rows with counts, empty states,
 // plus the counters that live outside the list (filter counts, status bar).
 
-import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, vaultById } from '../state.js';
+import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
+import { t } from '../../shared/i18n.js';
+import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, inType, vaultById } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { GROUPS, groupIndex, letterOf, hueOf, matchRange } from './format.js';
 import { stagger } from './fx.js';
+import { tagShown } from './type-menu.js';
 
 const $ = (id) => document.getElementById(id);
 const $list = () => $('list');
@@ -18,9 +21,11 @@ function highlight(text, q) {
   return [s.slice(0, r[0]), h('mark', null, s.slice(r[0], r[1])), s.slice(r[1])];
 }
 
+/** Second line: subtitleOf (never secret), or the type's name when that is empty. */
 function subtitle(it) {
-  if (it.type === 'note') return 'セキュアノート';
-  return it.username || '';
+  const s = subtitleOf(it);
+  if (s || it.type === 'login') return { text: s, plain: false };
+  return { text: typeLabel(it.type), plain: true };
 }
 
 export function tileEl(it, size = '') {
@@ -29,7 +34,9 @@ export function tileEl(it, size = '') {
 
 function rowEl(it, q) {
   const weak = isWeak(it);
-  const totp = it.type !== 'note' && !!it.totp?.secret;
+  const totp = it.type === 'login' && !!it.totp?.secret;
+  const tag = typeOf(it.type)?.tag || null;
+  const sub = subtitle(it);
   return h('div', {
     class: 'row', role: 'option', id: 'row-' + it.id, 'aria-selected': String(it.id === S.sel),
     dataset: { row: '', id: it.id },
@@ -40,10 +47,11 @@ function rowEl(it, q) {
   tileEl(it),
   h('span', { class: 'row-text' },
     h('span', { class: 'row-title' }, highlight(it.title || '(無題)', q)),
-    h('span', { class: 'row-user' }, highlight(subtitle(it), it.type === 'note' ? '' : q))),
-  weak || totp ? h('span', { class: 'row-flags' },
+    h('span', { class: 'row-user' + (sub.plain ? ' plain' : '') }, sub.plain ? sub.text : highlight(sub.text, q))),
+  weak || totp || tag ? h('span', { class: 'row-flags' },
     weak ? h('span', { class: 'row-weak', title: '弱いパスワード', role: 'img', 'aria-label': '弱いパスワード' }) : null,
-    totp ? h('span', { class: 'tag', title: '認証コード（2FA）あり' }, '2FA') : null) : null);
+    totp ? h('span', { class: 'tag', title: '認証コード（2FA）あり' }, '2FA') : null,
+    tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null) : null);
 }
 
 export function setAfState(state) {
@@ -102,7 +110,17 @@ function emptyHero() {
 }
 
 function emptyMessage(q) {
-  if (q) return emptyBox([`「${S.query.trim()}」に一致するアイテムはありません`]);
+  if (q) {
+    return emptyBox([`「${S.query.trim()}」に一致するアイテムはありません`,
+      S.type !== 'all' ? [h('br'), t('list.emptyQueryType', { type: typeLabel(S.type) }, '（種類「{type}」で絞り込み中）')] : null]);
+  }
+  if (S.type !== 'all') {
+    const type = S.type;
+    return emptyBox([t('list.emptyType', { type: typeLabel(type) }, '{type}はありません'),
+      h('div', { class: 'empty-act' }, h('button', {
+        class: 'btn-line btn-sm', type: 'button', onclick: () => emit(type === 'login' ? 'newLogin' : 'newItem', type),
+      }, icon('plus', 11, 2.6), t('editor.new', { type: typeLabel(type) }, '新規{type}')))]);
+  }
   if (S.filter === 'fav') return emptyBox(['お気に入りはまだありません', h('br'), '詳細の ★ で追加できます']);
   if (S.filter === 'recent') return emptyBox(['最近つかったアイテムは', h('br'), 'ありません']);
   return emptyBox(['この保管庫は空です']);
@@ -113,9 +131,37 @@ function groupEl(label, count) {
     h('span', null, label), h('span', { class: 'group-line' }), h('span', null, String(count)));
 }
 
-/** Filter counts (vault-scoped, ignoring the query, as in the design), vault label and status bar. */
+/** Per-type counts in the current vault (for the 種類 menu). */
+export function typeCounts() {
+  const counts = new Map();
+  for (const it of S.items) if (inVault(it)) counts.set(it.type, (counts.get(it.type) || 0) + 1);
+  return counts;
+}
+
+/** The 種類 button under the filter chips: "種類  すべて ▾", or the chosen type in accent. */
+export function renderTypeButton() {
+  const on = S.type !== 'all' && !!typeOf(S.type);
+  const name = on ? typeLabel(S.type) : t('list.typeAll', null, 'すべて');
+  const btn = $('typeBtn');
+  btn.classList.toggle('on', on);
+  $('typeK').textContent = t('list.type', null, '種類');
+  $('typeLabel').textContent = name;
+  const tag = on && tagShown(S.type) ? typeOf(S.type).tag : null;
+  $('typeTag').textContent = tag || '';
+  $('typeTag').hidden = !tag;
+  const label = t('list.typeFilter', { type: name }, '種類で絞り込む: {type}');
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  const clr = $('typeClear');
+  clr.hidden = !on;
+  clr.title = t('list.typeClear', null, '種類の絞り込みを解除');
+  clr.setAttribute('aria-label', clr.title);
+}
+
+/** Filter counts (vault- and type-scoped, ignoring the query, as in the design), vault label and status bar. */
 export function renderCounts(visibleCount, now = Date.now()) {
-  const inV = S.items.filter(inVault);
+  renderTypeButton();
+  const inV = S.items.filter((i) => inVault(i) && inType(i));
   const counts = {
     all: inV.length,
     recent: inV.filter((i) => groupIndex(i.lastUsedAt, now) <= 1).length,
@@ -141,7 +187,7 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   const now = Date.now();
 
   const af = afCandidate();
-  if (af && !q && S.filter === 'all') L.append(afCard(af));
+  if (af && !q && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
   renderCounts(vis.length, now);

@@ -14,6 +14,8 @@ export const MSG = Object.freeze({
   VAULT_CHANGE_PASSWORD: 'vault/changePassword',
   VAULT_EXPORT: 'vault/export',
   VAULT_IMPORT: 'vault/import',
+  VAULT_IMPORT_ITEMS: 'vault/importItems', // items parsed from another manager's export
+  VAULT_EXPORT_PLAIN: 'vault/exportPlain', // CSV / Bitwarden JSON, master password required
 
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',

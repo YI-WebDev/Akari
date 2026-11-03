@@ -1,0 +1,8 @@
+name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,full_name,phone_number,email,address1,address2,city,country,state,type,custom_fields
+GitHub,https://github.com,"[""https://gist.github.com"",""https://github.io""]",alice,"pw,1","a note
+second line",,,,,,,Work,,,,,,,,,password,"[{""label"":""Recovery code"",""type"":""hidden"",""value"":""ABCD-1234""},{""label"":""Plan"",""type"":""text"",""value"":""Pro""}]"
+My Card,,,,,,Taro Yamada,4111111111111111,123,4321,12/30,100-0001,Finance,,,,,,,,,credit_card,
+Taro,,,,,,,,,,,100-0001,,山田 太郎,090-1234-5678,taro@example.jp,千代田1-1,Bldg 2,千代田区,JP,東京都,identity,
+秘密のメモ,,,,,"ほげ
+ふが",,,,,,,,,,,,,,,,note,
+Work,,,,,,,,,,,,,,,,,,,,,folder,

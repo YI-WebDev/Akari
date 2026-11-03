@@ -1,12 +1,20 @@
-// Item editor (login / secure note) in the 1a field-box language. Replaces the detail pane;
-// the list stays visible.
+// Item editor in the 1a field-box language. Replaces the detail pane; the list stays visible.
+// Login and secure note have their own fields; every other type is built from its template
+// in shared/item-types.js. All types get 追加の項目 (extra fields), the vault chooser and ★.
 
 import { MSG } from '../../shared/messages.js';
+import {
+  typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, personName, LIMITS,
+} from '../../shared/item-types.js';
+import { t } from '../../shared/i18n.js';
 import { parseOtpauthUri, normalizeSecret, isValidSecret } from '../../lib/totp.js';
 import { decodeQrFromDataUrl } from '../../lib/qr.js';
 import { S, emit, call, itemById, strengthOf, forSave, mergeSaved, errText } from '../state.js';
 import { h, clear, icon } from './dom.js';
-import { letterOf, hueOf, vaultColor, safeHttpUrl, siteOf, withScheme } from './format.js';
+import {
+  letterOf, hueOf, vaultColor, safeHttpUrl, siteOf, withScheme, formatIsoDate, parseDateInput, parseMonthInput,
+  digitsOnly, groupDigits,
+} from './format.js';
 import { rise, shake } from './fx.js';
 import { meterEl, setMeter } from './meter.js';
 import { totpView } from './totp-view.js';
@@ -18,6 +26,8 @@ const $ = (id) => document.getElementById(id);
 export const editorOpen = () => !!E;
 
 const TOTP_TEXT_MAX = 200; // the SW rejects longer issuer/label values
+// secret fields that get the password generator button
+const GEN_FIELDS = { wifi: 'password', database: 'password', server: 'password', cryptoWallet: 'password' };
 
 /** Parse a pasted base32 secret or otpauth:// URI into a TotpConfig. Throws on invalid input. */
 function parseTotpInput(text, { title, username }) {
@@ -53,18 +63,63 @@ function markDirty() {
 }
 
 /** One "label | input" row of a field box. The error line sits right after the .field (see setErr). */
-function inputField(key, label, input, extra = [], below = []) {
+function inputField(key, label, input, extra = [], below = [], { mono = key === 'password' || key === 'totp' } = {}) {
   const err = h('div', { class: 'field-err', role: 'alert' });
   E.errs[key] = err;
-  const wrap = h('div', { class: 'field' + (key === 'password' || key === 'totp' ? ' mono' : '') }, input, extra);
-  return h('div', { class: 'ed-row' }, h('label', { for: input.id }, label), h('div', { class: 'ed-ctl' }, wrap, err, below));
+  const wrap = h('div', { class: 'field' + (mono ? ' mono' : '') }, input, extra);
+  return h('div', { class: 'ed-row' }, h('label', { for: input.id, title: label }, label), h('div', { class: 'ed-ctl' }, wrap, err, below));
+}
+
+/** Eye button that masks / unmasks `el` (an <input> by type, a <textarea> by the .masked class). */
+function revealButton(el, label, { onToggle } = {}) {
+  const eye = h('button', { class: 'ibtn', type: 'button' });
+  const set = (on) => {
+    if (el.tagName === 'TEXTAREA') el.classList.toggle('masked', !on);
+    else el.type = on ? 'text' : 'password';
+    eye.classList.toggle('on', on);
+    eye.setAttribute('aria-pressed', String(on));
+    eye.setAttribute('aria-label', on ? t('detail.hideField', { label }, '{label}を隠す') : t('detail.showField', { label }, '{label}を表示'));
+    eye.title = on ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示');
+    eye.replaceChildren(icon(on ? 'eyeOff' : 'eye', 14));
+    onToggle?.(on);
+  };
+  let on = false;
+  eye.addEventListener('click', () => { on = !on; set(on); });
+  set(false);
+  return { eye, show: () => { on = true; set(true); } };
+}
+
+/** The title a templated item gets when the title field is left empty (never from a secret, except a card's last 4). */
+function derivedTitle() {
+  if (!E?.templated) return '';
+  const v = (k) => String(E.fields.get(k)?.read() ?? '').trim();
+  switch (E.type) {
+    case 'card': {
+      const n = digitsOnly(v('number'));
+      return [cardBrand(n), n.length >= 4 ? '•••• ' + n.slice(-4) : ''].filter(Boolean).join(' ') || v('cardholder');
+    }
+    case 'identity': return v('fullName') || personName(v('firstName'), v('middleName'), v('lastName'));
+    case 'softwareLicense': return v('product');
+    case 'apiCredential': case 'server': case 'sshKey': return v('host');
+    case 'database': return v('database') || v('host');
+    case 'wifi': return v('ssid');
+    case 'bankAccount': return v('bankName');
+    case 'cryptoWallet': return v('network');
+    case 'medicalRecord': return v('patientName') || v('provider');
+    case 'membership': return v('organization');
+    case 'rewardProgram': return v('company');
+    default: return '';
+  }
 }
 
 function updateHead() {
-  const t = E.els.title.value.trim() || E.original?.title || '';
+  const typed = E.els.title.value.trim();
+  const auto = derivedTitle();
+  if (E.templated) E.els.title.placeholder = auto || t('editor.titleAuto', { type: typeLabel(E.type) }, '空欄なら「{type}」');
+  const tt = typed || E.original?.title || auto;
   const tile = E.els.tile;
-  tile.textContent = letterOf(t || (E.type === 'note' ? 'N' : '?'));
-  tile.style.setProperty('--h', String(Number.isFinite(E.original?.hue) ? E.original.hue : hueOf({ title: t })));
+  tile.textContent = letterOf(tt || (E.type === 'note' ? 'N' : '?'));
+  tile.style.setProperty('--h', String(Number.isFinite(E.original?.hue) ? E.original.hue : hueOf({ title: tt })));
 }
 
 function updateMeter() {
@@ -170,6 +225,249 @@ async function scanQr(btn) {
   }
 }
 
+/* ───────── template fields ───────── */
+
+const FORMAT_ERR = {
+  date: () => t('editor.err.date', null, '日付は YYYY-MM-DD の形式で入力してください'),
+  month: () => t('editor.err.month', null, 'MM/YYYY（または MM/YY）の形式で入力してください'),
+  number: () => t('editor.err.number', null, '数字で入力してください'),
+  url: () => t('editor.err.url', null, 'http(s) の URL を入力してください'),
+  email: () => t('editor.err.email', null, 'メールアドレスの形式を確認してください'),
+  tel: () => t('editor.err.tel', null, '電話番号は数字と + ( ) - で入力してください'),
+  card: () => t('editor.err.card', null, 'カード番号は 8〜19 桁の数字で入力してください'),
+};
+const PLACEHOLDER = { date: 'YYYY-MM-DD', month: 'MM/YYYY', url: 'https://', email: 'name@example.com' };
+// the service worker's rule for kind 'tel' (lib/vault.js), checked here to point at the field
+const TEL_RE = /^\+?[\p{Nd}\s()\-./#*,;‐–—－ー（）＋]+(?:\s*(?:ext\.?|x|内線)\s*\p{Nd}+)?$/iu;
+
+/** Select kind → chips like the vault chooser (click the chosen one again to clear it). */
+function selectField(fd, raw) {
+  const label = fieldLabel(E.type, fd.key);
+  let cur = fd.options.some((o) => o.id === raw) ? raw : ''; // stored values are option ids
+  let touched = false;
+  const group = h('div', { class: 'vault-pick opt-pick', role: 'radiogroup', 'aria-label': label, id: 'edF-' + fd.key });
+  const opts = fd.options.map((o) => ({ id: o.id, text: optionLabel(E.type, fd.key, o.id) }));
+  const paint = () => group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.opt === cur)));
+  for (const o of opts) {
+    group.append(h('button', {
+      class: 'vault-chip', type: 'button', role: 'radio', dataset: { opt: o.id },
+      onclick: () => { cur = cur === o.id ? '' : o.id; touched = true; markDirty(); paint(); },
+    }, o.text));
+  }
+  paint();
+  const row = h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, label), h('div', { class: 'ed-ctl' }, group));
+  return { row, read: () => cur, validate: () => ({ value: touched ? cur : str(raw) }), focusEl: group };
+}
+
+/** One template field: the input that fits its kind, a reader and a validator (→ stored value). */
+function templateField(fd, raw) {
+  if (fd.kind === 'select') return selectField(fd, raw);
+  const key = fd.key;
+  const errKey = 'f:' + key;
+  const id = 'edF-' + key;
+  const label = fieldLabel(E.type, key);
+  const secret = isSecretKind(fd.kind);
+  const card = fd.format === 'card';
+  const multi = fd.kind === 'multiline' || fd.kind === 'secret-multiline';
+  const max = multi ? LIMITS.multilineValue : LIMITS.fieldValue;
+  const stored = str(raw);
+  let shown = stored;
+  if (fd.kind === 'month') shown = formatIsoDate(stored, 'month', { fullYear: true });
+  else if (card) shown = groupDigits(stored) || stored;
+
+  let input;
+  if (multi) {
+    input = h('textarea', { id, rows: fd.kind === 'secret-multiline' ? 4 : 3, spellcheck: 'false', maxlength: max, class: secret ? 'masked' : '' });
+  } else {
+    input = h('input', {
+      id, type: secret ? 'password' : 'text', autocomplete: secret ? 'new-password' : 'off', spellcheck: 'false', maxlength: max,
+      placeholder: PLACEHOLDER[fd.kind] || '',
+      inputmode: card || fd.kind === 'number' || key === 'cvv' ? 'numeric' : fd.kind === 'email' ? 'email' : fd.kind === 'tel' ? 'tel' : null,
+    });
+  }
+  input.value = shown;
+  // a field the user never typed in is saved exactly as stored (no reformatting, no re-validation)
+  let touched = false;
+  input.addEventListener('input', () => { touched = true; setErr(errKey, ''); });
+
+  const extra = [];
+  if (card) {
+    const brand = h('span', { class: 'tag ed-brand' });
+    const paintBrand = () => { brand.textContent = cardBrand(input.value); brand.hidden = !brand.textContent; };
+    input.addEventListener('input', paintBrand);
+    paintBrand();
+    extra.push(brand);
+  }
+  let reveal = null;
+  if (secret) {
+    reveal = revealButton(input, label);
+    extra.push(reveal.eye);
+  }
+  if (GEN_FIELDS[E.type] === key) {
+    const mine = E;
+    const genLabel = t('editor.generate', null, 'パスワード生成');
+    const gen = h('button', { class: 'ibtn', type: 'button', title: genLabel, 'aria-label': genLabel }, icon('regen', 14));
+    gen.addEventListener('click', () => emit('openGen', {
+      source: 'editor',
+      title: E.els.title.value.trim() || derivedTitle() || typeLabel(E.type),
+      onUse: (pw) => {
+        if (E !== mine) return;
+        input.value = pw;
+        touched = true;
+        reveal?.show();
+        markDirty();
+        setErr(errKey, '');
+      },
+    }));
+    extra.push(gen);
+  }
+
+  // tidy typed dates / months / card numbers when leaving the field
+  if (fd.kind === 'date' || fd.kind === 'month' || card) {
+    input.addEventListener('blur', () => {
+      if (!E || !touched) return;
+      if (fd.kind === 'date') { const v = parseDateInput(input.value); if (v) input.value = v; }
+      else if (fd.kind === 'month') { const v = parseMonthInput(input.value); if (v) input.value = formatIsoDate(v, 'month', { fullYear: true }); }
+      else if (/^[\d\s-]+$/.test(input.value.normalize('NFKC'))) input.value = groupDigits(input.value);
+    });
+  }
+
+  const validate = () => {
+    if (!touched) return { value: stored };
+    const v = input.value;
+    if (fd.kind === 'date') { const d = parseDateInput(v); return d == null ? { error: FORMAT_ERR.date() } : { value: d }; }
+    if (fd.kind === 'month') { const d = parseMonthInput(v); return d == null ? { error: FORMAT_ERR.month() } : { value: d }; }
+    if (card) {
+      const s = v.normalize('NFKC').trim();
+      if (!s) return { value: '' };
+      const d = digitsOnly(s);
+      return /^[\d\s-]+$/.test(s) && d.length >= 8 && d.length <= 19 ? { value: d } : { error: FORMAT_ERR.card() };
+    }
+    // secrets and multiline values keep their whitespace (an SSH key keeps its final newline)
+    if (secret || multi) return { value: v.replace(/\r\n?/g, '\n') };
+    const s = v.trim();
+    if (!s) return { value: '' };
+    if (fd.kind === 'number') {
+      const d = s.normalize('NFKC');
+      return /^\d+$/.test(d) ? { value: d } : { error: FORMAT_ERR.number() };
+    }
+    if (fd.kind === 'url') {
+      const u = withScheme(s);
+      return safeHttpUrl(u) ? { value: u } : { error: FORMAT_ERR.url() };
+    }
+    if (fd.kind === 'email' && !/^[^\s@]+@[^\s@]+$/.test(s)) return { error: FORMAT_ERR.email() };
+    if (fd.kind === 'tel' && (!TEL_RE.test(s) || !/\p{Nd}/u.test(s))) return { error: FORMAT_ERR.tel() };
+    return { value: s };
+  };
+
+  const mono = secret || multi || card || ['number', 'date', 'month', 'tel'].includes(fd.kind);
+  const row = inputField(errKey, label, input, extra, [], { mono });
+  return { row, read: () => input.value, validate, focusEl: input };
+}
+
+const str = (v) => (v == null ? '' : String(v));
+
+/* ───────── 追加の項目 (extra fields) ───────── */
+
+let extraSeq = 0;
+
+function extraRow(x = {}) {
+  const uid = ++extraSeq;
+  const errKey = 'x:' + uid;
+  const labelIn = h('input', {
+    class: 'ex-label', type: 'text', maxlength: LIMITS.extraLabel, autocomplete: 'off', spellcheck: 'false',
+    placeholder: t('editor.extraLabel', null, '項目名'), 'aria-label': t('editor.extraLabel', null, '項目名'),
+  });
+  labelIn.value = str(x.label);
+  const value = h('textarea', {
+    class: 'ex-value', rows: 1, maxlength: LIMITS.extraValue, spellcheck: 'false', placeholder: t('editor.extraValue', null, '値'),
+  });
+  value.value = str(x.value);
+  const nameValue = () => t('editor.extraValueOf', { label: labelIn.value.trim() || t('editor.extraLabel', null, '項目名') }, '{label} の値');
+  value.setAttribute('aria-label', nameValue());
+  labelIn.addEventListener('input', () => { value.setAttribute('aria-label', nameValue()); setErr(errKey, ''); });
+  const grow = () => {
+    value.style.height = 'auto';
+    value.style.height = Math.min(value.scrollHeight, 120) + 'px';
+  };
+  value.addEventListener('input', grow);
+
+  // rows the user adds or edits must have a name; untouched stored rows are kept as they are
+  const entry = { uid, labelIn, value, secret: !!x.secret, touched: !('value' in x) };
+  for (const el of [labelIn, value]) el.addEventListener('input', () => { entry.touched = true; });
+  const { eye } = revealButton(value, labelIn.value.trim() || t('editor.extraValue', null, '値'));
+  const tgl = h('button', {
+    class: 'tgl ex-secret', type: 'button', role: 'switch', 'aria-checked': String(entry.secret),
+    title: t('editor.extraSecretHint', null, '秘密にすると伏せて表示し、コピー後にクリップボードから消去します'),
+  }, h('span', { class: 'tgl-mark', 'aria-hidden': 'true' }), t('editor.extraSecret', null, '秘密'));
+  const paintSecret = () => {
+    tgl.setAttribute('aria-checked', String(entry.secret));
+    eye.hidden = !entry.secret;
+    if (!entry.secret) value.classList.remove('masked');
+    else if (eye.getAttribute('aria-pressed') !== 'true') value.classList.add('masked');
+  };
+  tgl.addEventListener('click', () => { entry.secret = !entry.secret; markDirty(); paintSecret(); });
+  paintSecret();
+  const remove = h('button', {
+    class: 'ibtn', type: 'button', title: t('editor.extraRemove', null, '項目を削除'), 'aria-label': t('editor.extraRemove', null, '項目を削除'),
+  }, icon('x', 11, 3));
+  const err = h('div', { class: 'field-err', role: 'alert' });
+  E.errs[errKey] = err;
+  entry.row = h('div', { class: 'ed-row ex-row', dataset: { x: String(uid) } },
+    h('div', { class: 'ex-name' }, labelIn),
+    h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, value, eye, tgl, remove), err));
+  remove.addEventListener('click', () => {
+    const i = E.extras.indexOf(entry);
+    E.extras.splice(i, 1);
+    entry.row.remove();
+    delete E.errs[errKey];
+    markDirty();
+    paintExtras();
+    const next = E.extras[i] || E.extras[i - 1];
+    (next ? next.labelIn : E.els.extraAdd).focus();
+  });
+  entry.errKey = errKey;
+  setTimeout(grow, 0);
+  return entry;
+}
+
+function paintExtras() {
+  E.els.extraCount.textContent = E.extras.length ? String(E.extras.length) : '';
+  E.els.extraAdd.disabled = E.extras.length >= LIMITS.extraCount;
+}
+
+function extrasBox(list) {
+  const count = h('span', { class: 'ex-count' });
+  const add = h('button', { class: 'btn-line btn-sm', type: 'button' }, icon('plus', 11, 2.6), t('editor.extraAdd', null, '項目を追加'));
+  E.els.extraCount = count;
+  E.els.extraAdd = add;
+  const rows = h('div', { class: 'ex-rows' });
+  E.extras = [];
+  for (const x of list) {
+    const entry = extraRow(x);
+    E.extras.push(entry);
+    rows.append(entry.row);
+  }
+  add.addEventListener('click', () => {
+    if (E.extras.length >= LIMITS.extraCount) return;
+    const entry = extraRow();
+    E.extras.push(entry);
+    rows.append(entry.row);
+    markDirty();
+    paintExtras();
+    entry.labelIn.focus();
+    rise(rows, `[data-x="${entry.uid}"]`);
+  });
+  paintExtras();
+  return h('div', { class: 'box ex-box', dataset: { f: '' } },
+    h('div', { class: 'ed-row ex-head' },
+      h('div', { class: 'ed-label' }, t('editor.extra', null, '追加の項目'), ' ', count),
+      h('div', { class: 'ex-tools' }, add)),
+    rows);
+}
+
+/* ───────── vault, head, foot ───────── */
+
 function vaultPicker() {
   const group = h('div', { class: 'vault-pick', role: 'radiogroup', 'aria-label': '保管庫' });
   const render = () => {
@@ -190,7 +488,7 @@ function vaultPicker() {
 function kindLabel() {
   const v = S.vaults.find((x) => x.id === E.vault);
   return [h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
-    h('span', null, E.type === 'note' ? 'セキュアノート' : 'ログイン')];
+    h('span', null, typeLabel(E.type))];
 }
 
 function footIdle() {
@@ -253,30 +551,63 @@ export function requestClose(then) {
   footConfirm('変更を破棄しますか？', '破棄する', done, '編集を続ける');
 }
 
+/* ───────── save ───────── */
+
+function collectExtras(bad) {
+  const out = [];
+  for (const x of E.extras) {
+    const label = x.labelIn.value.trim();
+    const value = x.value.value.replace(/\r\n?/g, '\n');
+    if (!label && !value.trim()) continue;
+    if (!label && x.touched) { bad(x.errKey, t('editor.err.extraLabel', null, '項目名を入力してください'), x.labelIn); continue; }
+    out.push({ label, value, secret: !!x.secret });
+  }
+  return out;
+}
+
 function collect() {
   const els = E.els;
-  let firstBad = null;
-  const bad = (key, msg, el) => { setErr(key, msg); if (!firstBad) firstBad = el; };
+  const problems = [];
+  const bad = (key, msg, el) => { setErr(key, msg); problems.push(el); };
   Object.keys(E.errs).forEach((k) => setErr(k, ''));
   const title = els.title.value.trim();
   const note = els.note.value.replace(/\s+$/, '');
-  if (E.type === 'note') {
+  const extra = collectExtras(bad);
+  // the first problem in reading order gets the focus
+  const firstBad = () => problems.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))[0];
+
+  if (E.type === 'note' || (!E.templated && E.type !== 'login')) {
     if (!title) bad('title', 'タイトルを入力してください', els.title);
-    if (firstBad) return { firstBad };
-    return { value: { title, note, vault: E.vault, fav: E.fav } };
+    if (problems.length) return { firstBad: firstBad() };
+    return { value: { title, note, vault: E.vault, fav: E.fav, extra } };
   }
+
+  if (E.templated) {
+    const fields = {};
+    let filled = false;
+    for (const [key, f] of E.fields) {
+      const r = f.validate();
+      if (String(f.read() ?? '').trim()) filled = true;
+      if (r.error) bad('f:' + key, r.error, f.focusEl);
+      else fields[key] = r.value;
+    }
+    let finalTitle = title || derivedTitle();
+    if (!finalTitle && (filled || note || extra.length)) finalTitle = typeLabel(E.type);
+    if (!finalTitle) bad('title', t('editor.err.empty', null, 'タイトルか項目を入力してください'), els.title);
+    if (problems.length) return { firstBad: firstBad() };
+    return { value: { title: finalTitle, fields, note, vault: E.vault, fav: E.fav, extra } };
+  }
+
   const url = withScheme(els.url.value); // "localhost:3000" → "https://localhost:3000"
   if (url && !safeHttpUrl(url)) bad('url', 'http(s) の URL を入力してください', els.url);
   const finalTitle = title || (url && safeHttpUrl(url) ? siteOf(url) : '');
   if (!finalTitle) bad('title', 'タイトルかウェブサイトを入力してください', els.title);
-  if (!E.totp && els.totpInput?.value.trim() && !els.tryTotp(false)) {
-    if (!firstBad) firstBad = els.totpInput;
-  }
-  if (firstBad) return { firstBad };
+  if (!E.totp && els.totpInput?.value.trim() && !els.tryTotp(false)) problems.push(els.totpInput);
+  if (problems.length) return { firstBad: firstBad() };
   return {
     value: {
       title: finalTitle, url, username: els.username.value.trim(), password: els.password.value,
-      totp: E.totp || null, note, vault: E.vault, fav: E.fav,
+      totp: E.totp || null, note, vault: E.vault, fav: E.fav, extra,
     },
   };
 }
@@ -287,7 +618,7 @@ async function save(e) {
   const r = collect();
   if (r.firstBad) {
     shake(r.firstBad.closest('.ed-row') || r.firstBad);
-    r.firstBad.focus();
+    (r.firstBad.matches('[role="radiogroup"]') ? r.firstBad.querySelector('button') : r.firstBad).focus();
     return;
   }
   const mine = E;
@@ -311,19 +642,23 @@ async function save(e) {
   }
 }
 
+/* ───────── open / close ───────── */
+
 /**
- * openEditor({ id }) edits an item; openEditor({ type: 'login'|'note', prefill: { url, title } }) creates one.
+ * openEditor({ id }) edits an item; openEditor({ type, prefill: { url, title } }) creates one.
+ * `type` is any id from shared/item-types.js (login when unknown).
  */
 export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   closeEditor();
   const original = id ? itemById(id) : null;
-  const kind = original?.type === 'note' || (!original && type === 'note') ? 'note' : 'login';
+  const kind = original ? String(original.type || 'login') : (typeOf(type) ? type : 'login');
+  const templated = hasTemplate(kind);
   const src = original || prefill;
   E = {
-    original, type: kind, dirty: false, busy: false, reveal: false,
+    original, type: kind, templated, dirty: false, busy: false, reveal: false,
     vault: original?.vault || (S.vault !== 'all' ? S.vault : S.vaults[0]?.id || 'personal'),
     fav: !!original?.fav, totp: original?.totp?.secret ? { ...original.totp } : null,
-    els: {}, errs: {}, totpView: null,
+    els: {}, errs: {}, totpView: null, fields: new Map(), extras: [],
   };
   const els = E.els;
 
@@ -339,20 +674,18 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     fav.replaceChildren(icon('star', 14));
   });
   const heading = original
-    ? (kind === 'note' ? 'セキュアノートを編集' : 'ログインを編集')
-    : (kind === 'note' ? '新規セキュアノート' : '新規ログイン');
+    ? t('editor.edit', { type: typeLabel(kind) }, '{type}を編集')
+    : t('editor.new', { type: typeLabel(kind) }, '新規{type}');
 
-  els.title = h('input', { id: 'edTitle', type: 'text', value: src.title || '', placeholder: kind === 'note' ? '例: Wi-Fi のパスワード' : '例: github.com', autocomplete: 'off', maxlength: 200 });
+  const titlePh = kind === 'note' ? '例: Wi-Fi のパスワード' : kind === 'login' ? '例: github.com' : '';
+  els.title = h('input', { id: 'edTitle', type: 'text', value: src.title || '', placeholder: titlePh, autocomplete: 'off', maxlength: 200 });
   els.title.addEventListener('input', updateHead);
   els.note = h('textarea', { id: 'edNote', rows: kind === 'note' ? 7 : 3, placeholder: kind === 'note' ? 'ここに書いた内容は暗号化して保存されます' : '', spellcheck: 'false' });
   els.note.value = src.note || '';
+  const noteRow = h('div', { class: 'ed-row' }, h('label', { for: 'edNote' }, 'メモ'), h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, els.note)));
 
   const main = h('div', { class: 'box', dataset: { f: '' } }, inputField('title', 'タイトル', els.title));
-  const meta = h('div', { class: 'box', dataset: { f: '' } });
-  const scroll = h('div', { class: 'ed-scroll' },
-    h('div', { class: 'd-head ed-head', dataset: { f: '' } }, els.tile,
-      h('div', { class: 'd-titles' }, h('div', { class: 'ed-heading' }, heading), els.sub), fav),
-    main, meta);
+  const meta = h('div', { class: 'box', dataset: { f: '' } }, vaultPicker());
 
   if (kind === 'login') {
     els.url = h('input', { id: 'edUrl', type: 'text', value: src.url || '', placeholder: 'https://example.com/login', autocomplete: 'off', spellcheck: 'false' });
@@ -382,15 +715,32 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
       inputField('password', 'パスワード', els.password, [els.eye, gen], [els.meter]),
       h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, '認証コード'), h('div', { class: 'ed-ctl' }, els.totpBox, E.errs.totp)),
     );
+    meta.append(noteRow);
+  } else if (templated) {
+    for (const fd of typeOf(kind).fields) {
+      const f = templateField(fd, original?.fields?.[fd.key] ?? '');
+      E.fields.set(fd.key, f);
+      main.append(f.row);
+    }
+    meta.append(noteRow);
+  } else {
+    // secure note: the text belongs with the title
+    main.append(noteRow);
   }
-  meta.append(vaultPicker(),
-    h('div', { class: 'ed-row' }, h('label', { for: 'edNote' }, 'メモ'), h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, els.note))));
+
+  const scroll = h('div', { class: 'ed-scroll' },
+    h('div', { class: 'd-head ed-head', dataset: { f: '' } }, els.tile,
+      h('div', { class: 'd-titles' }, h('div', { class: 'ed-heading' }, heading), els.sub), fav),
+    main, extrasBox(Array.isArray(original?.extra) ? original.extra : []), meta);
 
   els.save = h('button', { class: 'btn-primary', type: 'submit' }, h('span', { class: 'go-label' }, '保存'), h('span', { class: 'spinner' }));
   els.foot = h('div', { class: 'ed-foot' });
-  const form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading }, scroll, els.foot);
+  const form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading, dataset: { type: kind } }, scroll, els.foot);
   form.addEventListener('submit', save);
-  form.addEventListener('input', markDirty);
+  form.addEventListener('input', () => {
+    markDirty();
+    if (E?.templated) updateHead();
+  });
 
   const host = $('editor');
   clear(host);
@@ -412,7 +762,7 @@ export function closeEditor() {
   E.totpView?.stop();
   E = null;
   const host = $('editor');
-  clear(host);
+  clear(host); // drops every typed value, revealed or not
   host.hidden = true;
   $('cardScroll').hidden = false;
 }

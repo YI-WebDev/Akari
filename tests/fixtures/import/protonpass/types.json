@@ -1,0 +1,1002 @@
+{
+  "version": "1.30.0",
+  "userId": "synthetic-user",
+  "encrypted": false,
+  "vaults": {
+    "share-types": {
+      "name": "種類",
+      "description": "",
+      "display": {
+        "color": 0,
+        "icon": 0
+      },
+      "items": [
+        {
+          "itemId": "types-0001",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "四郎の ID",
+              "note": "",
+              "itemUuid": "uuid-types-1"
+            },
+            "extraFields": [],
+            "type": "identity",
+            "content": {
+              "fullName": "鈴木 四郎",
+              "email": "shiro@example.jp",
+              "phoneNumber": "080-4444-5555",
+              "firstName": "四郎",
+              "middleName": "",
+              "lastName": "鈴木",
+              "birthdate": "1992-07-07",
+              "gender": "男性",
+              "extraPersonalDetails": [],
+              "organization": "",
+              "streetAddress": "栄 1-1",
+              "zipOrPostalCode": "460-0008",
+              "city": "名古屋市",
+              "stateOrProvince": "愛知県",
+              "countryOrRegion": "日本",
+              "floor": "5F",
+              "county": "",
+              "extraAddressDetails": [],
+              "socialSecurityNumber": "111-22-3333",
+              "passportNumber": "",
+              "licenseNumber": "",
+              "website": "https://shiro.example.jp",
+              "xHandle": "@shiro",
+              "secondPhoneNumber": "",
+              "linkedin": "",
+              "reddit": "",
+              "facebook": "",
+              "yahoo": "",
+              "instagram": "",
+              "extraContactDetails": [],
+              "company": "灯株式会社",
+              "jobTitle": "課長",
+              "personalWebsite": "",
+              "workPhoneNumber": "052-000-0000",
+              "workEmail": "",
+              "extraWorkDetails": [],
+              "extraSections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0002",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "ビルド用 SSH",
+              "note": "",
+              "itemUuid": "uuid-types-2"
+            },
+            "extraFields": [
+              {
+                "fieldName": "Username",
+                "type": "text",
+                "data": {
+                  "content": "builder"
+                }
+              },
+              {
+                "fieldName": "Host",
+                "type": "text",
+                "data": {
+                  "content": "ci.example.jp"
+                }
+              },
+              {
+                "fieldName": "メモ用シークレット",
+                "type": "hidden",
+                "data": {
+                  "content": "x-secret"
+                }
+              }
+            ],
+            "type": "sshKey",
+            "content": {
+              "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nPROTON\n-----END OPENSSH PRIVATE KEY-----",
+              "publicKey": "ssh-ed25519 AAAAproton",
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0003",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "リビングの Wi-Fi",
+              "note": "",
+              "itemUuid": "uuid-types-3"
+            },
+            "extraFields": [],
+            "type": "wifi",
+            "content": {
+              "ssid": "Akari-Living",
+              "password": "living-pass",
+              "security": 2,
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0004",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "古いルーター",
+              "note": "",
+              "itemUuid": "uuid-types-4"
+            },
+            "extraFields": [],
+            "type": "wifi",
+            "content": {
+              "ssid": "Old-Router",
+              "password": "old-pass",
+              "security": 0,
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0005",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "Stripe API",
+              "note": "",
+              "itemUuid": "uuid-types-5"
+            },
+            "extraFields": [
+              {
+                "fieldName": "API Key",
+                "type": "hidden",
+                "data": {
+                  "content": "pk_live_1"
+                }
+              },
+              {
+                "fieldName": "Secret",
+                "type": "hidden",
+                "data": {
+                  "content": "sk_live_2"
+                }
+              },
+              {
+                "fieldName": "Expiry Date",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2026-12-31"
+                }
+              },
+              {
+                "fieldName": "Permissions",
+                "type": "text",
+                "data": {
+                  "content": "read-only"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0006",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "翻訳 API",
+              "note": "",
+              "itemUuid": "uuid-types-6"
+            },
+            "extraFields": [
+              {
+                "fieldName": "APIキー",
+                "type": "hidden",
+                "data": {
+                  "content": "deepl-key-3"
+                }
+              },
+              {
+                "fieldName": "秘密",
+                "type": "hidden",
+                "data": {
+                  "content": ""
+                }
+              },
+              {
+                "fieldName": "有効期限",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": ""
+                }
+              },
+              {
+                "fieldName": "許可",
+                "type": "text",
+                "data": {
+                  "content": ""
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0007",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "社内 DB",
+              "note": "",
+              "itemUuid": "uuid-types-7"
+            },
+            "extraFields": [
+              {
+                "fieldName": "ホスト",
+                "type": "text",
+                "data": {
+                  "content": "pg.example.jp"
+                }
+              },
+              {
+                "fieldName": "ポート",
+                "type": "text",
+                "data": {
+                  "content": "5432"
+                }
+              },
+              {
+                "fieldName": "ユーザー名",
+                "type": "text",
+                "data": {
+                  "content": "admin"
+                }
+              },
+              {
+                "fieldName": "パスワード",
+                "type": "hidden",
+                "data": {
+                  "content": "pg-pass"
+                }
+              },
+              {
+                "fieldName": "データベース種類",
+                "type": "text",
+                "data": {
+                  "content": "PostgreSQL"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0008",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "Web server",
+              "note": "",
+              "itemUuid": "uuid-types-8"
+            },
+            "extraFields": [],
+            "type": "custom",
+            "content": {
+              "sections": [
+                {
+                  "sectionName": "Server",
+                  "sectionFields": [
+                    {
+                      "fieldName": "IP Address",
+                      "type": "text",
+                      "data": {
+                        "content": "203.0.113.10"
+                      }
+                    },
+                    {
+                      "fieldName": "Hostname",
+                      "type": "text",
+                      "data": {
+                        "content": "web.example.jp"
+                      }
+                    },
+                    {
+                      "fieldName": "Operating System",
+                      "type": "text",
+                      "data": {
+                        "content": "Ubuntu 24.04"
+                      }
+                    },
+                    {
+                      "fieldName": "Username",
+                      "type": "text",
+                      "data": {
+                        "content": "ubuntu"
+                      }
+                    },
+                    {
+                      "fieldName": "Password",
+                      "type": "hidden",
+                      "data": {
+                        "content": "web-pass"
+                      }
+                    },
+                    {
+                      "fieldName": "Admin Console Password",
+                      "type": "hidden",
+                      "data": {
+                        "content": "hunter2"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0009",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "Euro account",
+              "note": "",
+              "itemUuid": "uuid-types-9"
+            },
+            "extraFields": [
+              {
+                "fieldName": "Bank Name",
+                "type": "text",
+                "data": {
+                  "content": "Euro Bank"
+                }
+              },
+              {
+                "fieldName": "Account Number",
+                "type": "text",
+                "data": {
+                  "content": ""
+                }
+              },
+              {
+                "fieldName": "Routing Number",
+                "type": "text",
+                "data": {
+                  "content": ""
+                }
+              },
+              {
+                "fieldName": "Account Type",
+                "type": "text",
+                "data": {
+                  "content": "Checking"
+                }
+              },
+              {
+                "fieldName": "IBAN",
+                "type": "hidden",
+                "data": {
+                  "content": "DE89370400440532013000"
+                }
+              },
+              {
+                "fieldName": "SWIFT/BIC",
+                "type": "text",
+                "data": {
+                  "content": "EUROBANKXXX"
+                }
+              },
+              {
+                "fieldName": "Holder Name",
+                "type": "text",
+                "data": {
+                  "content": "Shiro Suzuki"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0010",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "イーサリアム",
+              "note": "",
+              "itemUuid": "uuid-types-10"
+            },
+            "extraFields": [
+              {
+                "fieldName": "ウォレット名",
+                "type": "text",
+                "data": {
+                  "content": "メインウォレット"
+                }
+              },
+              {
+                "fieldName": "メールアドレス",
+                "type": "text",
+                "data": {
+                  "content": "0x00000000000000000000000000000000000000AA"
+                }
+              },
+              {
+                "fieldName": "秘密鍵",
+                "type": "hidden",
+                "data": {
+                  "content": "0xprivkey"
+                }
+              },
+              {
+                "fieldName": "シードフレーズ",
+                "type": "hidden",
+                "data": {
+                  "content": "zoo zoo zoo wrong"
+                }
+              },
+              {
+                "fieldName": "ネットワーク",
+                "type": "text",
+                "data": {
+                  "content": "Ethereum"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0011",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "四郎のパスポート",
+              "note": "",
+              "itemUuid": "uuid-types-11"
+            },
+            "extraFields": [
+              {
+                "fieldName": "フルネーム",
+                "type": "text",
+                "data": {
+                  "content": "SUZUKI SHIRO"
+                }
+              },
+              {
+                "fieldName": "パスポート番号",
+                "type": "hidden",
+                "data": {
+                  "content": "TS9998887"
+                }
+              },
+              {
+                "fieldName": "国",
+                "type": "text",
+                "data": {
+                  "content": "日本"
+                }
+              },
+              {
+                "fieldName": "有効期限",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2033-08-31"
+                }
+              },
+              {
+                "fieldName": "生年月日",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "1992-07-07"
+                }
+              },
+              {
+                "fieldName": "発行機関",
+                "type": "text",
+                "data": {
+                  "content": "外務省"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0012",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "Driver license",
+              "note": "",
+              "itemUuid": "uuid-types-12"
+            },
+            "extraFields": [
+              {
+                "fieldName": "Full Name",
+                "type": "text",
+                "data": {
+                  "content": "Shiro Suzuki"
+                }
+              },
+              {
+                "fieldName": "License Number",
+                "type": "text",
+                "data": {
+                  "content": "D-55"
+                }
+              },
+              {
+                "fieldName": "Issuing State/Country",
+                "type": "text",
+                "data": {
+                  "content": "Aichi"
+                }
+              },
+              {
+                "fieldName": "Expiry Date",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2029-07-07"
+                }
+              },
+              {
+                "fieldName": "Date of Birth",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "1992-07-07"
+                }
+              },
+              {
+                "fieldName": "Class",
+                "type": "text",
+                "data": {
+                  "content": "B"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0013",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "かかりつけ医",
+              "note": "",
+              "itemUuid": "uuid-types-13"
+            },
+            "extraFields": [
+              {
+                "fieldName": "患者氏名",
+                "type": "text",
+                "data": {
+                  "content": "鈴木 四郎"
+                }
+              },
+              {
+                "fieldName": "レコード番号",
+                "type": "hidden",
+                "data": {
+                  "content": "MR-1"
+                }
+              },
+              {
+                "fieldName": "医療状況",
+                "type": "hidden",
+                "data": {
+                  "content": "花粉症"
+                }
+              },
+              {
+                "fieldName": "服用している薬",
+                "type": "hidden",
+                "data": {
+                  "content": "抗ヒスタミン薬"
+                }
+              },
+              {
+                "fieldName": "医者",
+                "type": "text",
+                "data": {
+                  "content": "高橋 医師"
+                }
+              },
+              {
+                "fieldName": "病院",
+                "type": "text",
+                "data": {
+                  "content": "あかり病院"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0014",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "Museum",
+              "note": "",
+              "itemUuid": "uuid-types-14"
+            },
+            "extraFields": [
+              {
+                "fieldName": "Organization Name",
+                "type": "text",
+                "data": {
+                  "content": "City Museum"
+                }
+              },
+              {
+                "fieldName": "Membership ID",
+                "type": "text",
+                "data": {
+                  "content": "M-123"
+                }
+              },
+              {
+                "fieldName": "Member Name",
+                "type": "text",
+                "data": {
+                  "content": "Shiro Suzuki"
+                }
+              },
+              {
+                "fieldName": "Expiry Date",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2027-03-31"
+                }
+              },
+              {
+                "fieldName": "Tier/Level",
+                "type": "text",
+                "data": {
+                  "content": "Gold"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0015",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "ポイントカード",
+              "note": "",
+              "itemUuid": "uuid-types-15"
+            },
+            "extraFields": [
+              {
+                "fieldName": "プログラム名",
+                "type": "text",
+                "data": {
+                  "content": "あかりポイント"
+                }
+              },
+              {
+                "fieldName": "メンバーID",
+                "type": "text",
+                "data": {
+                  "content": "P-777"
+                }
+              },
+              {
+                "fieldName": "ポイント残高",
+                "type": "text",
+                "data": {
+                  "content": "1200"
+                }
+              },
+              {
+                "fieldName": "有効期限",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2027-01-31"
+                }
+              },
+              {
+                "fieldName": "階級/ステータス",
+                "type": "text",
+                "data": {
+                  "content": "シルバー"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0016",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "SSN card",
+              "note": "",
+              "itemUuid": "uuid-types-16"
+            },
+            "extraFields": [
+              {
+                "fieldName": "Full Name",
+                "type": "text",
+                "data": {
+                  "content": "Shiro Suzuki"
+                }
+              },
+              {
+                "fieldName": "SSN",
+                "type": "hidden",
+                "data": {
+                  "content": "222-33-4444"
+                }
+              },
+              {
+                "fieldName": "Issuing Country",
+                "type": "text",
+                "data": {
+                  "content": "US"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0017",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "画像ソフト",
+              "note": "",
+              "itemUuid": "uuid-types-17"
+            },
+            "extraFields": [
+              {
+                "fieldName": "ライセンスキー",
+                "type": "hidden",
+                "data": {
+                  "content": "IMG-0001"
+                }
+              },
+              {
+                "fieldName": "製品",
+                "type": "text",
+                "data": {
+                  "content": "ImageEditor"
+                }
+              },
+              {
+                "fieldName": "有効期限",
+                "type": "timestamp",
+                "data": {
+                  "timestamp": "2025-12-31"
+                }
+              },
+              {
+                "fieldName": "所有者",
+                "type": "text",
+                "data": {
+                  "content": "鈴木 四郎"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0018",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "ロッカー",
+              "note": "自分で作った項目",
+              "itemUuid": "uuid-types-18"
+            },
+            "extraFields": [
+              {
+                "fieldName": "場所",
+                "type": "text",
+                "data": {
+                  "content": "駅の東口"
+                }
+              },
+              {
+                "fieldName": "暗証番号",
+                "type": "hidden",
+                "data": {
+                  "content": "7319"
+                }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": []
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        },
+        {
+          "itemId": "types-0019",
+          "shareId": "share-types",
+          "data": {
+            "metadata": {
+              "name": "買い物用エイリアス",
+              "note": "",
+              "itemUuid": "uuid-types-19"
+            },
+            "extraFields": [
+              {
+                "fieldName": "用途",
+                "type": "text",
+                "data": {
+                  "content": "通販"
+                }
+              }
+            ],
+            "type": "alias",
+            "content": {}
+          },
+          "state": 1,
+          "aliasEmail": "shop.shiro@passmail.net",
+          "contentFormatVersion": 6,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false
+        }
+      ]
+    }
+  }
+}

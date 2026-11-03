@@ -2,13 +2,19 @@
 // localhost) top frames. Every request is checked against the sender's origin,
 // then the user approves it in the consent window (src/passkey/passkey.html).
 //
-// User verification: the UV flag is set only when the user proved the master
-// password inside this request's consent window ('passkey/verify', which the
-// window also calls right after unlocking). 'required' without that proof is
-// refused until the window has re-prompted; 'preferred'/'discouraged' then get UV=0.
+// Sign-in (get) while Akari is unlocked is answered with the site's passkeys instead
+// of a window: webauthn-bridge.js shows them on a card in the page, and a trusted
+// click there asks for the assertion ('passkey/assert'). That is also how passkey
+// autofill (mediation 'conditional') is offered. Locked: a modal request opens the
+// consent window to unlock, a conditional one is left to the browser. Registration
+// (create) always uses the window. The master password is never asked for in a page.
 //
-// Known gap: mediation 'conditional' (passkey autofill UI) is not supported; it
-// is answered with FALLBACK so the browser's own conditional UI keeps working.
+// User verification: in the consent window the UV flag is set only when the user
+// proved the master password there ('passkey/verify', which the window also calls
+// right after unlocking). The window asks for it on 'required' and 'preferred';
+// 'required' without that proof is refused here, and an approval without it
+// ('discouraged') gets UV=0. A choice on the page card counts as verified because
+// it needs an unlocked vault, which itself took the master password.
 
 import { register, AkariError } from './router.js';
 import * as vaultService from './vault-service.js';
@@ -21,6 +27,8 @@ import { createCredential, getAssertion, buildClientDataJSON, COSE_ALG_ES256 } f
 // and by the consent window to prove the master password for this request.
 export const PASSKEY_CANCEL = 'passkey/cancel';
 export const PASSKEY_VERIFY = 'passkey/verify';
+// Sent by webauthn-bridge.js when the user picks a passkey on the page card.
+export const PASSKEY_ASSERT = 'passkey/assert';
 export const PORT_PREFIX = 'akari-passkey:';
 const WINDOW_PATH = 'src/passkey/passkey.html';
 
@@ -243,10 +251,27 @@ export function createPasskeyService({ chrome, vault }) {
   async function handleGet(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseGet(msg.options, origin), origin };
-    if (msg.mediation === 'conditional' || msg.mediation === 'silent') throw fail('FALLBACK', 'mediation not supported');
+    if (msg.mediation === 'silent') throw fail('FALLBACK', 'mediation not supported');
     const data = await readIfUnlocked();
-    if (data && passkeysFor(data, req.rpId, req.allow).length === 0) throw fail('FALLBACK', 'no passkey for this site');
+    if (data) {
+      const found = passkeysFor(data, req.rpId, req.allow);
+      if (!found.length) throw fail('FALLBACK', 'no passkey for this site');
+      touch();
+      return { inline: { rpId: req.rpId, candidates: candidatesOf(data, found) } };
+    }
+    // Locked: whether Akari holds a passkey for this site is unknown until it is unlocked.
+    if (msg.mediation === 'conditional') throw fail('FALLBACK', 'locked');
     return { credential: await startRequest('get', sender, msg, req) };
+  }
+
+  /** The user picked a passkey on the page card: sign the request the page made. */
+  async function handleAssert(msg, sender) {
+    const origin = callerOrigin(sender);
+    const req = { ...parseGet(msg.options, origin), origin };
+    if (typeof msg.credentialId !== 'string' || !msg.credentialId) throw fail('INVALID', 'credentialId required');
+    if (await vault.isLocked()) throw fail('LOCKED', 'unlock first');
+    touch();
+    return { credential: await approveGet({ req, verifiedAt: Date.now() }, msg.credentialId) };
   }
 
   function handleCancel(msg, sender) {
@@ -287,7 +312,14 @@ export function createPasskeyService({ chrome, vault }) {
         defaultVault: existing?.vault || vaults[0]?.id || null,
       };
     }
-    const candidates = passkeysFor(data, req.rpId, req.allow)
+    const candidates = candidatesOf(data, passkeysFor(data, req.rpId, req.allow));
+    return { ...base, locked: false, candidates, vaults, excluded: false, defaultVault: null };
+  }
+
+  /** What the consent window and the page card show for each passkey, most recently used first. */
+  function candidatesOf(data, found) {
+    const vaultName = new Map((data.vaults || []).map((v) => [v.id, v.name]));
+    return found
       .map(({ item, pk }) => ({
         credentialId: pk.credentialId,
         userName: pk.userName || '',
@@ -296,9 +328,9 @@ export function createPasskeyService({ chrome, vault }) {
         lastUsedAt: pk.lastUsedAt ?? null,
         itemTitle: item.title || '',
         vault: item.vault,
+        vaultName: vaultName.get(item.vault) || '',
       }))
       .sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0));
-    return { ...base, locked: false, candidates, vaults, excluded: false, defaultVault: null };
   }
 
   async function handleVerify(msg, sender) {
@@ -465,7 +497,7 @@ export function createPasskeyService({ chrome, vault }) {
     }
   });
 
-  return { handleCreate, handleGet, handleCancel, handleRequest, handleVerify, handleRespond, pending };
+  return { handleCreate, handleGet, handleAssert, handleCancel, handleRequest, handleVerify, handleRespond, pending };
 }
 
 const service = globalThis.chrome?.runtime?.id
@@ -475,6 +507,7 @@ const service = globalThis.chrome?.runtime?.id
 if (service) {
   register(MSG.PASSKEY_CREATE, service.handleCreate, { from: 'content' });
   register(MSG.PASSKEY_GET, service.handleGet, { from: 'content' });
+  register(PASSKEY_ASSERT, service.handleAssert, { from: 'content' });
   register(PASSKEY_CANCEL, service.handleCancel, { from: 'content' });
   register(MSG.PASSKEY_REQUEST, service.handleRequest, { from: 'extension' });
   register(PASSKEY_VERIFY, service.handleVerify, { from: 'extension' });

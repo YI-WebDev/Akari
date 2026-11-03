@@ -143,3 +143,68 @@ export function formatCode(code) {
   if (c.length === 8) return c.slice(0, 4) + ' ' + c.slice(4);
   return c;
 }
+
+/* ── item field values (shared/item-types.js kinds) ── */
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/**
+ * The one place that turns a stored ISO date ('YYYY-MM-DD', kind 'date') or month
+ * ('YYYY-MM', kind 'month' — card expiry) into display text, so a locale can change it.
+ * Months read MM/YY (as on a card); `fullYear` gives MM/YYYY, which the editor uses so a
+ * round trip never guesses the century. Anything that is not ISO is shown as stored.
+ */
+export function formatIsoDate(value, kind = 'date', { fullYear = false } = {}) {
+  const v = String(value || '');
+  let m;
+  if (kind === 'month' && (m = /^(\d{4})-(\d{2})$/.exec(v))) return `${m[2]}/${fullYear ? m[1] : m[1].slice(2)}`;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v))) return `${m[1]}/${m[2]}/${m[3]}`;
+  return v;
+}
+
+const nfkc = (s) => String(s ?? '').normalize('NFKC').trim();
+
+/** Typed date → 'YYYY-MM-DD', '' when empty, null when invalid. 2028-09-30 · 2028/9/30 · 2028年9月30日 · 20280930. */
+export function parseDateInput(s) {
+  const v = nfkc(s);
+  if (!v) return '';
+  const m = /^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?$/.exec(v) || /^(\d{4})(\d{2})(\d{2})$/.exec(v);
+  if (!m) return null;
+  const y = +m[1];
+  const mo = +m[2];
+  const d = +m[3];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (y < 1000 || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${pad2(mo)}-${pad2(d)}`;
+}
+
+/** Typed month → 'YYYY-MM', '' when empty, null when invalid. MM/YYYY · YYYY-MM, and MM/YY · MMYY as 20YY. */
+export function parseMonthInput(s) {
+  const v = nfkc(s);
+  if (!v) return '';
+  let m;
+  let y;
+  let mo;
+  if ((m = /^(\d{1,2})\s*[/-]\s*(\d{2}|\d{4})$/.exec(v))) { mo = +m[1]; y = m[2].length === 2 ? 2000 + +m[2] : +m[2]; }
+  else if ((m = /^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*月?$/.exec(v))) { y = +m[1]; mo = +m[2]; }
+  else if ((m = /^(\d{2})(\d{2})$/.exec(v))) { mo = +m[1]; y = 2000 + +m[2]; }
+  else return null;
+  if (mo < 1 || mo > 12 || y < 1000 || y > 9999) return null;
+  return `${y}-${pad2(mo)}`;
+}
+
+/** Days from today until a 'YYYY-MM-DD' date, or the last day of a 'YYYY-MM' month; null if not ISO. */
+export function daysUntil(value, now = Date.now()) {
+  const v = String(value || '');
+  let m;
+  let end;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v))) end = new Date(+m[1], +m[2] - 1, +m[3]);
+  else if ((m = /^(\d{4})-(\d{2})$/.exec(v))) end = new Date(+m[1], +m[2], 0);
+  else return null;
+  return Math.round((end.getTime() - startOfDay(now)) / DAY);
+}
+
+export const digitsOnly = (s) => nfkc(s).replace(/\D/g, '');
+
+/** "3566002020360505" → "3566 0020 2036 0505". */
+export const groupDigits = (s) => digitsOnly(s).replace(/(\d{4})(?=\d)/g, '$1 ');

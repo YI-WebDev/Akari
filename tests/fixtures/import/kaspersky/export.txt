@@ -1,0 +1,34 @@
+Websites
+
+Website name: Example
+Website URL: https://example.com
+Login name: Work
+Login: alice@example.com
+Password: pw:1
+Comment: first line
+second: line with colon
+---
+Website name: 日本語サイト
+Website URL: https://example.jp
+Login name:
+Login: 太郎
+Password: パスワード
+Comment:
+---
+
+Applications
+
+Application: Steam
+Login name: gamer
+Login:
+Password: steampw
+Comment:
+---
+
+Notes
+
+Name: Wifi
+Text: SSID: home
+Password: abc
+last line
+---

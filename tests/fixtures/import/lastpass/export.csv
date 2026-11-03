@@ -1,0 +1,16 @@
+url,username,password,totp,extra,name,grouping,fav
+https://github.com/login,alice,"pw,1",JBSWY3DPEHPK3PXP,"my notes
+second line",GitHub,Dev,1
+http://,bob,pw2,,,No URL,,0
+http://sn,,,,"NoteType:Credit Card
+Language:en-US
+Name On Card:Taro Yamada
+Type:Visa
+Number:4111111111111111
+Security Code:123
+Start Date:January,2020
+Expiration Date:December,2030
+Notes:Primary card
+Do not share: really",My Visa,Finance,0
+http://sn,,,,Just a plain note,Plain note,(none),1
+https://steam.example,gamer,pw3,steam://ABCDEFGH,,Steam,(none),0

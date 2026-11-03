@@ -1,0 +1,5 @@
+type,number,name,issue_date,expiration_date,place_of_issue,state
+license,301234567890,山田 花子,2021-3-5,2026-4-5,東京都公安委員会,東京都
+social_security,123-45-6789,Hanako Yamada,,,,
+card,AB1234567,山田 花子,2019-10-1,2029-10-1,千代田区,
+tax_number,98765,山田 花子,,,,

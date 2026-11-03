@@ -1,0 +1,3 @@
+Item Name,Web Site,User Name,E-mail,Pass,Comments,2FA,Favorite
+GitHub,https://github.com,alice,alice@example.com,"pw ""1""","note, with comma",JBSWY3DPEHPK3PXP,yes
+Only email,https://mail.example,,bob@example.com,pw2,,,0

@@ -1,0 +1,1 @@
+{"folders":[],"items":[{"uuid":"u1","title":"GitHub","category":"login","favorite":0,"fields":[{"label":"Username","type":"username","value":"alice","sensitive":0},{"label":"Password","type":"password","value":"pw","sensitive":1}]}]}

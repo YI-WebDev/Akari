@@ -1,0 +1,224 @@
+{
+  "accounts": [
+    {
+      "attrs": {
+        "accountName": "テスト",
+        "name": "山田 太郎",
+        "avatar": "",
+        "email": "taro@example.jp",
+        "uuid": "ACCOUNTUUID0000000000000001",
+        "domain": "https://my.1password.com/"
+      },
+      "vaults": [
+        {
+          "attrs": { "uuid": "VAULTUUID000000000000000001", "desc": "", "avatar": "", "name": "個人", "type": "P" },
+          "items": [
+            {
+              "uuid": "ITEM00000000000000000000001",
+              "favIndex": 1,
+              "createdAt": 1700000000,
+              "updatedAt": 1710000000,
+              "state": "active",
+              "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  { "value": "hanako@example.jp", "id": "", "name": "email", "fieldType": "E", "designation": "username" },
+                  { "value": "Momiji#2023", "id": "", "name": "password", "fieldType": "P", "designation": "password" },
+                  { "value": "✓", "id": "", "name": "remember", "fieldType": "C", "designation": "" }
+                ],
+                "notesPlain": "家族共有のアカウント。",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "add more",
+                    "fields": [
+                      {
+                        "title": "ワンタイムパスワード",
+                        "id": "TOTP_ABCDEF",
+                        "value": { "totp": "otpauth://totp/Shop:hanako?secret=GEZDGNBVGY3TQOJQ&issuer=Shop&digits=8" },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "秘密の質問の答え",
+                        "id": "q1",
+                        "value": { "concealed": "ポチ" },
+                        "indexAtSource": 1,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "subtitle": "hanako@example.jp",
+                "urls": [
+                  { "label": "", "url": "https://shop.example.jp/login" },
+                  { "label": "アプリ", "url": "https://app.shop.example.jp" }
+                ],
+                "title": "通販サイト",
+                "url": "https://shop.example.jp/login",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false,
+                "tags": ["買い物", "家族"]
+              }
+            },
+            {
+              "uuid": "ITEM00000000000000000000002",
+              "favIndex": 0,
+              "createdAt": 1690000000,
+              "updatedAt": 1690000500,
+              "state": "active",
+              "categoryUuid": "003",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "冷蔵庫の型番: NR-F1234\n購入日: 2023 年 7 月",
+                "sections": [],
+                "passwordHistory": []
+              },
+              "overview": { "subtitle": "", "title": "家電メモ", "ps": 0, "pbe": 0, "pgrng": false }
+            },
+            {
+              "uuid": "ITEM00000000000000000000003",
+              "favIndex": 0,
+              "createdAt": 1680000000,
+              "updatedAt": 1680000000,
+              "state": "active",
+              "categoryUuid": "002",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "ETC カード付き",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      { "title": "カード名義", "id": "cardholder", "value": { "string": "HANAKO YAMADA" } },
+                      { "title": "種類", "id": "type", "value": { "creditCardType": "mc" } },
+                      { "title": "番号", "id": "ccnum", "value": { "creditCardNumber": "5555555555554444" } },
+                      { "title": "セキュリティコード", "id": "cvv", "value": { "concealed": "321" } },
+                      { "title": "有効期限", "id": "expiry", "value": { "monthYear": 202812 } },
+                      { "title": "発行日", "id": "validFrom", "value": { "monthYear": null } }
+                    ]
+                  },
+                  {
+                    "title": "連絡先",
+                    "name": "contactInfo",
+                    "fields": [
+                      { "title": "電話", "id": "phoneLocal", "value": { "phone": "0120-000-000" } },
+                      { "title": "住所", "id": "address", "value": { "address": { "street": "丸の内 1-1", "city": "千代田区", "country": "jp", "zip": "100-0005", "state": "東京都" } } }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": { "subtitle": "5555 ****", "title": "マスターカード", "ps": 0, "pbe": 0, "pgrng": false }
+            },
+            {
+              "uuid": "ITEM00000000000000000000004",
+              "favIndex": 0,
+              "createdAt": 1600000000,
+              "updatedAt": 1650000000,
+              "state": "active",
+              "trashed": true,
+              "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  { "value": "old", "id": "", "name": "username", "fieldType": "T", "designation": "username" },
+                  { "value": "old", "id": "", "name": "password", "fieldType": "P", "designation": "password" }
+                ],
+                "sections": []
+              },
+              "overview": { "title": "ゴミ箱のログイン", "url": "https://old.example.com" }
+            },
+            {
+              "uuid": "ITEM00000000000000000000005",
+              "favIndex": 2,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "archived",
+              "categoryUuid": "005",
+              "details": { "loginFields": [], "password": "router-admin-pass", "sections": [] },
+              "overview": { "title": "ルーター管理画面" }
+            },
+            {
+              "uuid": "ITEM00000000000000000000006",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "109",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      { "title": "ネットワーク名", "id": "network_name", "value": { "string": "Akari-Home-5G" } },
+                      { "title": "Wi-Fi パスワード", "id": "wireless_password", "value": { "concealed": "wifi-secret-123" } },
+                      { "title": "セキュリティ", "id": "wireless_security", "value": { "menu": "wpa2p" } }
+                    ]
+                  }
+                ]
+              },
+              "overview": { "title": "自宅の Wi-Fi" }
+            },
+            {
+              "uuid": "ITEM00000000000000000000007",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "006",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "スキャンした保険証",
+                "sections": [],
+                "documentAttributes": { "fileName": "保険証.pdf", "documentId": "DOC0001", "decryptedSize": 1024 }
+              },
+              "overview": { "title": "保険証" }
+            }
+          ]
+        },
+        {
+          "attrs": { "uuid": "VAULTUUID000000000000000002", "desc": "", "avatar": "", "name": "仕事", "type": "U" },
+          "items": [
+            {
+              "uuid": "ITEM00000000000000000000008",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  { "value": "dev", "id": "", "name": "username", "fieldType": "T", "designation": "username" },
+                  { "value": "dev-pass", "id": "", "name": "password", "fieldType": "P", "designation": "password" }
+                ],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      { "title": "one-time password", "id": "TOTP_2", "value": { "totp": "JBSW Y3DP EHPK 3PXP" } }
+                    ]
+                  }
+                ]
+              },
+              "overview": { "title": "GitLab", "url": "gitlab.example.com" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

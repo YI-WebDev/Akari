@@ -4,6 +4,8 @@
 import { send } from '../shared/api.js';
 import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { estimateStrength } from '../lib/strength.js';
+import { typeOf, searchTextOf } from '../shared/item-types.js';
+import { t } from '../shared/i18n.js';
 import { groupIndex, normQuery, normMap } from './views/format.js';
 import { toast, toastError } from './views/toast.js';
 
@@ -15,6 +17,7 @@ export const S = {
   items: [],
   vault: 'all',
   filter: 'all', // all | recent | fav
+  type: 'all', // all | an item type id (shared/item-types.js)
   sort: 'recent', // recent | az
   query: '',
   sel: null,
@@ -27,10 +30,11 @@ try {
   if (['all', 'recent', 'fav'].includes(saved.filter)) S.filter = saved.filter;
   if (['recent', 'az'].includes(saved.sort)) S.sort = saved.sort;
   if (typeof saved.vault === 'string') S.vault = saved.vault;
+  if (typeof saved.type === 'string' && typeOf(saved.type)) S.type = saved.type;
 } catch { /* ignore */ }
 
 export function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ filter: S.filter, sort: S.sort, vault: S.vault })); } catch { /* ignore */ }
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ filter: S.filter, sort: S.sort, vault: S.vault, type: S.type })); } catch { /* ignore */ }
 }
 
 /* ── event bus ── */
@@ -50,7 +54,9 @@ export const liveToken = () => S.epoch;
 export const live = (token) => S.phase === 'main' && S.epoch === token;
 
 // Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
-const WRITES = new Set([MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_CHANGE_PASSWORD]);
+const WRITES = new Set([
+  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+]);
 let writing = 0;
 
 /** send() that routes LOCKED errors to the lock screen. */
@@ -100,16 +106,17 @@ export function setItems(items) {
 export function recomputeReuse() {
   reuse = new Map();
   for (const it of S.items) {
-    if (it.type === 'note' || !it.password) continue;
+    if (it.type !== 'login' || !it.password) continue;
     reuse.set(it.password, (reuse.get(it.password) || 0) + 1);
   }
 }
 
 /** How many *other* items share this item's password. */
-export const reuseOf = (it) => (it?.password ? Math.max(0, (reuse.get(it.password) || 0) - 1) : 0);
+export const reuseOf = (it) => (it?.type === 'login' && it.password ? Math.max(0, (reuse.get(it.password) || 0) - 1) : 0);
 
+/** Weak / reused password warnings are for logins only. */
 export function isWeak(it) {
-  if (!it || it.type === 'note' || !it.password) return false;
+  if (!it || it.type !== 'login' || !it.password) return false;
   return strengthOf(it.password).level <= 1 || reuseOf(it) > 0;
 }
 
@@ -157,11 +164,16 @@ export function inVault(it) {
   return S.vault === 'all' || it.vault === S.vault;
 }
 
+export const inType = (it) => S.type === 'all' || it.type === S.type;
+
+/** Title plus the item's non-secret text (searchTextOf never contains secret values). */
+export const matchesQuery = (it, q) => !q || normOf(it.title).norm.includes(q) || normOf(searchTextOf(it)).norm.includes(q);
+
 export function visibleItems(now = Date.now()) {
   const q = searchQuery();
-  const v = S.items.filter((i) => inVault(i)
+  const v = S.items.filter((i) => inVault(i) && inType(i)
     && (S.filter === 'all' || (S.filter === 'recent' && groupIndex(i.lastUsedAt, now) <= 1) || (S.filter === 'fav' && i.fav))
-    && (!q || normOf(i.title).norm.includes(q) || (i.type !== 'note' && normOf(i.username).norm.includes(q))));
+    && matchesQuery(i, q));
   if (S.sort === 'az') return v.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ja'));
   return v.sort((a, b) => {
     const ga = groupIndex(a.lastUsedAt, now);
@@ -201,7 +213,11 @@ export function mergeSaved(saved, prev) {
 /* ── clipboard ── */
 const COPY_LABEL = { user: 'ユーザー名', pass: 'パスワード', totp: '認証コード', gen: '生成したパスワード' };
 
-export async function copyText(field, value) {
+/**
+ * Copy and, for secrets, schedule the clipboard clear. `field` is one of COPY_LABEL's keys,
+ * or any field with { label, secret } given (item fields and extra fields).
+ */
+export async function copyText(field, value, { label = null, secret = null } = {}) {
   try {
     await navigator.clipboard.writeText(value);
   } catch {
@@ -209,7 +225,8 @@ export async function copyText(field, value) {
     return false;
   }
   const secs = Number(S.settings.clipboardClearSeconds) || 0;
-  const sensitive = field !== 'user';
+  const sensitive = secret ?? field !== 'user';
+  const done = label != null ? t('copy.done', { label }, '{label}をコピーしました') : COPY_LABEL[field] + 'をコピーしました';
   let sub = null;
   if (sensitive && secs > 0) {
     try {
@@ -217,10 +234,10 @@ export async function copyText(field, value) {
       sub = `${secs}秒後にクリップボードから自動で消去します`;
     } catch {
       // copied, but nothing will clear it — say so instead of promising
-      toastError(COPY_LABEL[field] + 'をコピーしました', '自動消去を設定できませんでした');
+      toastError(done, '自動消去を設定できませんでした');
       return true;
     }
   }
-  toast(COPY_LABEL[field] + 'をコピーしました', sub);
+  toast(done, sub);
   return true;
 }

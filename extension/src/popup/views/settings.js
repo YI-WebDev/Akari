@@ -1,16 +1,58 @@
-// Settings bottom sheet: auto-lock, clipboard clearing, master password, backup.
+// Settings bottom sheet: auto-lock, clipboard clearing, master password, and the
+// インポート / エクスポート pages (views/import.js, views/export.js) shown inside the same sheet.
 
 import { MSG, ERR, DEFAULT_SETTINGS } from '../../shared/messages.js';
 import { S, emit, call, strengthOf, errText, liveToken, live } from '../state.js';
-import { yyyymmdd } from './format.js';
 import { syncInert, keepFocus } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
 import { toast, toastError } from './toast.js';
+import { setTrail, revokeDownloads } from './io.js';
+import { initImport, openImport, resetImport, importBack } from './import.js';
+import { openExport, resetExport, exportBack } from './export.js';
 
 const $ = (id) => document.getElementById(id);
 
 export const isSettingsOpen = () => $('setSheet').classList.contains('open');
+
+/* ── pages: the settings list, インポート, エクスポート ── */
+
+const PAGES = {
+  main: { el: 'setMain', title: '設定', sub: 'akari config' },
+  import: { el: 'importPage', title: 'インポート', sub: 'akari import' },
+  export: { el: 'exportPage', title: 'エクスポート', sub: 'akari export' },
+};
+let page = 'main';
+
+function showPage(name, { focus = true } = {}) {
+  const prev = page;
+  page = name;
+  const sheet = $('setSheet');
+  sheet.dataset.page = name;
+  for (const [k, p] of Object.entries(PAGES)) $(p.el).hidden = k !== name;
+  $('setTitle').textContent = PAGES[name].title;
+  $('setSub').textContent = PAGES[name].sub;
+  $('setBack').hidden = name === 'main';
+  $('setBack').title = '戻る (alt+←)';
+  if (prev === 'import' && name !== 'import') resetImport();
+  if (prev === 'export' && name !== 'export') resetExport();
+  if (name === 'main') {
+    setTrail(null);
+    if (focus) ({ import: $('importOpen'), export: $('exportOpen') }[prev] || sheet.querySelector('[data-close]')).focus({ preventScroll: true });
+  } else if (name === 'import') {
+    openImport({ focus });
+  } else {
+    openExport({ focus });
+  }
+}
+
+function back() {
+  if (page === 'import' && importBack()) return;
+  if (page === 'export' && exportBack()) return;
+  showPage('main');
+}
+
+/* ── settings list ── */
 
 function syncChips() {
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
@@ -84,89 +126,40 @@ async function changePassword(e) {
   }
 }
 
-async function exportBackup() {
-  const btn = $('exportBtn');
-  btn.disabled = true;
-  try {
-    const token = liveToken();
-    const res = await call(MSG.VAULT_EXPORT);
-    if (!live(token)) return;
-    const json = typeof res?.json === 'string' ? res.json : JSON.stringify(res?.json ?? res);
-    const name = `akari-backup-${yyyymmdd()}.json`;
-    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    toast('バックアップを書き出しました', name);
-  } catch (e) {
-    toastError('書き出せませんでした', errText(e));
-  } finally {
-    btn.disabled = false;
-  }
-}
+/* ── sheet ── */
 
-async function importBackup(e) {
-  e.preventDefault();
-  const file = $('importFile').files?.[0];
-  const pw = $('importPw').value;
-  const err = $('importErr');
-  err.textContent = '';
-  if (!file) { err.textContent = 'ファイルを選んでください'; shake($('importFile').parentElement); return; }
-  if (!pw) { err.textContent = 'バックアップのマスターパスワードを入力してください'; shake($('importPw')); $('importPw').focus(); return; }
-  if (file.size > 20 * 1024 * 1024) { err.textContent = 'ファイルが大きすぎます'; return; }
-  const btn = $('importSubmit');
-  btn.disabled = true;
-  try {
-    const json = await file.text();
-    try { JSON.parse(json); } catch { err.textContent = 'Akari のバックアップファイルではありません'; return; }
-    const token = liveToken();
-    const res = await call(MSG.VAULT_IMPORT, { json, masterPassword: pw });
-    if (!live(token)) return;
-    $('importPw').value = '';
-    $('importFile').value = '';
-    $('importFileName').textContent = 'ファイルを選ぶ…';
-    setExpanded($('importToggle'), $('importForm'), false);
-    toast(`${res?.count ?? 0} 件を読み込みました`, file.name);
-    emit('reload');
-  } catch (e2) {
-    if (e2?.code === ERR.BAD_PASSWORD) { err.textContent = 'バックアップのパスワードが違います'; shake($('importPw')); }
-    else if (e2?.code === ERR.INVALID) err.textContent = 'バックアップファイルを読み込めませんでした';
-    else err.textContent = '読み込めませんでした（' + errText(e2) + '）';
-  } finally {
-    btn.disabled = false;
-  }
-}
+let restoreFocus = null;
 
-export function openSettings() {
+/** Open the sheet on the settings list, or straight on 'import' / 'export'. */
+export function openSettings({ page: start = 'main' } = {}) {
   syncChips();
   resetPwForm();
   setExpanded($('pwToggle'), $('pwForm'), false);
-  setExpanded($('importToggle'), $('importForm'), false);
-  $('importErr').textContent = '';
+  showPage('main', { focus: false });
   restoreFocus = keepFocus();
   $('scrim').classList.add('on');
   const sheet = $('setSheet');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
-  sheet.querySelector('.set-scroll').scrollTop = 0;
+  $('setMain').scrollTop = 0;
   syncInert();
-  setTimeout(() => sheet.querySelector('[data-close]').focus({ preventScroll: true }), 60);
+  if (start !== 'main') showPage(start);
+  else setTimeout(() => sheet.querySelector('[data-close]').focus({ preventScroll: true }), 60);
 }
 
-let restoreFocus = null;
-
+/** Close the sheet. Whatever the import/export pages held (file bytes, parsed items,
+ *  typed passwords, pending download URLs) is dropped here — also on lock (popup.js lockNow). */
 export function closeSettings() {
   const sheet = $('setSheet');
+  resetImport();
+  resetExport();
+  revokeDownloads();
   if (!sheet.classList.contains('open')) return;
-  sheet.classList.remove('open');
+  sheet.classList.remove('open', 'dragging');
   sheet.setAttribute('aria-hidden', 'true');
   if (!$('genSheet').classList.contains('open')) $('scrim').classList.remove('on');
   resetPwForm();
-  $('importPw').value = '';
+  showPage('main', { focus: false });
   syncInert();
   restoreFocus?.();
   restoreFocus = null;
@@ -179,6 +172,7 @@ export function initSettings() {
     $('setVersion').textContent = `akari v${m.version} · ゼロ知識・端末内で暗号化`;
   } catch { /* ignore */ }
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
+  $('setBack').addEventListener('click', back);
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
     group.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-value]');
@@ -193,14 +187,12 @@ export function initSettings() {
   });
   $('pwNext').addEventListener('input', updatePwMeter);
   $('pwForm').addEventListener('submit', changePassword);
-  $('exportBtn').addEventListener('click', exportBackup);
-  $('importToggle').addEventListener('click', () => {
-    const open = $('importToggle').getAttribute('aria-expanded') !== 'true';
-    setExpanded($('importToggle'), $('importForm'), open);
+  $('importOpen').addEventListener('click', () => showPage('import'));
+  $('exportOpen').addEventListener('click', () => showPage('export'));
+  // Alt+← goes one step back on the import / export pages
+  $('setSheet').addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.altKey && e.key === 'ArrowLeft' && page !== 'main') { e.preventDefault(); back(); }
   });
-  $('importFile').addEventListener('change', () => {
-    const f = $('importFile').files?.[0];
-    $('importFileName').textContent = f ? f.name : 'ファイルを選ぶ…';
-  });
-  $('importForm').addEventListener('submit', importBackup);
+  initImport({ close: closeSettings });
 }

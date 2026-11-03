@@ -42,6 +42,13 @@
         <span class="grow"></span>
         <button id="sortBtn" class="sort-btn" type="button" title="並び替え">新着</button>
       </div>
+      <div class="type-bar">
+        <button id="typeBtn" class="type-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="typeMenu">
+          <span id="typeK" class="type-k"></span><span id="typeTag" class="tag" hidden></span><span id="typeLabel" class="type-v"></span>
+          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button id="typeClear" class="kbd-btn type-clear" type="button" hidden><svg width="9" height="9" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
       <div id="list" class="list" role="listbox" aria-label="アイテム" tabindex="0"></div>
     </section>
     <section id="card" class="pane" aria-live="off">
@@ -72,21 +79,9 @@
     </button>
   </div>
 
-  <div id="plusMenu" class="menu menu-plus" role="menu" aria-label="新規作成">
-    <button id="newLogin" class="menu-item" type="button" role="menuitem" data-key="l" aria-keyshortcuts="L">
-      <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/></svg>
-      <span class="grow">新規ログイン</span><span class="menu-key" aria-hidden="true">L</span>
-    </button>
-    <button id="newNote" class="menu-item" type="button" role="menuitem" data-key="n" aria-keyshortcuts="N">
-      <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>
-      <span class="grow">セキュアノート</span><span class="menu-key" aria-hidden="true">N</span>
-    </button>
-    <div class="menu-sep" role="separator"></div>
-    <button id="newGen" class="menu-item" type="button" role="menuitem" data-key="g" aria-keyshortcuts="G">
-      <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
-      <span class="grow">パスワード生成</span><span class="menu-key" aria-hidden="true">G</span>
-    </button>
-  </div>
+  <!-- ＋ 新規作成 and the 種類 filter: built from shared/item-types.js (views/type-menu.js) -->
+  <div id="plusMenu" class="menu menu-plus" role="menu" aria-label="新規作成"></div>
+  <div id="typeMenu" class="menu menu-type menu-types" role="menu" aria-label="種類で絞り込む"></div>
 
   <div id="scrim" class="scrim"></div>
 
@@ -130,14 +125,16 @@
     </div>
   </section>
 
-  <section id="setSheet" class="sheet settings" role="dialog" aria-modal="true" aria-labelledby="setTitle" aria-hidden="true">
+  <section id="setSheet" class="sheet settings" data-page="main" role="dialog" aria-modal="true" aria-labelledby="setTitle" aria-hidden="true">
     <div class="sheet-head">
+      <button id="setBack" class="kbd-btn set-back" type="button" title="戻る" aria-label="戻る" hidden>&lt;</button>
       <span id="setTitle" class="sheet-title">設定</span>
-      <span class="sheet-sub">akari config</span>
+      <span id="setSub" class="sheet-sub">akari config</span>
       <span class="grow"></span>
+      <ol id="setTrail" class="trail" aria-label="手順" hidden></ol>
       <button class="kbd-btn" type="button" data-close title="閉じる (esc)" aria-label="閉じる">esc</button>
     </div>
-    <div class="set-scroll">
+    <div id="setMain" class="set-scroll">
       <div class="set-row">
         <div class="set-label">自動ロック</div>
         <div class="chips" role="radiogroup" aria-label="自動ロック" data-setting="autoLockMinutes">
@@ -174,29 +171,31 @@
         </div>
       </div>
       <div class="set-row">
-        <div class="set-label">バックアップ</div>
+        <div class="set-label">インポート</div>
         <div class="set-body">
           <div class="set-actions">
-            <button id="exportBtn" class="btn-line" type="button">
-              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>書き出す
-            </button>
-            <button id="importToggle" class="btn-line" type="button" aria-expanded="false" aria-controls="importForm">
-              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg>読み込む
+            <button id="importOpen" class="btn-line set-nav" type="button" aria-haspopup="dialog">
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg>読み込む<span class="nav-arrow" aria-hidden="true">›</span>
             </button>
           </div>
-          <form id="importForm" class="set-form" hidden novalidate>
-            <label class="file-pick">
-              <input id="importFile" type="file" accept="application/json,.json">
-              <span class="ps" aria-hidden="true">$ </span><span id="importFileName" class="file-name">ファイルを選ぶ…</span>
-            </label>
-            <div class="field"><input id="importPw" type="password" placeholder="バックアップのマスターパスワード" aria-label="バックアップのマスターパスワード" autocomplete="off"></div>
-            <div class="form-foot"><span id="importErr" class="field-err" role="alert"></span><button id="importSubmit" class="btn-primary btn-sm" type="submit">読み込む</button></div>
-          </form>
-          <p class="set-note">書き出したファイルは暗号化されたままです。読み込むと、いまの保管庫に追加されます。</p>
+          <p class="set-note">ほかのパスワードマネージャー（1Password・Bitwarden・Chrome など 19 種類）や Akari のバックアップから。</p>
+        </div>
+      </div>
+      <div class="set-row">
+        <div class="set-label">エクスポート</div>
+        <div class="set-body">
+          <div class="set-actions">
+            <button id="exportOpen" class="btn-line set-nav" type="button" aria-haspopup="dialog">
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>書き出す<span class="nav-arrow" aria-hidden="true">›</span>
+            </button>
+          </div>
+          <p class="set-note">Akari バックアップ（暗号化）・CSV・Bitwarden JSON。</p>
         </div>
       </div>
       <div id="setVersion" class="set-version"></div>
     </div>
+    <div id="importPage" class="set-page" role="region" aria-label="インポート" hidden></div>
+    <div id="exportPage" class="set-page" role="region" aria-label="エクスポート" hidden></div>
   </section>
 
   <div id="toast" class="toast" role="status" aria-live="polite">

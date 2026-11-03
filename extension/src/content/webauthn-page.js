@@ -1,7 +1,9 @@
 // Akari WebAuthn shim (MAIN world, top frame, document_start). Classic script, self-contained.
 // navigator.credentials.create/get calls with `publicKey` go to Akari through the
-// ISOLATED-world bridge (webauthn-bridge.js); anything else, and requests Akari
-// declines with FALLBACK, run on the browser's own implementation.
+// ISOLATED-world bridge (webauthn-bridge.js); anything else runs on the browser's own
+// implementation, and requests Akari declines with FALLBACK go on to whatever is next:
+// another passkey manager that set its own navigator.credentials.get/create (Proton Pass
+// does), or the browser.
 (() => {
   'use strict';
 
@@ -19,7 +21,9 @@
   const postMessage = window.postMessage.bind(window);
   const addListener = window.addEventListener.bind(window);
   const getRandomValues = window.crypto.getRandomValues.bind(window.crypto);
-  const { defineProperty, create: objectCreate } = Object;
+  const { defineProperty, create: objectCreate, getOwnPropertyDescriptor } = Object;
+  const WeakSetRef = window.WeakSet;
+  const { has: wsHas, add: wsAdd } = WeakSetRef.prototype;
   const setTimeoutRef = window.setTimeout.bind(window);
   const clearTimeoutRef = window.clearTimeout.bind(window);
   const removeListener = window.removeEventListener.bind(window);
@@ -215,9 +219,18 @@
     return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   }
 
-  function viaAkari(kind, native, thisArg, args) {
+  // Where requests Akari declines go: the browser, or another manager's get/create.
+  const next = { create: nativeCreate, get: nativeGet };
+  // Options objects Akari has passed on. A manager that captured Akari's function as its
+  // own fallback hands the same object back; that call goes to the browser, not round again.
+  const declined = new WeakSetRef();
+
+  function viaAkari(kind, thisArg, args) {
     const options = args[0];
-    const fallback = () => Reflect.apply(native, thisArg, args);
+    const fallback = () => {
+      Reflect.apply(wsAdd, declined, [options]);
+      return Reflect.apply(next[kind], thisArg, args);
+    };
     let payload;
     try {
       payload = kind === 'create' ? serializeCreate(options.publicKey) : serializeGet(options.publicKey);
@@ -250,15 +263,34 @@
     return new Proxy(native, {
       apply(target, thisArg, args) {
         const options = args[0];
-        if (!(thisArg instanceof CC) || !options || typeof options !== 'object' || !options.publicKey) {
+        if (!(thisArg instanceof CC) || !options || typeof options !== 'object' || !options.publicKey
+          || Reflect.apply(wsHas, declined, [options])) {
           return Reflect.apply(target, thisArg, args);
         }
-        return viaAkari(kind, target, thisArg, args);
+        return viaAkari(kind, thisArg, args);
       },
     });
   }
 
+  const wrapped = { create: wrap('create', nativeCreate), get: wrap('get', nativeGet) };
   const desc = (fn) => ({ value: fn, writable: true, enumerable: true, configurable: true });
-  defineProperty(CC.prototype, 'create', desc(wrap('create', nativeCreate)));
-  defineProperty(CC.prototype, 'get', desc(wrap('get', nativeGet)));
+  defineProperty(CC.prototype, 'create', desc(wrapped.create));
+  defineProperty(CC.prototype, 'get', desc(wrapped.get));
+
+  // A get/create set on navigator.credentials itself hides the prototype, so other managers
+  // would always be asked before Akari. Akari keeps an accessor there instead: a function
+  // that was already set, or is assigned later, becomes `next` and Akari stays first.
+  const container = window.navigator.credentials;
+  for (const kind of ['create', 'get']) {
+    const own = getOwnPropertyDescriptor(container, kind);
+    if (own && !own.configurable) continue;
+    const prior = own && ('value' in own ? own.value : own.get && Reflect.apply(own.get, container, []));
+    if (typeof prior === 'function' && prior !== wrapped[kind]) next[kind] = prior;
+    defineProperty(container, kind, {
+      get: () => wrapped[kind],
+      set: (fn) => { if (typeof fn === 'function' && fn !== wrapped[kind]) next[kind] = fn; },
+      enumerable: true,
+      configurable: true,
+    });
+  }
 })();

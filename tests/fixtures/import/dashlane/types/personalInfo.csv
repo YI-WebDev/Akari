@@ -1,0 +1,5 @@
+type,title,first_name,middle_name,last_name,login,date_of_birth,place_of_birth,email,email_type,item_name,phone_number,address,country,state,city,zip,address_recipient,address_building,address_apartment,address_floor,address_door_code,job_title,url
+name,Ms,Hanako,,Yamada,hanako,1990-1-15,Tokyo,,,Hanako Yamada,,,,,,,,,,,,Engineer,
+email,,,,,,,,hanako@example.jp,personal,個人メール,,,,,,,,,,,,,
+number,,,,,,,,,,携帯,090-1111-2222,,,,,,,,,,,,
+address,,,,,,,,,,自宅,,丸の内 1-1,JP,東京都,千代田区,100-0005,山田 花子,灯ビル,301,,1234,,

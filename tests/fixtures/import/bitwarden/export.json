@@ -1,0 +1,171 @@
+{
+  "encrypted": false,
+  "folders": [
+    { "id": "f0000000-0000-4000-8000-000000000001", "name": "仕事" }
+  ],
+  "items": [
+    {
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "organizationId": null,
+      "folderId": "f0000000-0000-4000-8000-000000000001",
+      "type": 1,
+      "reprompt": 0,
+      "name": "社内ポータル",
+      "notes": "VPN 接続が必要です。",
+      "favorite": true,
+      "fields": [
+        { "name": "社員番号", "value": "E-1024", "type": 0, "linkedId": null },
+        { "name": "PIN", "value": "8642", "type": 1, "linkedId": null },
+        { "name": "管理者", "value": "true", "type": 2, "linkedId": null },
+        { "name": "ユーザー名の参照", "value": null, "type": 3, "linkedId": 100 }
+      ],
+      "login": {
+        "uris": [
+          { "match": null, "uri": "https://portal.example.co.jp/login" },
+          { "match": 1, "uri": "https://sso.example.co.jp" }
+        ],
+        "username": "taro.yamada",
+        "password": "Sakura-2024!",
+        "totp": "otpauth://totp/Example:taro.yamada?secret=JBSWY3DPEHPK3PXP&issuer=Example&digits=6&period=30",
+        "fido2Credentials": [
+          {
+            "credentialId": "6f94caa6-6bda-417a-9c17-20798334db13",
+            "keyType": "public-key",
+            "keyAlgorithm": "ECDSA",
+            "keyCurve": "P-256",
+            "keyValue": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgUNGd8JJzMSEFfmjUow94J0D3gQHQEevbG2U_6nMP2gihRANCAARe3luLVPXhUQDY7RNcFHuQf1ddqaywJbqg4jWYJ_t2zko1MpnR_pYojMcC6My2Xl9jT31vNNH29mgyQhOHVTmA",
+            "rpId": "portal.example.co.jp",
+            "userHandle": "dXNlci0xMDI0",
+            "userName": "taro.yamada",
+            "counter": "0",
+            "rpName": "社内ポータル",
+            "userDisplayName": "山田 太郎",
+            "discoverable": "true",
+            "creationDate": "2024-03-01T09:00:00.000Z"
+          },
+          {
+            "credentialId": "b64.AAECAwQFBgcICQoLDA0ODxAREhM",
+            "keyType": "public-key",
+            "keyAlgorithm": "ECDSA",
+            "keyCurve": "P-384",
+            "keyValue": "MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDApFoNB2lnd6XNzNNWxF8-rbb8yV5dGoHyQ7ubYVoS9862b49EgI1a_wfdDgIig346hZANiAATZ04xjcz8s0r8zGe5HrfYjwvEn0eFt1NHnD-XPrUTgGnbPlwUrTsaKMEZVIDHuACnZhTJKJkGynnS8YWONpkqBU26xsBQZ-4AGdRe8IReBDS_FHKy4efkF_goTkN5UufM",
+            "rpId": "portal.example.co.jp",
+            "userHandle": "dXNlci0yMDQ4",
+            "userName": "taro.yamada",
+            "counter": "0",
+            "rpName": "社内ポータル",
+            "userDisplayName": "山田 太郎",
+            "discoverable": "true",
+            "creationDate": "2024-03-02T09:00:00.000Z"
+          }
+        ]
+      },
+      "collectionIds": null,
+      "creationDate": "2024-01-15T01:02:03.000Z",
+      "revisionDate": "2024-06-20T10:11:12.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "type": 1,
+      "name": "Steam",
+      "notes": null,
+      "favorite": false,
+      "login": {
+        "uris": [{ "match": null, "uri": "https://store.steampowered.com" }],
+        "username": "gamer",
+        "password": "hunter2",
+        "totp": "steam://ABCDEFGHIJ"
+      },
+      "creationDate": "2024-02-01T00:00:00.000Z",
+      "revisionDate": "2024-02-01T00:00:00.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "type": 2,
+      "name": "金庫の暗証番号",
+      "notes": "右に 3 回、左に 2 回。\n番号は 12-34-56。",
+      "favorite": false,
+      "secureNote": { "type": 0 },
+      "fields": [{ "name": "場所", "value": "寝室のクローゼット", "type": 0, "linkedId": null }],
+      "creationDate": "2023-12-24T12:00:00.000Z",
+      "revisionDate": "2023-12-24T12:00:00.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000004",
+      "type": 3,
+      "name": "メインのクレジットカード",
+      "notes": "引き落としは毎月 27 日",
+      "favorite": true,
+      "card": {
+        "cardholderName": "TARO YAMADA",
+        "brand": "Visa",
+        "number": "4111111111111111",
+        "expMonth": "4",
+        "expYear": "2029",
+        "code": "123"
+      },
+      "creationDate": "2024-01-01T00:00:00.000Z",
+      "revisionDate": "2024-01-01T00:00:00.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000005",
+      "type": 4,
+      "name": "本人情報",
+      "notes": null,
+      "favorite": false,
+      "identity": {
+        "title": "Mr",
+        "firstName": "太郎",
+        "middleName": null,
+        "lastName": "山田",
+        "address1": "千代田 1-1",
+        "address2": null,
+        "address3": null,
+        "city": "千代田区",
+        "state": "東京都",
+        "postalCode": "100-0001",
+        "country": "JP",
+        "company": null,
+        "email": "taro@example.jp",
+        "phone": "03-1234-5678",
+        "ssn": null,
+        "username": null,
+        "passportNumber": "TK1234567",
+        "licenseNumber": null
+      },
+      "creationDate": "2024-01-01T00:00:00.000Z",
+      "revisionDate": "2024-01-01T00:00:00.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000006",
+      "type": 5,
+      "name": "サーバー用 SSH 鍵",
+      "notes": null,
+      "favorite": false,
+      "sshKey": {
+        "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAtestkey\n-----END OPENSSH PRIVATE KEY-----",
+        "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest akari@example",
+        "keyFingerprint": "SHA256:testfingerprint"
+      },
+      "creationDate": "2024-01-01T00:00:00.000Z",
+      "revisionDate": "2024-01-01T00:00:00.000Z",
+      "deletedDate": null
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000007",
+      "type": 1,
+      "name": "削除済みのサイト",
+      "notes": null,
+      "favorite": false,
+      "login": { "uris": [{ "uri": "https://old.example.com" }], "username": "old", "password": "old" },
+      "creationDate": "2020-01-01T00:00:00.000Z",
+      "revisionDate": "2021-01-01T00:00:00.000Z",
+      "deletedDate": "2021-01-01T00:00:00.000Z"
+    }
+  ]
+}

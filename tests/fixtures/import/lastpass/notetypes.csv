@@ -1,0 +1,169 @@
+url,username,password,totp,extra,name,grouping,fav
+http://sn,,,,"NoteType:Bank Account
+Language:en-US
+Bank Name:Mizuho
+Account Type:Checking
+Routing Number:123456789
+Account Number:00112233
+SWIFT Code:MHCBJPJT
+IBAN Number:GB82WEST12345698765432
+Pin:4321
+Branch Address:1-1 Otemachi
+Branch Phone:03-0000-0000
+Notes:Main account
+second line",Bank,(none),1
+http://sn,,,,"NoteType:Address
+Language:en-US
+Title:Mr
+First Name:Taro
+Middle Name:
+Last Name:Yamada
+Username:taroy
+Email Address:taro@example.jp
+Birthday:March,5,1990
+Phone:03-1111-2222
+Evening Phone:03-3333-4444
+Mobile Phone:090-5555-6666
+Address 1:1-1 Chiyoda
+Address 2:Bldg 2
+Address 3:Room 3
+City / Town:Chiyoda
+County:
+State:Tokyo
+Zip / Postal Code:100-0001
+Country:JP
+Company:Example KK
+Notes:",Home,(none),0
+http://sn,,,,"NoteType:Driver's License
+Language:en-US
+Number:D1234567
+Expiration Date:January,15,2030
+License Class:B
+Name:Taro Yamada
+Address:1-1 Chiyoda
+City / Town:Chiyoda
+State:Tokyo
+ZIP / Postal Code:100-0001
+Country:JP
+Date of Birth:March,5,1990
+Sex:M
+Height:170
+Notes:",License,(none),0
+http://sn,,,,"NoteType:Passport
+Language:en-US
+Type:P
+Name:Taro Yamada
+Country:Japan
+Number:TK1234567
+Sex:M
+Nationality:Japanese
+Issuing Authority:MOFA
+Date of Birth:March,5,1990
+Issued Date:June,1,2020
+Expiration Date:May,31,2030
+Notes:",Passport,(none),0
+http://sn,,,,"NoteType:Social Security
+Language:en-US
+Name:Taro Yamada
+Number:123-45-6789
+Notes:keep safe",SSN,(none),0
+http://sn,,,,"NoteType:Database
+Language:en-US
+Type:MySQL
+Hostname:db.example.com
+Port:3306
+Database:app
+Username:root
+Password:dbpw
+SID:xe
+Alias:prod
+Notes:",Prod DB,(none),0
+http://sn,,,,"NoteType:Server
+Language:en-US
+Hostname:srv.example.com
+Username:admin
+Password:srvpw
+Notes:",Server,(none),0
+http://sn,,,,"NoteType:SSH Key
+Language:en-US
+Bit Strength:2048
+Format:RSA
+Passphrase:pp
+Private Key:-----BEGIN RSA PRIVATE KEY-----
+Proc-Type: 4,ENCRYPTED
+MIIEabc
+-----END RSA PRIVATE KEY-----
+Public Key:ssh-rsa AAAAB3Nza user@host
+Hostname:git.example.com
+Date:June,1,2020
+Notes:deploy key",Deploy key,(none),0
+http://sn,,,,"NoteType:Software License
+Language:en-US
+Version:2.1
+License Key:AAAA-BBBB
+Licensee:Taro
+Support Email:support@vendor.example
+Publisher:Vendor
+Website:https://vendor.example
+Price:$10
+Purchase Date:April,2,2021
+Number of Licenses:3
+Notes:",Editor,(none),0
+http://sn,,,,"NoteType:Wi-Fi Password
+Language:en-US
+SSID:HomeNet
+Password:wifipw
+Connection Type:Wireless
+Connection Mode:Automatic
+Authentication:WPA2-Personal
+Encryption:AES
+Notes:",Home WiFi,(none),0
+http://sn,,,,"NoteType:Membership
+Language:en-US
+Organization:Gym
+Website:https://gym.example
+Telephone:03-9999-9999
+Member Name:Taro
+Membership Number:M-1
+Start Date:January,2020
+Expiration Date:December,2030
+Password:gympw
+Notes:",Gym,(none),0
+http://sn,,,,"NoteType:Health Insurance
+Language:en-US
+Company:Kenpo
+Company Phone:03-1
+Policy Type:Group
+Policy Number:P-123
+Group ID:G1
+Member Name:Taro
+Member ID:M1
+Physician Name:Dr. Sato
+Physician Phone:03-2
+Physician Address:1-2 Ginza
+Co-pay:10
+Notes:",Health,(none),0
+http://sn,,,,"NoteType:Email Account
+Language:en-US
+Username:me
+Password:mailpw
+Server:imap.example.com
+Port:993
+Notes:hello",Mail,(none),0
+http://sn,,,,"NoteType:Custom_123456
+Language:en-US
+Gift Code:XYZ
+Notes:",Gift,(none),0
+http://sn,,,,"NoteType:Credit Card
+Language:en-US
+Name On Card:Hanako
+Type:Mastercard
+Number:5555555555554444
+Security Code:456
+Start Date:someday
+Expiration Date:soon
+Notes:",Odd card,(none),0
+http://sn,,,,"NoteType:Credit Card
+Language:en-US
+Name On Card:
+Notes:",Empty card,(none),0

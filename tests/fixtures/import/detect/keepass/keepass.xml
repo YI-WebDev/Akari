@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta><Generator>KeePass</Generator></Meta>
+	<Root>
+		<Group><Name>Root</Name>
+			<Entry><String><Key>Title</Key><Value>GitHub</Value></String><String><Key>UserName</Key><Value>alice</Value></String></Entry>
+		</Group>
+	</Root>
+</KeePassFile>
