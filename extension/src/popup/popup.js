@@ -16,7 +16,7 @@ import { toast, toastError, hideToast } from './views/toast.js';
 import {
   renderList, renderCounts, markSelected, scrollToRow, setAfState, afButtonEl, afCandidate, typeCounts, renderTypeButton,
 } from './views/list.js';
-import { buildPlusMenu, renderTypeMenu, moveMenuFocus } from './views/type-menu.js';
+import { buildPlusMenu, resetPlusMenu, renderTypeMenu, moveMenuFocus } from './views/type-menu.js';
 import { renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
 import { openEditor, closeEditor, editorOpen, requestClose } from './views/editor.js';
 import { initGenerator, openGenerator, closeGenerator, resetGenerator, isGenOpen } from './views/generator.js';
@@ -256,6 +256,7 @@ function openMenu(which) {
   closeMenus();
   if (wasOpen) return;
   if (which === 'vault') renderVaultMenu();
+  if (which === 'plus') resetPlusMenu(menu);
   if (which === 'type') {
     renderTypeFilterMenu();
     // under the 種類 button, but never past the bottom of the 430px popup
@@ -327,9 +328,9 @@ function menuKeys(e) {
     if (moveMenuFocus(menu, e.key)) e.preventDefault();
     return;
   }
-  // the + menu's L / N / G shortcuts
+  // the + menu's L / N / C / I / O / G shortcuts (only on the panel that is showing)
   if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
-  const hit = [...menu.querySelectorAll('button[data-key]')].find((b) => b.dataset.key === e.key.toLowerCase());
+  const hit = [...menu.querySelectorAll('button[data-key]')].find((b) => b.dataset.key === e.key.toLowerCase() && b.offsetParent !== null);
   if (hit) {
     e.preventDefault();
     hit.click();

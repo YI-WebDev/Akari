@@ -1,14 +1,29 @@
-// The two type palettes (design 1a): ＋ 新規作成 with every item type, and the 種類 filter
-// with the types present in the vault and their counts. Both are grouped by GROUPS into
-// 3-column grids under a `$ akari …` line that follows focus. Built from static type
-// metadata only; counts are numbers.
+// The two type menus (design 1a), each under a `$ akari …` line that follows focus:
+// ＋ 新規作成 lists the 基本 types with icons and opens the other groups in a second panel,
+// and the 種類 filter shows the types present in the vault, with counts, as 3-column grids
+// grouped by GROUPS. Built from static type metadata only; counts are numbers.
 
 import { GROUPS, ITEM_TYPES, typeLabel, groupLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { h, clear, icon } from './dom.js';
 
-// single-letter shortcuts inside the ＋ menu (and the welcome commands)
-const KEYS = { login: 'l', note: 'n' };
+// single-letter shortcuts in the ＋ menu's first panel (L / N also in the welcome commands)
+const KEYS = { login: 'l', note: 'n', card: 'c', identity: 'i' };
+
+// Icon per type, and tile hues (oklch): one per 基本 type, one per group in the その他 panel.
+const TYPE_ICONS = {
+  login: 'login', note: 'note', card: 'card', identity: 'idCard',
+  apiCredential: 'code', database: 'database', server: 'server', softwareLicense: 'badge', sshKey: 'terminal', wifi: 'wifi',
+  bankAccount: 'bank', cryptoWallet: 'wallet',
+  driverLicense: 'car', medicalRecord: 'medical', membership: 'users', passport: 'passport', rewardProgram: 'gift', socialSecurity: 'shieldUser',
+};
+const HUES = { login: 45, note: 85, card: 150, identity: 255, gen: 350, tech: 210, finance: 150, personal: 300 };
+
+/** A coloured icon tile; without a hue it is greyed (その他). */
+function tileIcon(name, hue, size) {
+  const vars = hue == null ? { '--tile-c': '0.02', '--tile-bg-c': '0.02' } : { '--h': String(hue) };
+  return h('span', { class: 'tile pm-tile', vars, 'aria-hidden': 'true' }, icon(name, size));
+}
 
 function cmdLine(initial) {
   const arg = h('span', { class: 'tp-arg' }, initial);
@@ -42,40 +57,82 @@ function groupHead(groupId, count) {
 }
 
 /**
- * ＋ menu: 新規作成 for every type, then パスワード生成. Static, so it is built once.
+ * ＋ menu. First panel: the 基本 types, その他 (#newOther), パスワード生成. その他 swaps in
+ * the other groups as 2-column grids under a back button; Esc / Backspace / ← on the back
+ * button return. Static, so it is built once; resetPlusMenu shows the first panel again.
  * Ids #newLogin / #newNote / #newGen and the L / N / G keys are kept from the old menu.
  */
 export function buildPlusMenu(menu, { onNew, onGen }) {
   clear(menu);
   const cmd = cmdLine('new login');
-  menu.append(cmd.el);
-  for (const g of GROUPS) {
-    const types = ITEM_TYPES.filter((x) => x.group === g.id);
-    if (!types.length) continue;
-    const grid = h('div', { class: 'tp-grid', role: 'group', 'aria-label': groupLabel(g.id) });
-    for (const ty of types) {
-      const key = KEYS[ty.id];
-      grid.append(h('button', {
-        class: 'tp-cell', type: 'button', role: 'menuitem',
-        id: ty.id === 'login' ? 'newLogin' : ty.id === 'note' ? 'newNote' : null,
-        dataset: { type: ty.id, cmd: `new ${ty.id}`, ...(key ? { key } : {}) },
-        'aria-keyshortcuts': key ? key.toUpperCase() : null,
-        'aria-label': t('menu.newType', { type: typeLabel(ty.id) }, '新規 {type}'),
-        onclick: () => onNew(ty.id),
-      },
-      h('span', { class: 'tp-name' }, typeLabel(ty.id)),
-      tagShown(ty.id) ? h('span', { class: 'tag' }, ty.tag) : null,
-      key ? h('span', { class: 'menu-key', 'aria-hidden': 'true' }, key.toUpperCase()) : null));
-    }
-    menu.append(groupHead(g.id), grid);
-  }
-  menu.append(h('div', { class: 'menu-sep', role: 'separator' }),
+  const keyHint = (key) => h('span', { class: 'menu-key', 'aria-hidden': 'true' }, key.toUpperCase());
+  const item = (ty, hue, size) => {
+    const key = ty.group === 'basic' ? KEYS[ty.id] : null;
+    return h('button', {
+      class: 'pm-item', type: 'button', role: 'menuitem',
+      id: ty.id === 'login' ? 'newLogin' : ty.id === 'note' ? 'newNote' : null,
+      dataset: { type: ty.id, cmd: `new ${ty.id}`, ...(key ? { key } : {}) },
+      'aria-keyshortcuts': key ? key.toUpperCase() : null,
+      'aria-label': t('menu.newType', { type: typeLabel(ty.id) }, '新規 {type}'),
+      onclick: () => onNew(ty.id),
+    }, tileIcon(TYPE_ICONS[ty.id], hue, size), h('span', { class: 'pm-name' }, typeLabel(ty.id)), key ? keyHint(key) : null);
+  };
+
+  const otherLabel = t('menu.other', null, 'その他');
+  const others = ITEM_TYPES.filter((x) => x.group !== 'basic');
+  const otherBtn = h('button', {
+    id: 'newOther', class: 'pm-item', type: 'button', role: 'menuitem', 'aria-haspopup': 'true', 'aria-expanded': 'false',
+    dataset: { key: 'o', cmd: 'new --help' }, 'aria-keyshortcuts': 'O',
+    onclick: () => show('more'),
+  }, tileIcon('more', null, 14), h('span', { class: 'pm-name' }, otherLabel), h('span', { class: 'v-count' }, String(others.length)), icon('chevRight', 12));
+  const main = h('div', { class: 'pm-panel pm-main' },
+    h('div', { role: 'group', 'aria-label': groupLabel('basic'), class: 'pm-list' },
+      ...ITEM_TYPES.filter((x) => x.group === 'basic').map((ty) => item(ty, HUES[ty.id], 15)), otherBtn),
+    h('div', { class: 'menu-sep', role: 'separator' }),
     h('button', {
-      id: 'newGen', class: 'menu-item', type: 'button', role: 'menuitem', dataset: { key: 'g', cmd: 'gen' }, 'aria-keyshortcuts': 'G',
+      id: 'newGen', class: 'pm-item', type: 'button', role: 'menuitem', dataset: { key: 'g', cmd: 'gen' }, 'aria-keyshortcuts': 'G',
       onclick: onGen,
-    }, h('span', { class: 'menu-ico' }, icon('regen', 14)), h('span', { class: 'grow' }, t('menu.generator', null, 'パスワード生成')),
-    h('span', { class: 'menu-key', 'aria-hidden': 'true' }, 'G')));
-  followCmd(menu, cmd, () => 'new login');
+    }, tileIcon('key', HUES.gen, 15), h('span', { class: 'pm-name' }, t('menu.generator', null, 'パスワード生成')), keyHint('g')));
+
+  const back = h('button', {
+    class: 'pm-back', type: 'button', role: 'menuitem', dataset: { cmd: 'new' }, 'aria-label': t('menu.back', null, '戻る'),
+    onclick: () => show('main', otherBtn),
+  }, icon('chevLeft', 12), h('span', null, otherLabel));
+  const more = h('div', { class: 'pm-panel pm-more', role: 'group', 'aria-label': otherLabel }, back);
+  for (const g of GROUPS) {
+    const types = others.filter((x) => x.group === g.id);
+    if (!types.length) continue;
+    more.append(groupHead(g.id), h('div', { class: 'tp-grid', role: 'group', 'aria-label': groupLabel(g.id) },
+      ...types.map((ty) => item(ty, HUES[g.id], 13))));
+  }
+
+  const show = (panel, focus) => {
+    menu.dataset.panel = panel;
+    otherBtn.setAttribute('aria-expanded', String(panel === 'more'));
+    (focus || (panel === 'more' ? more : main).querySelector('.pm-item')).focus({ preventScroll: true });
+  };
+  menu.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    const at = document.activeElement;
+    if (menu.dataset.panel !== 'more') {
+      if (e.key === 'ArrowRight' && at === otherBtn) { e.preventDefault(); show('more'); }
+      return;
+    }
+    if (e.key === 'Escape' || e.key === 'Backspace' || (e.key === 'ArrowLeft' && at === back)) {
+      e.preventDefault();
+      e.stopPropagation(); // Esc goes back a panel instead of closing the menu
+      show('main', otherBtn);
+    }
+  });
+  menu.append(cmd.el, main, more);
+  resetPlusMenu(menu);
+  followCmd(menu, cmd, () => 'new');
+}
+
+/** Back to the ＋ menu's first panel (before it opens). */
+export function resetPlusMenu(menu) {
+  menu.dataset.panel = 'main';
+  menu.querySelector('#newOther')?.setAttribute('aria-expanded', 'false');
 }
 
 /**

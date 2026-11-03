@@ -73,6 +73,30 @@ const ICONS = {
   wand: [['path', { d: 'M21 12a9 9 0 1 1-3-6.7L21 8' }], ['path', { d: 'M21 3v5h-5' }]],
   plus: [['path', { d: 'M12 5v14M5 12h14' }]],
   external: [['path', { d: 'M15 3h6v6' }], ['path', { d: 'M10 14 21 3' }], ['path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }]],
+  chevLeft: [['path', { d: 'm15 6-6 6 6 6' }]],
+  chevRight: [['path', { d: 'm9 6 6 6-6 6' }]],
+  // item types (the ＋ menu)
+  login: [['path', { d: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4' }], ['path', { d: 'm10 17 5-5-5-5M15 12H3' }]],
+  card: [['rect', { x: 2, y: 5, width: 20, height: 14, rx: 2 }], ['path', { d: 'M2 10h20M6 15h4' }]],
+  idCard: [['rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }], ['circle', { cx: 9, cy: 10.5, r: 2.5 }], ['path', { d: 'M5.5 17a3.5 3.5 0 0 1 7 0M15 9.5h3M15 13.5h3' }]],
+  more: [
+    ['rect', { x: 3, y: 3, width: 7, height: 7, rx: 1.5 }], ['rect', { x: 14, y: 3, width: 7, height: 7, rx: 1.5 }],
+    ['rect', { x: 3, y: 14, width: 7, height: 7, rx: 1.5 }], ['rect', { x: 14, y: 14, width: 7, height: 7, rx: 1.5 }],
+  ],
+  code: [['path', { d: 'm8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16' }]],
+  database: [['ellipse', { cx: 12, cy: 5, rx: 8, ry: 3 }], ['path', { d: 'M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' }]],
+  server: [['rect', { x: 3, y: 3, width: 18, height: 7, rx: 2 }], ['rect', { x: 3, y: 14, width: 18, height: 7, rx: 2 }], ['path', { d: 'M7 6.5h.01M7 17.5h.01' }]],
+  badge: [['circle', { cx: 12, cy: 9, r: 6 }], ['path', { d: 'M8.5 13.8 7 22l5-3 5 3-1.5-8.2' }]],
+  terminal: [['rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }], ['path', { d: 'm7 9 3 3-3 3M12 15h5' }]],
+  wifi: [['path', { d: 'M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01' }]],
+  bank: [['path', { d: 'M3 21h18M12 3 3 8h18zM5 11v7M9.5 11v7M14.5 11v7M19 11v7' }]],
+  wallet: [['rect', { x: 3, y: 6, width: 18, height: 14, rx: 2 }], ['path', { d: 'M6 6V4.5A1.5 1.5 0 0 1 7.5 3H17M21 11h-4a2 2 0 0 0 0 4h4' }]],
+  car: [['path', { d: 'M3 16v-4l2.5-6h13L21 12v4zM3 12h18' }], ['circle', { cx: 7, cy: 16, r: 2 }], ['circle', { cx: 17, cy: 16, r: 2 }]],
+  medical: [['path', { d: 'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z' }]],
+  users: [['circle', { cx: 9, cy: 8, r: 4 }], ['path', { d: 'M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3' }]],
+  passport: [['rect', { x: 5, y: 2, width: 14, height: 20, rx: 2 }], ['circle', { cx: 12, cy: 10, r: 3.5 }], ['path', { d: 'M9 17.5h6' }]],
+  gift: [['rect', { x: 3, y: 8, width: 18, height: 4, rx: 1 }], ['path', { d: 'M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M12 8C10.5 4 7 4 7 6s2 2 5 2 5 0 5-2-3.5-2-5 2' }]],
+  shieldUser: [['path', { d: 'M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z' }], ['circle', { cx: 12, cy: 10, r: 2.2 }], ['path', { d: 'M8.5 16.5a3.5 3.5 0 0 1 7 0' }]],
 };
 
 export function icon(name, size = 14, strokeWidth) {

@@ -521,8 +521,39 @@ svg { display: block; }
 .menu.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity .18s, transform .25s var(--spring-soft), visibility 0s; }
 .menu-vault { left: 10px; width: 230px; transform-origin: top left; }
 .menu-types { padding: 8px 8px 6px; max-height: 376px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 214, 186, .16) transparent; }
-.menu-plus { left: 10px; right: 10px; transform-origin: top right; }
 .menu-type { left: 8px; right: 8px; transform-origin: top left; }
+
+/* ＋ menu: the 基本 types as an icon list; その他 swaps in the other groups (wider, 2 columns) */
+.menu-plus {
+  right: 10px; width: 232px; max-height: 376px; overflow-y: auto; transform-origin: top right;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 214, 186, .16) transparent;
+}
+.menu-plus[data-panel="more"] { width: 404px; }
+.menu-plus[data-panel="main"] .pm-more, .menu-plus[data-panel="more"] .pm-main { display: none; }
+.menu-plus .tp-cmd { padding: 2px 6px 6px; }
+.pm-panel { display: flex; flex-direction: column; animation: akt-rise .2s ease-out; }
+.pm-list { display: flex; flex-direction: column; gap: 1px; }
+.pm-item {
+  width: 100%; height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 5px; border-radius: 6px; border: 0;
+  background: transparent; color: var(--text); font-size: 12px; text-align: left; cursor: pointer; transition: background .15s;
+}
+.pm-item:hover, .pm-item:focus-visible { background: var(--hover-on-surface); }
+.app .pm-item:focus-visible, .app .pm-back:focus-visible { outline: none; box-shadow: inset 0 0 0 1px rgba(255, 122, 69, .45); }
+.pm-tile { width: 26px; height: 26px; border-radius: 6px; transition: transform .25s var(--spring); }
+.pm-item:hover .pm-tile, .pm-item:focus-visible .pm-tile { transform: scale(1.08); }
+.pm-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-item > svg { flex: none; stroke: var(--text-soft); }
+.pm-main .menu-sep { margin: 4px 6px; }
+.pm-back {
+  height: 28px; flex: none; align-self: flex-start; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 6px; border-radius: 5px;
+  border: 0; background: transparent; color: var(--text-muted); font-size: 11.5px; cursor: pointer; transition: background .15s, color .15s;
+}
+.pm-back:hover, .pm-back:focus-visible { background: var(--hover-on-surface); color: var(--text); }
+.pm-back svg { stroke: var(--accent-strong); }
+.pm-more .tp-group { padding: 6px 6px 3px; }
+.pm-more .tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 4px; }
+.pm-more .pm-item { height: 32px; gap: 8px; padding-left: 4px; font-size: 11.5px; }
+.pm-more .pm-tile { width: 22px; height: 22px; border-radius: 5px; }
 .tp-cmd { padding: 0 4px 4px; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-arg { color: var(--text); }
 .tp-cmd .cursor { height: 10px; }

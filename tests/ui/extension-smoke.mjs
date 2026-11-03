@@ -100,7 +100,7 @@ try {
   {
     const items = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items);
     await page.click('#plusBtn');
-    await page.click('#plusMenu .tp-cell[data-type="card"]');
+    await page.click('#plusMenu [data-type="card"]');
     await page.waitForSelector('.ed-form[data-type="card"]');
     assert.equal(await page.locator('.ed-heading').textContent(), '新規クレジットカード');
     await page.fill('#edTitle', 'テスト JCB');
