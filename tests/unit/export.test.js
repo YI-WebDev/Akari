@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toCsv, CSV_COLUMNS, totpUri, noFormula } from '../../extension/src/lib/export/csv.js';
+import { toCsv, CSV_COLUMNS, totpUri, noFormula, templateEntries } from '../../extension/src/lib/export/csv.js';
 import { toBitwardenJson, bitwardenCredentialId } from '../../extension/src/lib/export/bitwarden.js';
 import { csvToObjects } from '../../extension/src/lib/import/csv.js';
 import { parseOtpauthUri } from '../../extension/src/lib/totp.js';
@@ -169,4 +169,133 @@ test('toCsv: formula-looking name/url/note/vault cells get a leading quote; cred
   for (const ch of ['=', '+', '-', '@', '\t', '\r']) assert.equal(noFormula(ch + 'x'), "'" + ch + 'x');
   for (const s of ['', 'x', ' =x', "'=x", ',', '0', 'https://a']) assert.equal(noFormula(s), s);
   assert.equal(noFormula(null), '');
+});
+
+// ---- item types (shared/item-types.js) ---------------------------------------
+
+function typedData() {
+  const data = defaultData(T1);
+  const extra = [{ label: '暗証', value: '0000', secret: true }, { label: '担当', value: '山田', secret: false }];
+  data.items.push(
+    makeItem({
+      type: 'card', title: 'Amex', note: 'メインカード', fav: true, vault: 'work', createdAt: T0, updatedAt: T1,
+      fields: { cardholder: 'HINA SATO', number: '3782 822463 10005', expiry: '2030-04', cvv: '1234', pin: '9876' }, extra,
+    }, T1),
+    makeItem({
+      type: 'identity', title: '自分',
+      fields: {
+        lastName: '佐藤', firstName: 'ひな', middleName: 'M', email: 'hina@example.jp', phone: '090-1234-5678', birthDate: '1990-01-02',
+        company: 'ACME', jobTitle: '技師', postalCode: '100-0001', country: 'JP', state: '東京都', city: '千代田区',
+        address1: '千代田 1-1', address2: '101', website: 'https://hina.example',
+      },
+    }, T1),
+    makeItem({
+      type: 'sshKey', title: 'deploy',
+      fields: {
+        privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----', publicKey: 'ssh-ed25519 AAAA hina@pc',
+        fingerprint: 'SHA256:abc', passphrase: 'pp', host: 'git.example', username: 'git',
+      },
+    }, T1),
+    makeItem({ type: 'wifi', title: 'Home', fields: { ssid: 'Home-5G', password: 'wifi pw', security: 'wpa2' } }, T1),
+    makeItem({ type: 'database', title: 'DB', note: 'prod', fields: { host: 'db.example', port: '5432', password: '=pw' }, extra }, T1),
+    makeItem({ type: 'card', title: 'Blank card', fields: {} }, T1),
+    makeItem({ title: 'Login with extra', url: 'https://a.example', username: 'u', password: 'p', extra }, T1),
+  );
+  return { data, extra };
+}
+
+const cf = (name, value, type) => ({ name, value, type, linkedId: null });
+
+test('toBitwardenJson: card, identity and SSH key use Bitwarden\'s native types', () => {
+  const { data } = typedData();
+  const [card, identity, ssh, , , blank] = JSON.parse(toBitwardenJson(data)).items;
+
+  assert.equal(card.type, 3);
+  assert.deepEqual(card.card, {
+    cardholderName: 'HINA SATO', brand: 'Amex', number: '378282246310005', expMonth: '4', expYear: '2030', code: '1234',
+  });
+  assert.deepEqual([card.name, card.notes, card.favorite, card.folderId], ['Amex', 'メインカード', true, 'work']);
+  assert.deepEqual(card.fields, [cf('akari:type', 'card', 0), cf('PIN', '9876', 1), cf('暗証', '0000', 1), cf('担当', '山田', 0)], 'type marker, then PIN and extra as custom fields');
+  assert.equal(card.login, undefined);
+  assert.equal(card.secureNote, undefined);
+  assert.deepEqual(blank.card, { cardholderName: null, brand: null, number: null, expMonth: null, expYear: null, code: null });
+  assert.equal(blank.notes, null, 'an empty note stays empty');
+  assert.deepEqual(blank.fields, [cf('akari:type', 'card', 0)], 'the type marker is written even with no other custom field');
+
+  assert.equal(identity.type, 4);
+  assert.deepEqual(identity.identity, {
+    title: null, firstName: 'ひな', middleName: 'M', lastName: '佐藤', address1: '千代田 1-1', address2: '101', city: '千代田区',
+    state: '東京都', postalCode: '100-0001', country: 'JP', company: 'ACME', email: 'hina@example.jp', phone: '090-1234-5678',
+    address3: null, ssn: null, username: null, passportNumber: null, licenseNumber: null,
+  });
+  assert.deepEqual(identity.fields, [cf('akari:type', 'identity', 0), cf('生年月日', '1990-01-02', 0), cf('役職', '技師', 0), cf('ウェブサイト', 'https://hina.example', 0)]);
+
+  assert.equal(ssh.type, 5);
+  assert.deepEqual(ssh.sshKey, {
+    privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----',
+    publicKey: 'ssh-ed25519 AAAA hina@pc', keyFingerprint: 'SHA256:abc',
+  });
+  assert.deepEqual(ssh.fields, [cf('akari:type', 'sshKey', 0), cf('パスフレーズ', 'pp', 1), cf('ホスト', 'git.example', 0), cf('ユーザー名', 'git', 0)]);
+});
+
+test('toBitwardenJson: other types → secure note with template custom fields; extra on any type', () => {
+  const { data } = typedData();
+  const items = JSON.parse(toBitwardenJson(data)).items;
+  const [wifi, db, login] = [items[3], items[4], items[6]];
+  assert.equal(wifi.type, 2);
+  assert.deepEqual(wifi.secureNote, { type: 0 });
+  assert.equal(wifi.notes, null, 'notes is only ever the item note, never the type name');
+  assert.ok(items.every((it, i) => it.notes === (data.items[i].note || null)), 'no item gets text written into notes');
+  // The type marker is on every item that is neither login nor note, native Bitwarden types included.
+  assert.deepEqual(items.map((it) => it.fields?.find((x) => x.name === 'akari:type')?.value ?? null),
+    data.items.map((it) => (it.type === 'login' || it.type === 'note' ? null : it.type)));
+  assert.deepEqual(wifi.fields, [cf('akari:type', 'wifi', 0), cf('ネットワーク名', 'Home-5G', 0), cf('パスワード', 'wifi pw', 1), cf('セキュリティ', 'WPA2', 0)],
+    'secret kinds hidden, select written as its label');
+  assert.equal(db.notes, 'prod', 'an existing note is left alone');
+  assert.deepEqual(db.fields, [
+    cf('akari:type', 'database', 0),
+    cf('ホスト', 'db.example', 0), cf('ポート', '5432', 0), cf('パスワード', '=pw', 1), cf('暗証', '0000', 1), cf('担当', '山田', 0),
+  ]);
+  assert.equal(login.type, 1);
+  assert.deepEqual(login.fields, [cf('暗証', '0000', 1), cf('担当', '山田', 0)], 'no type marker on logins');
+  // No item of any type leaks Akari's internal keys.
+  for (const it of items) for (const k of ['extra', 'vault', 'hue']) assert.ok(!(k in it), k);
+});
+
+test('toCsv: other types keep the columns; template and custom fields become "label: value" lines in the note', () => {
+  const { data } = typedData();
+  const csv = toCsv(data);
+  const { headers, records } = csvToObjects(csv);
+  assert.deepEqual(headers, CSV_COLUMNS);
+  const by = new Map(records.map((r) => [r.name, r]));
+  assert.deepEqual(by.get('Amex'), {
+    name: 'Amex', url: '', username: '', password: '',
+    note: 'メインカード\n\n名義: HINA SATO\nカード番号: 3782 822463 10005\n有効期限: 2030-04\nセキュリティコード: 1234\nPIN: 9876\n暗証: 0000\n担当: 山田',
+    totp: '', vault: '仕事', favorite: 'true',
+  });
+  assert.equal(by.get('Home').note, 'ネットワーク名: Home-5G\nパスワード: wifi pw\nセキュリティ: WPA2');
+  assert.equal(by.get('deploy').note.split('\n')[0], '秘密鍵: -----BEGIN OPENSSH PRIVATE KEY-----');
+  assert.equal(by.get('Blank card').note, '');
+  const login = by.get('Login with extra');
+  assert.deepEqual([login.url, login.username, login.password, login.note], ['https://a.example', 'u', 'p', '暗証: 0000\n担当: 山田']);
+
+  // Formula escaping still applies to the combined note cell.
+  const evil = defaultData(T1);
+  evil.items.push(makeItem({ type: 'wifi', title: 'x', fields: { ssid: '=cmd' } }, T1));
+  evil.items.push(makeItem({ type: 'apiCredential', title: '@x', fields: { keyId: 'k' }, extra: [{ label: '+l', value: 'v', secret: false }] }, T1));
+  const [a, b] = csvToObjects(toCsv(evil)).records;
+  assert.equal(a.note, 'ネットワーク名: =cmd', 'a label leads the line, so it is not a formula');
+  assert.equal(b.name, "'@x");
+  evil.items.push(makeItem({ type: 'note', title: 'n', note: '', extra: [{ label: '', value: '=HYPERLINK("x")', secret: false }] }, T1));
+  assert.equal(csvToObjects(toCsv(evil)).records[2].note, '\'=HYPERLINK("x")');
+});
+
+test('templateEntries: template order, non-empty values, select ids as labels', () => {
+  const item = makeItem({ type: 'wifi', fields: { security: 'none', ssid: 'Cafe' } }, T1);
+  assert.deepEqual(templateEntries(item), [
+    { key: 'ssid', label: 'ネットワーク名', value: 'Cafe', secret: false },
+    { key: 'security', label: 'セキュリティ', value: 'なし', secret: false },
+  ]);
+  assert.deepEqual(templateEntries(makeItem({ type: 'note' }, T1)), []);
+  assert.deepEqual(templateEntries(makeItem({}, T1)), []);
 });

@@ -60,12 +60,14 @@ export function parseCsv(input, delimiter = detectDelimiter(input)) {
 
 /**
  * Header row → objects keyed by lower-cased, trimmed header names.
- * @returns {{ headers: string[], records: Record<string, string>[] }}
+ * `rawHeaders[i]` keeps the original spelling of `headers[i]` for display (e.g. extra-field labels).
+ * @returns {{ headers: string[], rawHeaders: string[], records: Record<string, string>[] }}
  */
 export function csvToObjects(input, delimiter) {
   const rows = parseCsv(input, delimiter);
-  if (!rows.length) return { headers: [], records: [] };
-  const headers = rows[0].map((h) => h.trim().toLowerCase());
+  if (!rows.length) return { headers: [], rawHeaders: [], records: [] };
+  const rawHeaders = rows[0].map((h) => h.trim());
+  const headers = rawHeaders.map((h) => h.toLowerCase());
   const records = rows.slice(1).map((r) => {
     const o = {};
     // defineProperty keeps headers like "__proto__" or "constructor" as plain own data.
@@ -76,7 +78,7 @@ export function csvToObjects(input, delimiter) {
     });
     return o;
   });
-  return { headers, records };
+  return { headers, rawHeaders, records };
 }
 
 /** First non-empty value among candidate column names. */

@@ -1,0 +1,1835 @@
+{
+  "accounts": [
+    {
+      "attrs": {
+        "accountName": "テスト",
+        "name": "山田 花子",
+        "email": "hanako@example.jp",
+        "uuid": "ACCOUNTUUID0000000000000002",
+        "domain": "https://my.1password.com/"
+      },
+      "vaults": [
+        {
+          "attrs": {
+            "uuid": "VAULTUUID000000000000000002",
+            "desc": "",
+            "avatar": "",
+            "name": "種類",
+            "type": "P"
+          },
+          "items": [
+            {
+              "uuid": "TYPES0000000000000000000100",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  {
+                    "value": "jiro",
+                    "id": "",
+                    "name": "user",
+                    "fieldType": "T",
+                    "designation": "username"
+                  },
+                  {
+                    "value": "Corp-Pass-1",
+                    "id": "",
+                    "name": "pass",
+                    "fieldType": "P",
+                    "designation": "password"
+                  },
+                  {
+                    "value": "C-001",
+                    "id": "",
+                    "name": "company_code",
+                    "fieldType": "T",
+                    "designation": ""
+                  }
+                ],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "ワンタイムパスワード",
+                        "id": "TOTP_1",
+                        "value": {
+                          "totp": "otpauth://totp/Corp:jiro?secret=JBSWY3DPEHPK3PXP"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "予備の OTP",
+                        "id": "TOTP_2",
+                        "value": {
+                          "totp": "steam://ABCDE"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "追加",
+                    "name": "extra",
+                    "fields": [
+                      {
+                        "title": "社員番号",
+                        "id": "q1",
+                        "value": {
+                          "string": "E-2048"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "金庫の暗証番号",
+                        "id": "q2",
+                        "value": {
+                          "concealed": "4321"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "入社日",
+                        "id": "q3",
+                        "value": {
+                          "date": 1427846400
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "社内システム",
+                "subtitle": "",
+                "url": "https://corp.example.jp",
+                "urls": [
+                  {
+                    "label": "",
+                    "url": "https://corp.example.jp"
+                  }
+                ],
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000101",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "004",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "名前",
+                    "name": "name",
+                    "fields": [
+                      {
+                        "title": "名",
+                        "id": "firstname",
+                        "value": {
+                          "string": "花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "イニシャル",
+                        "id": "initial",
+                        "value": {
+                          "string": "M"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "姓",
+                        "id": "lastname",
+                        "value": {
+                          "string": "山田"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "性別",
+                        "id": "sex",
+                        "value": {
+                          "menu": "female"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "生年月日",
+                        "id": "birthdate",
+                        "value": {
+                          "date": 631152000
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "会社",
+                        "id": "company",
+                        "value": {
+                          "string": "灯株式会社"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "役職",
+                        "id": "jobtitle",
+                        "value": {
+                          "string": "主任"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "住所",
+                    "name": "address",
+                    "fields": [
+                      {
+                        "title": "住所",
+                        "id": "address",
+                        "value": {
+                          "address": {
+                            "street": "丸の内 1-1",
+                            "city": "千代田区",
+                            "state": "東京都",
+                            "zip": "100-0005",
+                            "country": "jp"
+                          }
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "電話",
+                        "id": "defphone",
+                        "value": {
+                          "phone": "03-0000-0000"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "携帯",
+                        "id": "cellphone",
+                        "value": {
+                          "phone": "090-1111-2222"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "インターネット",
+                    "name": "internet",
+                    "fields": [
+                      {
+                        "title": "ユーザー名",
+                        "id": "username",
+                        "value": {
+                          "string": "hanako"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "メール",
+                        "id": "email",
+                        "value": {
+                          "string": "hanako@example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "秘密の答え",
+                        "id": "remindera",
+                        "value": {
+                          "concealed": "ミケ"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "本人（花子）",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000102",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "101",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "銀行名",
+                        "id": "bankName",
+                        "value": {
+                          "string": "みずほ銀行"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "口座名義",
+                        "id": "owner",
+                        "value": {
+                          "string": "ヤマダ ハナコ"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "種類",
+                        "id": "accountType",
+                        "value": {
+                          "menu": "savings"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "支店番号",
+                        "id": "routingNo",
+                        "value": {
+                          "string": "001"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "口座番号",
+                        "id": "accountNo",
+                        "value": {
+                          "string": "1234567"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "SWIFT",
+                        "id": "swift",
+                        "value": {
+                          "string": "MHCBJPJT"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "IBAN",
+                        "id": "iban",
+                        "value": {
+                          "string": ""
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "暗証番号",
+                        "id": "telephonePin",
+                        "value": {
+                          "concealed": "9876"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "支店",
+                    "name": "branchInfo",
+                    "fields": [
+                      {
+                        "title": "電話",
+                        "id": "branchPhone",
+                        "value": {
+                          "phone": "03-3333-3333"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "住所",
+                        "id": "branchAddress",
+                        "value": {
+                          "string": "東京都千代田区"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "みずほ銀行",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000103",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "102",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "種類",
+                        "id": "database_type",
+                        "value": {
+                          "menu": "postgresql"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "サーバー",
+                        "id": "hostname",
+                        "value": {
+                          "string": "db.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ポート",
+                        "id": "port",
+                        "value": {
+                          "string": "5432"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "データベース",
+                        "id": "database",
+                        "value": {
+                          "string": "akari"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ユーザー名",
+                        "id": "username",
+                        "value": {
+                          "string": "app"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "パスワード",
+                        "id": "password",
+                        "value": {
+                          "concealed": "db-secret"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "SID",
+                        "id": "sid",
+                        "value": {
+                          "string": ""
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "接続オプション",
+                        "id": "options",
+                        "value": {
+                          "string": "sslmode=require"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "本番 DB",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000104",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "103",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "氏名",
+                        "id": "fullname",
+                        "value": {
+                          "string": "山田 花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "住所",
+                        "id": "address",
+                        "value": {
+                          "string": "東京都千代田区丸の内 1-1"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "生年月日",
+                        "id": "birthdate",
+                        "value": {
+                          "date": 631152000
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "性別",
+                        "id": "sex",
+                        "value": {
+                          "gender": "female"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "番号",
+                        "id": "number",
+                        "value": {
+                          "string": "123456789012"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "種類",
+                        "id": "class",
+                        "value": {
+                          "string": "普通"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "交付",
+                        "id": "state",
+                        "value": {
+                          "string": "東京都公安委員会"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "国",
+                        "id": "country",
+                        "value": {
+                          "string": "日本"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "有効期限",
+                        "id": "expiry_date",
+                        "value": {
+                          "monthYear": 202903
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "運転免許証",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000105",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "105",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "グループ",
+                        "id": "org_name",
+                        "value": {
+                          "string": "千代田区立図書館"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ウェブサイト",
+                        "id": "website",
+                        "value": {
+                          "url": "https://library.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "会員名",
+                        "id": "member_name",
+                        "value": {
+                          "string": "山田 花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "入会日",
+                        "id": "member_since",
+                        "value": {
+                          "monthYear": 201504
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "有効期限",
+                        "id": "expiry_date",
+                        "value": {
+                          "monthYear": 202612
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "会員番号",
+                        "id": "membership_no",
+                        "value": {
+                          "string": "L-0042"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "PIN",
+                        "id": "pin",
+                        "value": {
+                          "concealed": "1122"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "図書館カード",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000106",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "106",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "種類",
+                        "id": "type",
+                        "value": {
+                          "string": "P"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "発行国",
+                        "id": "issuing_country",
+                        "value": {
+                          "string": "JPN"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "番号",
+                        "id": "number",
+                        "value": {
+                          "string": "TR1234567"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "氏名",
+                        "id": "fullname",
+                        "value": {
+                          "string": "YAMADA HANAKO"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "性別",
+                        "id": "sex",
+                        "value": {
+                          "gender": "female"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "国籍",
+                        "id": "nationality",
+                        "value": {
+                          "string": "JAPAN"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "発行官庁",
+                        "id": "issuing_authority",
+                        "value": {
+                          "string": "MINISTRY OF FOREIGN AFFAIRS"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "生年月日",
+                        "id": "birthdate",
+                        "value": {
+                          "date": 631152000
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "本籍",
+                        "id": "birthplace",
+                        "value": {
+                          "string": "TOKYO"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "発行日",
+                        "id": "issue_date",
+                        "value": {
+                          "date": 1590969600
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "有効期限",
+                        "id": "expiry_date",
+                        "value": {
+                          "date": 1906502400
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "パスポート",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000107",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "107",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "会社名",
+                        "id": "company_name",
+                        "value": {
+                          "string": "ANA"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "会員名",
+                        "id": "member_name",
+                        "value": {
+                          "string": "YAMADA HANAKO"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "会員番号",
+                        "id": "membership_no",
+                        "value": {
+                          "string": "1234567890"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "PIN",
+                        "id": "pin",
+                        "value": {
+                          "concealed": "5555"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "詳細",
+                    "name": "extra",
+                    "fields": [
+                      {
+                        "title": "入会",
+                        "id": "member_since",
+                        "value": {
+                          "monthYear": 201001
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ウェブサイト",
+                        "id": "website",
+                        "value": {
+                          "url": "https://www.ana.co.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "マイレージ",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000108",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "108",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "氏名",
+                        "id": "name",
+                        "value": {
+                          "string": "山田 花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "番号",
+                        "id": "number",
+                        "value": {
+                          "concealed": "123456789012"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "マイナンバー",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000109",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "109",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "ベースステーション名",
+                        "id": "name",
+                        "value": {
+                          "string": "AirMac"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ベースステーションのパスワード",
+                        "id": "password",
+                        "value": {
+                          "concealed": "base-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ネットワーク名",
+                        "id": "network_name",
+                        "value": {
+                          "string": "Jikka-WiFi"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "セキュリティ",
+                        "id": "wireless_security",
+                        "value": {
+                          "menu": "enterprise-x"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "パスワード",
+                        "id": "wireless_password",
+                        "value": {
+                          "concealed": "jikka-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "実家の Wi-Fi",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000110",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "110",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "URL",
+                        "id": "url",
+                        "value": {
+                          "string": "vps.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ユーザー名",
+                        "id": "username",
+                        "value": {
+                          "string": "root"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "パスワード",
+                        "id": "password",
+                        "value": {
+                          "concealed": "root-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "管理コンソール",
+                    "name": "admin_console",
+                    "fields": [
+                      {
+                        "title": "管理コンソール URL",
+                        "id": "admin_console_url",
+                        "value": {
+                          "string": "https://panel.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "管理ユーザー名",
+                        "id": "admin_console_username",
+                        "value": {
+                          "string": "admin"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "管理パスワード",
+                        "id": "admin_console_password",
+                        "value": {
+                          "concealed": "panel-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "VPS",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000111",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "112",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "ユーザー名",
+                        "id": "username",
+                        "value": {
+                          "string": "AKIAEXAMPLE"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "認証情報",
+                        "id": "credential",
+                        "value": {
+                          "concealed": "wJalrXUtnFEMI"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "種類",
+                        "id": "type",
+                        "value": {
+                          "menu": "other"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ホスト名",
+                        "id": "hostname",
+                        "value": {
+                          "string": "api.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "開始日",
+                        "id": "validFrom",
+                        "value": {
+                          "date": 1704067200
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "有効期限",
+                        "id": "expires",
+                        "value": {
+                          "date": 1798675200
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "クラウド API",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000112",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "113",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "日付",
+                        "id": "date",
+                        "value": {
+                          "date": 1715299200
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "場所",
+                        "id": "location",
+                        "value": {
+                          "string": "あかりクリニック"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "医師",
+                        "id": "healthcareprofessional",
+                        "value": {
+                          "string": "佐藤 医師"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "患者",
+                        "id": "patient",
+                        "value": {
+                          "string": "山田 花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "理由",
+                        "id": "reason",
+                        "value": {
+                          "string": "健康診断"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "薬",
+                    "name": "medication",
+                    "fields": [
+                      {
+                        "title": "薬",
+                        "id": "medication",
+                        "value": {
+                          "string": "ビタミン剤"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "用量",
+                        "id": "dosage",
+                        "value": {
+                          "string": "1 日 1 錠"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "通院記録",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000113",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "114",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "秘密鍵",
+                        "id": "private_key",
+                        "value": {
+                          "sshKey": {
+                            "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA1pux\n-----END OPENSSH PRIVATE KEY-----",
+                            "metadata": {
+                              "privateKey": "-----BEGIN PRIVATE KEY-----\nPKCS8\n-----END PRIVATE KEY-----",
+                              "publicKey": "ssh-ed25519 AAAAC3Nza1pux hanako@example",
+                              "fingerprint": "SHA256:1puxfingerprint",
+                              "keyType": "ed25519"
+                            }
+                          }
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "GitHub 用 SSH",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000114",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "115",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "recovery phrase",
+                        "id": "recoveryPhrase",
+                        "value": {
+                          "concealed": "abandon ability able about above absent"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "password",
+                        "id": "password",
+                        "value": {
+                          "concealed": "wallet-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Wallet",
+                    "name": "wallet",
+                    "fields": [
+                      {
+                        "title": "wallet address",
+                        "id": "walletAddress",
+                        "value": {
+                          "string": "bc1qexampleaddress0000"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "network",
+                        "id": "network",
+                        "value": {
+                          "string": "Bitcoin"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "ビットコイン",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000115",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "100",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "バージョン",
+                        "id": "product_version",
+                        "value": {
+                          "string": "2024"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ライセンスキー",
+                        "id": "reg_code",
+                        "value": {
+                          "string": "ABCD-EFGH-IJKL"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "顧客",
+                    "name": "customer",
+                    "fields": [
+                      {
+                        "title": "登録名",
+                        "id": "reg_name",
+                        "value": {
+                          "string": "山田 花子"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "登録メール",
+                        "id": "reg_email",
+                        "value": {
+                          "email": {
+                            "email_address": "hanako@example.jp",
+                            "provider": null
+                          }
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "発行元",
+                    "name": "publisher",
+                    "fields": [
+                      {
+                        "title": "ダウンロード",
+                        "id": "download_link",
+                        "value": {
+                          "url": "https://soft.example.jp/download"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "発行元",
+                        "id": "publisher_name",
+                        "value": {
+                          "string": "Example Soft"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  },
+                  {
+                    "title": "注文",
+                    "name": "order",
+                    "fields": [
+                      {
+                        "title": "購入日",
+                        "id": "order_date",
+                        "value": {
+                          "date": 1709164800
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "注文番号",
+                        "id": "order_number",
+                        "value": {
+                          "string": "ORD-1"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "写真編集ソフト",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            },
+            {
+              "uuid": "TYPES0000000000000000000116",
+              "favIndex": 0,
+              "createdAt": 1700000000,
+              "updatedAt": 1700000000,
+              "state": "active",
+              "categoryUuid": "111",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "name": "",
+                    "fields": [
+                      {
+                        "title": "サーバー",
+                        "id": "pop_server",
+                        "value": {
+                          "string": "mail.example.jp"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "ユーザー名",
+                        "id": "pop_username",
+                        "value": {
+                          "string": "hanako"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      },
+                      {
+                        "title": "パスワード",
+                        "id": "pop_password",
+                        "value": {
+                          "concealed": "mail-pass"
+                        },
+                        "indexAtSource": 0,
+                        "guarded": false,
+                        "multiline": false,
+                        "dontGenerate": false
+                      }
+                    ]
+                  }
+                ],
+                "passwordHistory": []
+              },
+              "overview": {
+                "title": "会社メール",
+                "subtitle": "",
+                "ps": 0,
+                "pbe": 0,
+                "pgrng": false
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

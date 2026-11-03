@@ -56,6 +56,14 @@
 					<Key>アカウント ID</Key>
 					<Value>1234-5678-9012</Value>
 				</String>
+				<String>
+					<Key>Support PIN</Key>
+					<Value>4455</Value>
+				</String>
+				<String>
+					<Key>復旧用の番号</Key>
+					<Value ProtectInMemory="True">R-0099-1188</Value>
+				</String>
 				<Binary>
 					<Key>recovery-codes.txt</Key>
 					<Value Ref="0" />

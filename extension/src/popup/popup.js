@@ -3,6 +3,8 @@
 
 import { MSG, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { send } from '../shared/api.js';
+import { typeOf, hasTemplate, fieldLabel } from '../shared/item-types.js';
+import { t } from '../shared/i18n.js';
 import {
   S, on, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets,
   itemById, visibleItems, ensureSel, copyText, liveToken, live,
@@ -11,7 +13,10 @@ import { h, clear } from './views/dom.js';
 import { siteOf, vaultColor } from './views/format.js';
 import { burst, wait } from './views/fx.js';
 import { toast, toastError, hideToast } from './views/toast.js';
-import { renderList, renderCounts, markSelected, scrollToRow, setAfState, afButtonEl, afCandidate } from './views/list.js';
+import {
+  renderList, renderCounts, markSelected, scrollToRow, setAfState, afButtonEl, afCandidate, typeCounts, renderTypeButton,
+} from './views/list.js';
+import { buildPlusMenu, renderTypeMenu, moveMenuFocus } from './views/type-menu.js';
 import { renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
 import { openEditor, closeEditor, editorOpen, requestClose } from './views/editor.js';
 import { initGenerator, openGenerator, closeGenerator, resetGenerator, isGenOpen } from './views/generator.js';
@@ -231,23 +236,35 @@ async function lockNow({ remote = false } = {}) {
 
 /* ───────── menus ───────── */
 
+const MENUS = { vault: ['vaultBtn', 'vaultMenu'], plus: ['plusBtn', 'plusMenu'], type: ['typeBtn', 'typeMenu'] };
+
 function closeMenus() {
-  for (const [btn, menu] of [[$('vaultBtn'), $('vaultMenu')], [$('plusBtn'), $('plusMenu')]]) {
-    menu.classList.remove('open');
-    btn.setAttribute('aria-expanded', 'false');
+  for (const [btn, menu] of Object.values(MENUS)) {
+    $(menu).classList.remove('open');
+    $(btn).setAttribute('aria-expanded', 'false');
   }
   $('catcher').classList.remove('on');
 }
 
-const menuOpen = () => $('vaultMenu').classList.contains('open') || $('plusMenu').classList.contains('open');
+/** The open menu's key ('vault' | 'plus' | 'type'), or null. */
+const openMenuKey = () => Object.keys(MENUS).find((k) => $(MENUS[k][1]).classList.contains('open')) || null;
+const menuOpen = () => !!openMenuKey();
 
 function openMenu(which) {
-  const pairs = { vault: [$('vaultBtn'), $('vaultMenu')], plus: [$('plusBtn'), $('plusMenu')] };
-  const [btn, menu] = pairs[which];
+  const [btn, menu] = MENUS[which].map($);
   const wasOpen = menu.classList.contains('open');
   closeMenus();
   if (wasOpen) return;
   if (which === 'vault') renderVaultMenu();
+  if (which === 'type') {
+    renderTypeFilterMenu();
+    // under the 種類 button, but never past the bottom of the 430px popup
+    menu.style.maxHeight = '';
+    const below = btn.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 4;
+    const top = Math.max(48, Math.min(below, app.clientHeight - menu.offsetHeight - 6));
+    menu.style.top = top + 'px';
+    menu.style.maxHeight = app.clientHeight - top - 6 + 'px';
+  }
   menu.classList.add('open');
   btn.setAttribute('aria-expanded', 'true');
   $('catcher').classList.add('on');
@@ -283,20 +300,36 @@ function setVault(id) {
   refreshList({ animate: true });
 }
 
+/* 種類 filter */
+
+function renderTypeFilterMenu() {
+  const counts = typeCounts();
+  let total = 0;
+  for (const n of counts.values()) total += n;
+  renderTypeMenu($('typeMenu'), { counts, total, current: S.type, onPick: setType });
+}
+
+function setType(id) {
+  closeMenus();
+  $('typeBtn').focus({ preventScroll: true });
+  const next = id !== 'all' && typeOf(id) ? id : 'all';
+  if (S.type === next) return;
+  S.type = next;
+  saveUi();
+  renderTypeButton();
+  refreshList({ animate: true });
+}
+
 function menuKeys(e) {
   if (e.isComposing || e.keyCode === 229) return;
   const menu = e.currentTarget;
-  const items = [...menu.querySelectorAll('button')];
-  const i = items.indexOf(document.activeElement);
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    const n = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
-    items[n].focus();
+  if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    if (moveMenuFocus(menu, e.key)) e.preventDefault();
     return;
   }
   // the + menu's L / N / G shortcuts
   if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
-  const hit = items.find((b) => b.dataset.key === e.key.toLowerCase());
+  const hit = [...menu.querySelectorAll('button[data-key]')].find((b) => b.dataset.key === e.key.toLowerCase());
   if (hit) {
     e.preventDefault();
     hit.click();
@@ -324,8 +357,15 @@ async function newLogin() {
 }
 
 function newNote() {
+  newItem('note');
+}
+
+/** ＋ menu: any item type. Logins get the active tab's site as before. */
+function newItem(type) {
+  if (type === 'login') { newLogin(); return; }
   closeMenus();
-  const go = () => openEditor({ type: 'note' });
+  if (!typeOf(type)) return;
+  const go = () => openEditor({ type });
   if (editorOpen()) requestClose(go);
   else go();
 }
@@ -389,9 +429,9 @@ function onKey(e) {
     if (isGenOpen()) { closeGenerator(); e.preventDefault(); return; }
     if (isSettingsOpen()) { closeSettings(); e.preventDefault(); return; }
     if (menuOpen()) {
-      const vaultWasOpen = $('vaultMenu').classList.contains('open');
+      const which = openMenuKey();
       closeMenus();
-      (vaultWasOpen ? $('vaultBtn') : $('plusBtn')).focus();
+      $(MENUS[which][0]).focus();
       e.preventDefault();
       return;
     }
@@ -421,12 +461,26 @@ function onKey(e) {
   if (e.key === 'Enter') {
     if (typing && ae !== search) return;
     if (ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A')) return;
-    const it = itemById(S.sel);
-    if (!it?.password || it.type === 'note') return;
+    const target = primarySecret(itemById(S.sel));
+    if (!target) return;
     e.preventDefault();
     if (typing) ae.blur();
-    copyText('pass', it.password);
+    copyText(target.field, target.value, target.opts);
   }
+}
+
+/** What ⏎ copies: a login's password, or the first filled single-line secret of a templated item. */
+function primarySecret(it) {
+  if (!it) return null;
+  if (it.type === 'login') return it.password ? { field: 'pass', value: it.password } : null;
+  if (!hasTemplate(it.type)) return null;
+  for (const fd of typeOf(it.type).fields) {
+    const v = it.fields?.[fd.key];
+    if (fd.kind !== 'secret' || !v) continue;
+    const value = fd.format === 'card' ? String(v).replace(/\D/g, '') : String(v);
+    return { field: fd.key, value, opts: { label: fieldLabel(it.type, fd.key), secret: true } };
+  }
+  return null;
 }
 
 /* ───────── search ───────── */
@@ -445,13 +499,17 @@ function setQuery(q) {
 function wire() {
   $('vaultBtn').addEventListener('click', () => openMenu('vault'));
   $('plusBtn').addEventListener('click', () => openMenu('plus'));
+  $('typeBtn').addEventListener('click', () => openMenu('type'));
+  $('typeClear').addEventListener('click', () => setType('all'));
   $('catcher').addEventListener('click', closeMenus);
   $('vaultMenu').addEventListener('keydown', menuKeys);
   $('plusMenu').addEventListener('keydown', menuKeys);
+  $('typeMenu').addEventListener('keydown', menuKeys);
   $('openSettings').addEventListener('click', () => { closeMenus(); openSettings(); });
-  $('newLogin').addEventListener('click', newLogin);
-  $('newNote').addEventListener('click', newNote);
-  $('newGen').addEventListener('click', () => { closeMenus(); openGenerator({}); });
+  buildPlusMenu($('plusMenu'), { onNew: newItem, onGen: () => { closeMenus(); openGenerator({}); } });
+  $('plusMenu').setAttribute('aria-label', t('menu.new', null, '新規作成'));
+  $('typeMenu').setAttribute('aria-label', t('list.typeFilterMenu', null, '種類で絞り込む'));
+  renderTypeButton();
   $('lockBtn').addEventListener('click', () => lockNow());
   $('scrim').addEventListener('click', () => { closeGenerator(); closeSettings(); });
 
@@ -488,6 +546,7 @@ function wire() {
   on('autofill', doAutofill);
   on('newLogin', newLogin);
   on('newNote', newNote);
+  on('newItem', newItem);
   on('edit', (id) => openEditor({ id }));
   on('openGen', (opts) => openGenerator(opts || {}));
   on('listChanged', () => { if (S.phase === 'main') refreshList(); });
@@ -504,6 +563,7 @@ function wire() {
     if (!visibleItems().some((i) => i.id === item.id)) {
       // make sure the saved item is visible
       S.filter = 'all';
+      if (S.type !== 'all' && S.type !== item.type) S.type = 'all';
       S.query = '';
       $('search').value = '';
       $('searchClear').hidden = true;

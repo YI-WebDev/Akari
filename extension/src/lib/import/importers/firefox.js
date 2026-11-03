@@ -1,11 +1,13 @@
 // Firefox "Export logins" CSV:
 // url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged
 // (timestamps in ms). Older exports call the first column "hostname". Firefox has no
-// titles, so the title is the host (makeImported derives it from the url).
+// titles, so the title is the host (makeImported derives it from the url). httpRealm is kept
+// as a custom field.
 
 import { pick } from '../csv.js';
 import { toMs } from '../model.js';
-import { collect, fits, readCsv } from './_csv.js';
+import { t } from '../../../shared/i18n.js';
+import { collect, entry, fits, readCsv } from './_csv.js';
 
 const SHAPE = {
   all: [['url', 'hostname'], 'username', 'password'],
@@ -36,7 +38,7 @@ export async function parse(file) {
       url,
       username: r.username,
       password: r.password,
-      note: realm ? `HTTP 認証の領域: ${realm}` : '',
+      extra: realm ? [entry(t('import.label.httpRealm', null, 'HTTP 認証の領域'), realm, false)] : [],
       createdAt: toMs(r.timecreated),
       updatedAt: toMs(r.timepasswordchanged),
     };

@@ -12,7 +12,7 @@ import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
 import {
   createVault, openVaultRecord, readVaultData, sealData, exportBackup, importBackup,
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
-  addImportedItems, MAX_IMPORT_ITEMS,
+  addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -342,21 +342,27 @@ export function createVaultService({
     return { vaults: structuredClone(c.data.vaults), items: c.data.items.map(sanitizeItem) };
   }
 
+  /**
+   * New item (no id) or update of a stored one, for every item type. An update only touches
+   * the keys it carries: { id, fav } keeps fields/extra, a full save replaces them.
+   * Validation needs the stored item (its type; legacy note keys), so it runs inside the write.
+   */
   async function saveItem(item) {
-    const fields = validateItem(item);
     const saved = await mutateData((draft) => {
       const t = now();
-      let target;
-      if (fields.id) {
-        target = draft.items.find((i) => i.id === fields.id);
-        if (!target) throw fail(ERR.NOT_FOUND, 'Item not found');
-        const { id, ...edit } = fields; // eslint-disable-line no-unused-vars
+      const id = isObject(item) ? item.id : undefined;
+      let target = typeof id === 'string' && id ? draft.items.find((i) => i.id === id) : null;
+      if (typeof id === 'string' && id && !target) throw fail(ERR.NOT_FOUND, 'Item not found');
+      const fields = validateItem(item, target);
+      if (target) {
+        const { id: _id, ...edit } = fields; // eslint-disable-line no-unused-vars
         const passwordChanged = 'password' in edit && edit.password !== target.password;
         // passkeys, createdAt and lastUsedAt always stay as stored: popup copies lack privateKey.
         Object.assign(target, edit, { updatedAt: t });
         if (passwordChanged) target.passwordUpdatedAt = t;
+        stripLegacyLoginKeys(target);
       } else {
-        target = makeItemAt({ ...fields, passkeys: [] }, t);
+        target = makeItemAt(fields, t);
         draft.items.push(target);
       }
       if (!draft.vaults.some((v) => v.id === target.vault)) throw fail(ERR.INVALID, 'Unknown vault');

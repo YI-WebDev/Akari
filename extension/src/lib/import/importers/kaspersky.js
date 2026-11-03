@@ -15,8 +15,11 @@
 //
 // Only the English headings and keys are known (not confirmed for localized exports).
 // Entries are told apart by their keys, so the section headings only mark boundaries.
+// "Key: value" lines with a key we do not know become custom fields; lines without a key
+// are appended to the note.
 
 import { ImportError, bytesToText, makeImported } from '../model.js';
+import { entry } from './_csv.js';
 
 const HEADING = /^(websites|applications|notes)$/i;
 const SEPARATOR = /^-{3,}$/;
@@ -52,7 +55,8 @@ function splitBlocks(text) {
 
 function parseBlock(lines) {
   const f = {};
-  const extra = [];
+  const extra = []; // unknown "Key: value" lines → custom fields
+  const loose = []; // lines with no key at all
   let multi = null;
   let keyed = false;
   for (const line of lines) {
@@ -64,12 +68,14 @@ function parseBlock(lines) {
     if (role) {
       f[role] = line.slice(colon + 1).replace(/^\s/, '');
       if (MULTILINE.has(role)) multi = role;
+    } else if (colon > 0) {
+      extra.push(entry(line.slice(0, colon), line.slice(colon + 1).trim()));
     } else if (line.trim()) {
-      extra.push(line.trim());
+      loose.push(line.trim());
     }
   }
   const kind = 'site' in f || 'url' in f ? 'site' : 'app' in f ? 'app' : 'text' in f || 'name' in f ? 'note' : null;
-  return { f, extra, kind, keyed };
+  return { f, extra, loose, kind, keyed };
 }
 
 /** True when `text` has a Kaspersky section heading and at least one recognisable entry. */
@@ -83,13 +89,13 @@ export async function parse(file) {
   let skipped = 0;
   let recognised = 0;
   for (const b of splitBlocks(bytesToText(file.bytes))) {
-    const { f, extra, kind, keyed } = parseBlock(b);
+    const { f, extra, loose, kind, keyed } = parseBlock(b);
     if (!kind) { if (keyed) skipped++; continue; }
     recognised++;
-    const rest = extra.join('\n'); // lines with keys we do not know: kept, not dropped
+    const rest = loose.join('\n'); // lines with no key at all: kept, not dropped
     let raw;
     if (kind === 'note') {
-      raw = { type: 'note', title: f.name, note: [String(f.text ?? '').trim(), rest].filter(Boolean).join('\n\n') };
+      raw = { type: 'note', title: f.name, note: [String(f.text ?? '').trim(), rest].filter(Boolean).join('\n\n'), extra };
     } else {
       const name = (kind === 'site' ? f.site : f.app) ?? '';
       const loginName = String(f.loginName ?? '').trim();
@@ -101,6 +107,7 @@ export async function parse(file) {
         username: user || loginName,
         password: f.password,
         note: [String(f.comment ?? '').trim(), rest].filter(Boolean).join('\n\n'),
+        extra,
       };
     }
     const it = makeImported(raw);

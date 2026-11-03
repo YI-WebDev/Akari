@@ -8,6 +8,7 @@ import {
 import { createCredential, getAssertion } from '../../extension/src/lib/webauthn.js';
 import { exportDek } from '../../extension/src/lib/crypto.js';
 import { fromB64, toB64, toB64url, randomBytes } from '../../extension/src/shared/bytes.js';
+import { TYPE_IDS, typeOf, hasTemplate, LIMITS } from '../../extension/src/shared/item-types.js';
 
 const OPTS = { iterations: 1000 };
 const PW = 'master-password-1';
@@ -235,7 +236,7 @@ test('validateItem: types, caps, url normalization, totp', () => {
   assert.equal(validateItem({ url: '' }).url, '');
   assert.equal(validateItem({ id: null, title: 'x' }).id, undefined);
   for (const bad of [
-    { type: 'card' }, { title: 'x'.repeat(201) }, { url: 'javascript:alert(1)' }, { url: 'ftp://host/x' },
+    { type: 'bogus' }, { title: 'x'.repeat(201) }, { url: 'javascript:alert(1)' }, { url: 'ftp://host/x' },
     { username: 'x'.repeat(513) }, { password: 'x'.repeat(1025) }, { note: 'x'.repeat(10001) }, { title: 5 },
     { fav: 'yes' }, { hue: 360 }, { vault: '' }, { totp: { secret: '1!' } }, { totp: { secret: 'JBSWY3DPEHPK3PXP', digits: 7 } },
     { totp: { secret: 'JBSWY3DPEHPK3PXP', algorithm: 'MD5' } }, { totp: 'JBSWY3DPEHPK3PXP' }, null, [],
@@ -332,7 +333,7 @@ test('addImportedItems: validation, duplicates (existing and in-batch), timestam
     { type: 'login', title: 'App', url: 'androidapp://com.example', username: 'u', password: 'p', note: 'n' },
     { title: '  ' + 'T'.repeat(300), username: 'long-title' },
     { type: 'login', title: 'TOTP', totp: { secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30, issuer: '', label: '' } },
-    { type: 'card', title: 'bad type' },
+    { type: 'bogus', title: 'bad type' },
     { type: 'login', title: 'bad pw', password: 'x'.repeat(1025) },
     { type: 'login', title: 'bad totp', totp: { secret: '!!' } },
     { type: 'login', title: 'bad fav', fav: 'yes' },
@@ -343,7 +344,8 @@ test('addImportedItems: validation, duplicates (existing and in-batch), timestam
   assert.deepEqual(res, { added: 6, duplicates: 3, invalid: 6, passkeys: 0 });
   const added = data.items.slice(2);
   assert.equal(added.length, 6);
-  assert.ok(added.every((it) => it.vault === 'family' && it.passkeys.length === 0 && typeof it.id === 'string'));
+  assert.ok(added.every((it) => it.vault === 'family' && typeof it.id === 'string'));
+  assert.ok(added.every((it) => (it.type === 'login' ? it.passkeys.length === 0 : !('passkeys' in it))), 'only logins hold passkeys');
   const gh2 = added.find((i) => i.title === 'GitHub 2');
   assert.equal(gh2.url, 'https://github.com');
   assert.equal(gh2.fav, true);
@@ -389,4 +391,255 @@ test('addImportedItems: passkeys pass the strict checks and never duplicate cred
   assert.deepEqual(a.passkeys.map((p) => p.credentialId), [fresh.credentialId]);
   assert.deepEqual(b.passkeys.map((p) => p.credentialId), [fresh2.credentialId], 'same credentialId later in the batch is dropped');
   assert.equal(a.passkeys[0].privateKey, fresh.privateKey);
+});
+
+// ---- item types (shared/item-types.js) ---------------------------------------
+
+/** A valid value for every template field of `type`, by kind. */
+function sampleFields(type) {
+  const byKind = {
+    text: (fd) => fd.key + ' value', secret: (fd) => 's3cret ' + fd.key, multiline: () => 'line 1\nline 2',
+    'secret-multiline': () => '-----BEGIN KEY-----\nAAAA\n-----END KEY-----', date: () => '2030-01-31', month: () => '2030-12',
+    email: () => 'hina@example.jp', tel: () => '+81 90-1234-5678', url: () => 'https://example.com/x', number: () => '5432',
+    select: (fd) => fd.options[0].id,
+  };
+  const out = {};
+  for (const fd of typeOf(type).fields) out[fd.key] = fd.format === 'card' ? '4111 1111 1111 1111' : byKind[fd.kind](fd);
+  return out;
+}
+
+const bad = (item, stored, why) => assert.throws(() => validateItem(item, stored), { code: 'INVALID' }, why || JSON.stringify(item));
+
+test('validateItem: template fields are normalized and checked per kind', () => {
+  const card = validateItem({
+    type: 'card', fields: { cardholder: '  HINA SATO ', number: '4111-1111-1111-1111', expiry: '2027-04', cvv: ' 123', pin: '' },
+  }).fields;
+  assert.deepEqual(card, { cardholder: 'HINA SATO', number: '4111 1111 1111 1111', expiry: '2027-04', cvv: ' 123' },
+    'text trimmed, secrets keep spaces, blanks dropped, card number keeps its grouping');
+  assert.equal(validateItem({ type: 'card', fields: { number: '  41111111 ' } }).fields.number, '41111111');
+  assert.deepEqual(validateItem({
+    type: 'identity',
+    fields: { birthDate: '2000-02-29', email: ' hina@example.jp ', phone: '090 (1234) 5678 内線 12', website: 'example.com', lastName: '' },
+  }).fields, { birthDate: '2000-02-29', email: 'hina@example.jp', phone: '090 (1234) 5678 内線 12', website: 'https://example.com' });
+  assert.deepEqual(validateItem({ type: 'wifi', fields: { ssid: 'Home', security: 'wpa2' } }).fields, { ssid: 'Home', security: 'wpa2' });
+  assert.deepEqual(validateItem({ type: 'database', fields: { port: '5432' } }).fields, { port: '5432' });
+  assert.deepEqual(validateItem({ type: 'sshKey', fields: { privateKey: 'a\r\nb\rc', publicKey: '  ' } }).fields, { privateKey: 'a\nb\nc' });
+  assert.deepEqual(validateItem({ type: 'passport', fields: {} }).fields, {});
+  for (const type of TYPE_IDS.filter(hasTemplate)) {
+    assert.deepEqual(validateItem({ type, fields: sampleFields(type) }).fields, sampleFields(type), type);
+  }
+
+  for (const [type, fields] of [
+    ['identity', { birthDate: '2023-02-29' }], ['identity', { birthDate: '2024-13-01' }], ['identity', { birthDate: '2024-04-31' }],
+    ['identity', { birthDate: '2024/01/02' }], ['identity', { birthDate: '24-01-02' }], ['identity', { birthDate: '0000-01-01' }],
+    ['card', { expiry: '2024-00' }], ['card', { expiry: '2024-13' }], ['card', { expiry: '2024-1' }], ['card', { expiry: '2024-01-01' }],
+    ['database', { port: '54a' }], ['database', { port: '-1' }], ['database', { port: '５４３２' }], ['server', { port: '22.0' }],
+    ['identity', { email: 'nope' }], ['identity', { email: 'a b@c' }], ['identity', { phone: 'call me' }], ['identity', { phone: '+-()' }],
+    ['server', { url: 'javascript:alert(1)' }], ['server', { url: 'data:text/html,<b>x</b>' }], ['server', { url: 'ftp://host/x' }],
+    ['wifi', { security: 'WPA2' }], ['wifi', { security: 'wpa4' }],
+    ['card', { number: '4111' }], ['card', { number: '4111x1111111111' }], ['card', { number: '1'.repeat(20) }],
+    ['card', { bogus: 'x' }], ['card', { cardholder: 5 }], ['card', { cardholder: null }], ['card', JSON.parse('{"__proto__":"x"}')],
+    ['card', 'x'], ['card', []], ['card', null],
+    ['note', { body: 'x' }], ['login', { number: '4111111111111111' }], ['note', 'x'],
+  ]) bad({ type, fields }, null, type + ' ' + JSON.stringify(fields));
+  assert.equal(validateItem({ type: 'note', fields: {} }).fields, undefined, 'empty fields on note/login are dropped');
+  assert.equal(validateItem({ fields: {} }).fields, undefined);
+
+  // Caps: LIMITS.fieldValue for single-line kinds, LIMITS.multilineValue for multiline ones.
+  assert.equal(validateItem({ type: 'apiCredential', fields: { keyId: 'k'.repeat(LIMITS.fieldValue) } }).fields.keyId.length, LIMITS.fieldValue);
+  bad({ type: 'apiCredential', fields: { keyId: 'k'.repeat(LIMITS.fieldValue + 1) } });
+  bad({ type: 'apiCredential', fields: { secret: 's'.repeat(LIMITS.fieldValue + 1) } });
+  assert.equal(validateItem({ type: 'sshKey', fields: { privateKey: 'k'.repeat(LIMITS.multilineValue) } }).fields.privateKey.length, LIMITS.multilineValue);
+  bad({ type: 'sshKey', fields: { privateKey: 'k'.repeat(LIMITS.multilineValue + 1) } });
+  bad({ type: 'medicalRecord', fields: { allergies: 'k'.repeat(LIMITS.multilineValue + 1) } });
+});
+
+test('validateItem: extra on any type, with count and length limits', () => {
+  for (const type of TYPE_IDS) {
+    const extra = [{ label: ' PIN ', value: ' 12\r\n34', secret: true }, { label: '', value: ' ', secret: false }, { label: 'x', value: '' }];
+    assert.deepEqual(validateItem({ type, extra }).extra, [{ label: 'PIN', value: ' 12\n34', secret: true }, { label: 'x', value: '', secret: false }], type);
+  }
+  assert.deepEqual(validateItem({ extra: [] }).extra, []);
+  const max = Array.from({ length: LIMITS.extraCount }, (_, i) => ({ label: 'l' + i, value: 'v', secret: false }));
+  assert.equal(validateItem({ extra: max }).extra.length, LIMITS.extraCount);
+  assert.equal(validateItem({ extra: [{ label: 'l'.repeat(LIMITS.extraLabel), value: 'v'.repeat(LIMITS.extraValue), secret: false }] }).extra.length, 1);
+  for (const extra of [
+    'x', {}, null, [...max, { label: 'one more', value: 'v', secret: false }], [null], ['x'],
+    [{ label: 'l'.repeat(LIMITS.extraLabel + 1), value: 'v', secret: false }], [{ label: 'l', value: 'v'.repeat(LIMITS.extraValue + 1), secret: false }],
+    [{ label: 'l', value: 'v', secret: 'yes' }], [{ label: 'l', value: 5, secret: false }], [{ value: 'v', secret: false }],
+  ]) bad({ type: 'card', extra }, null, String(JSON.stringify(extra)).slice(0, 80));
+});
+
+test('validateItem: login-only keys on other types: empty legacy values dropped, others refused unless unchanged', () => {
+  // Legacy notes were stored with url/username/password = '' and totp = null; the popup sends them back.
+  assert.deepEqual(validateItem({ type: 'note', title: 'Memo', url: '', username: '', password: '', totp: null, passkeys: [] }),
+    { type: 'note', title: 'Memo' });
+  assert.deepEqual(validateItem({ type: 'card', url: '  ', fields: { cvv: '1' } }), { type: 'card', fields: { cvv: '1' } });
+  for (const item of [
+    { type: 'note', password: 'p' }, { type: 'card', username: 'u' }, { type: 'wifi', url: 'https://router.example' },
+    { type: 'note', totp: { secret: 'JBSWY3DPEHPK3PXP' } }, { type: 'note', url: 'javascript:alert(1)' },
+  ]) bad(item);
+
+  // A stored legacy note with a non-empty value keeps it (never lost) but cannot change it.
+  const legacy = { ...makeItem({ title: 'Old', url: 'https://router.example', username: 'admin', password: 'pw' }, 1), type: 'note' };
+  assert.deepEqual(validateItem({ ...legacy, fav: true }, legacy), {
+    id: legacy.id, type: 'note', vault: 'personal', title: 'Old', url: 'https://router.example', username: 'admin', password: 'pw',
+    note: '', fav: true, hue: legacy.hue, extra: [],
+  });
+  bad({ id: legacy.id, password: 'changed' }, legacy);
+  bad({ id: legacy.id, username: 'someone' }, makeItem({ type: 'note' }, 1));
+
+  // The stored type is used when the payload has none, and can never change.
+  const card = makeItem({ type: 'card', fields: { number: '4111111111111111' } }, 1);
+  assert.deepEqual(validateItem({ id: card.id, fields: { cvv: '999' } }, card), { id: card.id, fields: { cvv: '999' } });
+  bad({ id: card.id, fields: { cvv: '999' } }, null, 'without the stored item, fields default to a login');
+  bad({ id: card.id, type: 'identity' }, card);
+  bad({ id: card.id, type: 'login' }, card);
+  bad({ type: 'bogus' });
+});
+
+test('makeItem: per-type defaults', () => {
+  const card = makeItem({ type: 'card' }, 7);
+  assert.deepEqual(Object.keys(card).sort(), ['createdAt', 'extra', 'fav', 'fields', 'hue', 'id', 'lastUsedAt', 'note', 'title', 'type', 'updatedAt', 'vault']);
+  assert.deepEqual([card.fields, card.extra, card.createdAt], [{}, [], 7]);
+  const note = makeItem({ type: 'note', title: 'n' }, 7);
+  assert.deepEqual(Object.keys(note).sort(), ['createdAt', 'extra', 'fav', 'hue', 'id', 'lastUsedAt', 'note', 'title', 'type', 'updatedAt', 'vault']);
+  const login = makeItem({}, 7);
+  for (const k of ['url', 'username', 'password', 'totp', 'passkeys', 'passwordUpdatedAt', 'extra']) assert.ok(k in login, k);
+  assert.ok(!('fields' in login));
+  for (const type of TYPE_IDS) assert.equal(makeItem({ type }).type, type);
+});
+
+test('sanitizeItem leaves fields and extra intact', () => {
+  const item = makeItem({ type: 'sshKey', fields: sampleFields('sshKey'), extra: [{ label: 'k', value: 'v', secret: true }] }, 1);
+  const clean = sanitizeItem(item);
+  assert.deepEqual(clean, item);
+  assert.notEqual(clean.fields, item.fields, 'deep copy');
+  assert.equal(clean.fields.privateKey, item.fields.privateKey, 'item secrets are the popup\'s to show; only passkey keys are stripped');
+});
+
+test('backup export/import keeps fields and extra; legacy note keys; invalid typed items dropped', async () => {
+  const data = defaultData(1000);
+  const extra = [{ label: 'メモ欄', value: 'v', secret: false }, { label: '暗証', value: '0000', secret: true }];
+  for (const type of TYPE_IDS.filter(hasTemplate)) data.items.push(makeItem({ type, title: type, fields: sampleFields(type), extra, vault: 'work' }, 1000));
+  data.items.push(makeItem({ title: 'Login', url: 'https://a.example', username: 'u', password: 'p', extra }, 1000));
+  // Legacy notes: stored with every login key, empty or (theoretically) filled.
+  const legacyEmpty = { ...makeItem({ title: 'legacy' }, 1000), type: 'note', note: 'body' };
+  const legacyFilled = { ...makeItem({ title: 'legacy filled', url: 'https://router.example', username: 'admin', password: 'pw' }, 1000), type: 'note' };
+  data.items.push(legacyEmpty, legacyFilled);
+  data.items.push(makeItem({ type: 'identity', title: 'bad date', fields: { birthDate: '1990/01/02' } }, 1000));
+  data.items.push(makeItem({ type: 'card', title: 'unknown key', fields: { bogus: 'x' } }, 1000));
+  data.items.push(makeItem({ type: 'note', title: 'fields on note', fields: { x: '1' } }, 1000));
+
+  const json = exportBackup(await createVaultRecord(PW, data, OPTS), 5000);
+  const imported = await importBackup(json, PW);
+  const byTitle = new Map(imported.items.map((i) => [i.title, i]));
+  for (const type of TYPE_IDS.filter(hasTemplate)) assert.deepEqual(byTitle.get(type), data.items.find((i) => i.title === type), type);
+  assert.deepEqual(byTitle.get('Login').extra, extra);
+  assert.deepEqual(byTitle.get('legacy'), {
+    id: legacyEmpty.id, type: 'note', vault: 'personal', title: 'legacy', note: 'body', fav: false, hue: legacyEmpty.hue,
+    extra: [], createdAt: 1000, updatedAt: 1000, lastUsedAt: null,
+  }, 'empty legacy login keys are dropped');
+  assert.deepEqual([byTitle.get('legacy filled').url, byTitle.get('legacy filled').password], ['https://router.example', 'pw'],
+    'a filled legacy value survives a backup round trip');
+  assert.ok(!('passkeys' in byTitle.get('legacy filled')));
+  for (const t of ['bad date', 'unknown key', 'fields on note']) assert.ok(!byTitle.has(t), t);
+
+  // mergeData: same id but a different type is skipped; typed items replace by updatedAt.
+  const current = structuredClone(imported);
+  const card = current.items.find((i) => i.type === 'card');
+  const incoming = {
+    vaults: [],
+    items: [
+      { ...structuredClone(card), type: 'identity', fields: {}, updatedAt: 9000 },
+      { ...structuredClone(current.items.find((i) => i.type === 'wifi')), fields: { ssid: 'New' }, updatedAt: 9000 },
+    ],
+  };
+  const merged = mergeData(current, incoming);
+  assert.equal(merged.count, 1);
+  assert.deepEqual(merged.data.items.find((i) => i.id === card.id), card);
+  const wifi = merged.data.items.find((i) => i.type === 'wifi');
+  assert.deepEqual(wifi.fields, { ssid: 'New' });
+  assert.ok(!('passkeys' in wifi), 'non-login items never get a passkey list');
+});
+
+test('addImportedItems: every type, same validation, exact-duplicate dedupe, field salvage', async () => {
+  const data = defaultData(1000);
+  const visa = { type: 'card', title: 'Visa', fields: { number: '4111111111111111', expiry: '2027-04', cvv: '123' } };
+  data.items.push(makeItem(visa, 1000));
+  const now = 9000;
+  const all = TYPE_IDS.filter(hasTemplate).map((type) => ({
+    type, title: 'All ' + type, fields: sampleFields(type), extra: [{ label: 'x', value: 'y', secret: true }],
+  }));
+  const gh = { type: 'login', title: 'GH', url: 'https://github.com', username: 'hina', password: 'pw' };
+  const res = await addImportedItems(data, [
+    ...all,
+    ...structuredClone(all), // a true duplicate: the identical record imported twice → 1
+    // True duplicates of the existing card: separators and case of the number, and the title's case/spaces, do not matter.
+    { ...visa, title: ' visa ', fields: { ...visa.fields, number: '4111 1111 1111 1111' } },
+    { ...visa, fields: { ...visa.fields, number: '4111-1111-1111-1111' } },
+    // Different records that share identifying values are all kept:
+    { ...visa, fields: { ...visa.fields, expiry: '2031-04', cvv: '987' } }, // a renewed card (same number, new expiry/CVV)
+    { type: 'apiCredential', title: 'OpenAI', fields: { host: 'api.openai.com', secret: 'sk-one' } },
+    { type: 'apiCredential', title: 'OpenAI', fields: { host: 'api.openai.com', secret: 'sk-two' } }, // same host, other secret
+    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'pw-a' } },
+    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'pw-b' } }, // same network name, other password
+    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'PW-A' } }, // secrets compare exactly, case included
+    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'a', secret: false }] }, // untitled CSV rows,
+    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'b', secret: false }] }, // different custom fields
+    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'b', secret: true }] },
+    { type: 'identity', title: 'Me', fields: { lastName: 'Sato' }, note: 'n' },
+    { type: 'identity', title: 'Me', fields: { lastName: 'Sato' }, note: 'other' }, // other note
+    { type: 'passport', title: 'Passport', fields: { number: 'TK1234567' } },
+    { type: 'passport', title: 'Passport', fields: { number: 'tk 123 4567' } }, // dup: number without separators / case
+    { type: 'passport', title: 'Passport', fields: { number: 'TR1234567' } }, // letters count
+    // Logins: host + username + password, plus note, TOTP secret and extra.
+    gh,
+    { ...gh, note: 'second account' },
+    { ...gh, totp: { secret: 'JBSWY3DPEHPK3PXP' } },
+    { ...gh, extra: [{ label: 'PIN', value: '1', secret: true }] },
+    { ...gh, title: 'Other title', url: 'https://GITHUB.com/login' }, // dup: same host, title not compared
+    // Salvage: values that fail their kind's check move to extra; a select label maps to its id.
+    { type: 'identity', title: 'Salvaged', fields: { lastName: 'Sato', birthDate: '1990/01/02', bogus: 'kept', port: 5 } },
+    { type: 'wifi', title: 'Office', fields: { ssid: 'Office', security: 'WPA2' } },
+    { type: 'note', title: 'note fields', fields: { x: 1 } }, // a note has no template: all into extra
+    // Invalid: login-only keys on other types, bad extra, unknown type.
+    { type: 'card', title: 'with url', url: 'https://bank.example', fields: { number: '5555555555554444' } },
+    { type: 'card', title: 'bad extra', extra: 'nope' },
+    { type: 'bogus', title: 'x' },
+    // Passkeys on a non-login are ignored.
+    { type: 'server', title: 'srv', fields: { host: 'h' }, passkeys: [(await importedPasskey()).pk] },
+  ], 'personal', now);
+  const n = all.length;
+  assert.equal(n, 16);
+  assert.deepEqual(res, { added: n + 21, duplicates: n + 4, invalid: 3, passkeys: 0 });
+  const added = data.items.slice(1);
+  for (const it of all) {
+    const got = added.find((i) => i.title === it.title);
+    assert.deepEqual([got.type, got.fields, got.extra, got.vault], [it.type, it.fields, it.extra, 'personal'], it.type);
+    assert.ok(!('passkeys' in got) && !('url' in got) && !('passwordUpdatedAt' in got), it.type);
+  }
+  const salvaged = added.find((i) => i.title === 'Salvaged');
+  assert.deepEqual(salvaged.fields, { lastName: 'Sato' });
+  assert.deepEqual(salvaged.extra, [
+    { label: '生年月日', value: '1990/01/02', secret: false },
+    { label: 'bogus', value: 'kept', secret: false },
+    { label: 'port', value: '5', secret: false },
+  ]);
+  assert.deepEqual(added.find((i) => i.title === 'Office').fields, { ssid: 'Office', security: 'wpa2' });
+  const count = (title) => added.filter((i) => i.title === title).length;
+  for (const it of all) assert.equal(count(it.title), 1, 'identical record imported twice → 1: ' + it.type);
+  assert.deepEqual(added.filter((i) => i.title === 'Visa').map((i) => i.fields), [{ ...visa.fields, expiry: '2031-04', cvv: '987' }],
+    'the renewed card is added; the separator/case variants of the existing card are not');
+  assert.deepEqual(added.filter((i) => i.title === 'OpenAI').map((i) => i.fields.secret), ['sk-one', 'sk-two']);
+  assert.deepEqual(added.filter((i) => i.title === 'Home').map((i) => i.fields.password), ['pw-a', 'pw-b', 'PW-A']);
+  assert.equal(count('メモ'), 3);
+  assert.equal(count('Me'), 2);
+  assert.deepEqual(added.filter((i) => i.title === 'Passport').map((i) => i.fields.number), ['TK1234567', 'TR1234567']);
+  assert.equal(count('GH'), 4);
+  assert.equal(count('Other title'), 0);
+  const noteFields = added.find((i) => i.title === 'note fields');
+  assert.deepEqual([noteFields.fields, noteFields.extra], [undefined, [{ label: 'x', value: '1', secret: false }]]);
+  assert.ok(!('passkeys' in added.find((i) => i.title === 'srv')));
+  assert.ok(!added.some((i) => ['with url', 'bad extra'].includes(i.title)));
 });

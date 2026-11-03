@@ -1,0 +1,14 @@
+{
+  "BANKSTATEMENT": [
+    { "id": "{B1}", "BankAccountName": "旧口座", "BankAccountOwner": "TARO YAMADA", "BankAccountBank": "旧銀行", "BankAccountBIC": "OLDBJPJT", "BankAccountIBAN": "FR1420041010050500013M02606" }
+  ],
+  "PASSPORT": [
+    { "id": "{P1}", "Fullname": "TARO YAMADA", "Number": "TK0000001", "DeliveryDate": "2015-7-1", "ExpireDate": "2025-7-1", "DeliveryPlace": "東京都", "Sex": "MALE", "DateOfBirth": "1985-12-24" }
+  ],
+  "IDENTITY": [
+    { "id": "{I1}", "Title": "MR", "FirstName": "Taro", "LastName": "Yamada", "BirthDate": "1985-12-24", "BirthPlace": "Osaka" }
+  ],
+  "FISCALSTATEMENT": [
+    { "id": "{F1}", "FiscalNumber": "1234567890123", "TeleDeclarantNumber": "TD-1" }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "folders": [],
+  "items": [
+    {
+      "archived": 0, "category": "identity", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "identity.default",
+      "title": "次郎の個人情報", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0001",
+      "fields": [
+        { "deleted": 0, "label": "名", "sensitive": 0, "type": "text", "uid": 130, "value": "次郎" },
+        { "deleted": 0, "label": "姓", "sensitive": 0, "type": "text", "uid": 132, "value": "佐藤" },
+        { "deleted": 0, "label": "性別", "sensitive": 0, "type": "text", "uid": 133, "value": "男性" },
+        { "deleted": 0, "label": "生年月日", "sensitive": 0, "type": "date", "uid": 134, "value": "1988/02/29" },
+        { "deleted": 0, "label": "社会保障番号", "sensitive": 1, "type": "text", "uid": 212, "value": "987-65-4321" },
+        { "deleted": 0, "label": "自宅住所", "sensitive": 0, "type": "section", "uid": 141, "value": "" },
+        { "deleted": 0, "label": "番地", "sensitive": 0, "type": "text", "uid": 143, "value": "梅田 1-1" },
+        { "deleted": 0, "label": "市区町村", "sensitive": 0, "type": "text", "uid": 144, "value": "大阪市" },
+        { "deleted": 0, "label": "都道府県", "sensitive": 0, "type": "text", "uid": 145, "value": "大阪府" },
+        { "deleted": 0, "label": "国", "sensitive": 0, "type": "text", "uid": 146, "value": "日本" },
+        { "deleted": 0, "label": "郵便番号", "sensitive": 0, "type": "text", "uid": 147, "value": "530-0001" },
+        { "deleted": 0, "label": "電話番号", "sensitive": 0, "type": "phone", "uid": 149, "value": "06-0000-0000" },
+        { "deleted": 0, "label": "会社", "sensitive": 0, "type": "text", "uid": 137, "value": "灯株式会社" },
+        { "deleted": 0, "label": "E メール", "sensitive": 0, "type": "email", "uid": 165, "value": "jiro@example.jp" }
+      ]
+    },
+    {
+      "archived": 0, "category": "finance", "createdAt": 1700000000, "favorite": 1, "note": "給与振込", "template_type": "finance.bankaccount",
+      "title": "あかり銀行", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0002",
+      "fields": [
+        { "deleted": 0, "label": "銀行名", "sensitive": 0, "type": "ccBankname", "uid": 4, "value": "あかり銀行" },
+        { "deleted": 0, "label": "口座名義", "sensitive": 0, "type": "ccName", "uid": 0, "value": "サトウ ジロウ" },
+        { "deleted": 0, "label": "口座の種類", "sensitive": 0, "type": "text", "uid": 1, "value": "普通" },
+        { "deleted": 0, "label": "口座番号", "sensitive": 0, "type": "numeric", "uid": 2, "value": "1112223" },
+        { "deleted": 0, "label": "支店コード", "sensitive": 0, "type": "numeric", "uid": 7, "value": "045" },
+        { "deleted": 0, "label": "SWIFT", "sensitive": 0, "type": "text", "uid": 8, "value": "AKARJPJT" },
+        { "deleted": 0, "label": "ログインパスワード", "sensitive": 1, "type": "password", "uid": 19, "value": "netbank-pass" },
+        { "deleted": 0, "label": "テレホン暗証番号", "sensitive": 1, "type": "pin", "uid": 23, "value": "2468" }
+      ]
+    },
+    {
+      "archived": 0, "category": "travel", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "travel.passport",
+      "title": "次郎のパスポート", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0003",
+      "fields": [
+        { "deleted": 0, "label": "Number", "sensitive": 0, "type": "text", "uid": 2, "value": "TZ1112223" },
+        { "deleted": 0, "label": "Full name", "sensitive": 0, "type": "text", "uid": 0, "value": "JIRO SATO" },
+        { "deleted": 0, "label": "Nationality", "sensitive": 0, "type": "text", "uid": 15, "value": "JAPAN" },
+        { "deleted": 0, "label": "Birth date", "sensitive": 0, "type": "date", "uid": 5, "value": "29/02/1988" },
+        { "deleted": 0, "label": "Issued on", "sensitive": 0, "type": "date", "uid": 7, "value": "1 April 2022" },
+        { "deleted": 0, "label": "Expiry date", "sensitive": 0, "type": "date", "uid": 8, "value": "04/05/2032" },
+        { "deleted": 0, "label": "Issuing country", "sensitive": 0, "type": "text", "uid": 9, "value": "JPN" },
+        { "deleted": 0, "label": "Authority", "sensitive": 0, "type": "text", "uid": 10, "value": "外務省" }
+      ]
+    },
+    {
+      "archived": 0, "category": "license", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "license.driving",
+      "title": "運転免許", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0004",
+      "fields": [
+        { "deleted": 0, "label": "番号", "sensitive": 0, "type": "numeric", "uid": 1, "value": "620000000001" },
+        { "deleted": 0, "label": "氏名", "sensitive": 0, "type": "text", "uid": 0, "value": "佐藤 次郎" },
+        { "deleted": 0, "label": "種類", "sensitive": 0, "type": "text", "uid": 2, "value": "中型" },
+        { "deleted": 0, "label": "有効期限", "sensitive": 0, "type": "date", "uid": 5, "value": "2027年3月31日" },
+        { "deleted": 0, "label": "交付日", "sensitive": 0, "type": "date", "uid": 6, "value": "1700000000" }
+      ]
+    },
+    {
+      "archived": 0, "category": "computer", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "computer.database",
+      "title": "分析用 DB", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0005",
+      "fields": [
+        { "deleted": 0, "label": "種類", "sensitive": 0, "type": "text", "uid": 0, "value": "MySQL" },
+        { "deleted": 0, "label": "サーバー", "sensitive": 0, "type": "text", "uid": 1, "value": "analytics.example.jp" },
+        { "deleted": 0, "label": "ポート", "sensitive": 0, "type": "numeric", "uid": 2, "value": "3306" },
+        { "deleted": 0, "label": "データベース", "sensitive": 0, "type": "text", "uid": 3, "value": "events" },
+        { "deleted": 0, "label": "ユーザー名", "sensitive": 0, "type": "username", "uid": 4, "value": "reader" },
+        { "deleted": 0, "label": "パスワード", "sensitive": 1, "type": "password", "uid": 5, "value": "reader-pass" }
+      ]
+    },
+    {
+      "archived": 0, "category": "computer", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "computer.wifi",
+      "title": "カフェの Wi-Fi", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0006",
+      "fields": [
+        { "deleted": 0, "label": "ネットワーク名", "sensitive": 0, "type": "text", "value": "Cafe-Akari" },
+        { "deleted": 0, "label": "セキュリティ", "sensitive": 0, "type": "text", "value": "WPA2 Personal" },
+        { "deleted": 0, "label": "パスワード", "sensitive": 1, "type": "password", "value": "latte-123" }
+      ]
+    },
+    {
+      "archived": 0, "category": "misc", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "misc.membership",
+      "title": "スポーツクラブ", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0007",
+      "fields": [
+        { "deleted": 0, "label": "Organization", "sensitive": 0, "type": "text", "value": "Akari Gym" },
+        { "deleted": 0, "label": "Member name", "sensitive": 0, "type": "text", "value": "Jiro Sato" },
+        { "deleted": 0, "label": "Membership number", "sensitive": 0, "type": "text", "value": "G-77" },
+        { "deleted": 0, "label": "Member since", "sensitive": 0, "type": "date", "value": "2023-04-01" },
+        { "deleted": 0, "label": "PIN", "sensitive": 1, "type": "pin", "value": "0707" }
+      ]
+    },
+    {
+      "archived": 0, "category": "computer", "createdAt": 1700000000, "favorite": 0, "note": "", "template_type": "computer.internetprovider",
+      "title": "プロバイダー", "trashed": 0, "updated_at": 1700000000, "uuid": "types-0008",
+      "fields": [
+        { "deleted": 0, "label": "ユーザー名", "sensitive": 0, "type": "username", "value": "isp-user" },
+        { "deleted": 0, "label": "パスワード", "sensitive": 1, "type": "password", "value": "isp-pass" }
+      ]
+    }
+  ]
+}

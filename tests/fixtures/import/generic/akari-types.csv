@@ -1,0 +1,10 @@
+type,title,url,username,password,note,totp,cardholder,number,expiry,cvv,host,port,ssid,security,fullName,birthDate,Recovery PIN,custom
+login,GitHub,https://github.com,alice,pw,,,,,,,,,,,,,,
+card,My Card,,,,card note,,Taro Yamada,4111 1111 1111 1111,12/30,123,,,,,,,9876,billing
+クレジットカード,JP Card,,,cardpw,,,山田太郎,4222222222222222,2031-05,999,,,,,,,,
+Wi-Fi,Home WiFi,,,wifipw,,,,,,,,,HomeNet,WPA2-Personal,,,,
+server,Prod,https://admin.example,root,srvpw,,JBSWY3DPEHPK3PXP,,,,,srv.example.com,22,,,,,,
+Passport,Passport,,,,,,,TK123,2030-05-31,,,,,,Taro Yamada,1990-03-05,,visa stamps
+SSH Key,Deploy,,,,,,,,,,git.example.com,,,,,,,
+note,Memo,,,,remember this,,,,,,,,,,,,,
+Business,Odd,https://odd.example,bob,oddpw,,,,,,,,,,,,,,

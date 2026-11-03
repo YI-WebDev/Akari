@@ -1,29 +1,61 @@
 // Bitwarden JSON export: unencrypted, password-protected (PBKDF2-SHA256), or a ZIP with
-// data.json + attachments/. Item types: 1 login, 2 secure note, 3 card, 4 identity, 5 SSH key.
+// data.json + attachments/. Item types: 1 login, 2 secure note, 3 card, 4 identity, 5 SSH key,
+// 6 bank account, 7 driver's license, 8 passport — each mapped onto the Akari type of that kind.
+// Akari's own exports add a custom field "akari:type" (any TYPE_IDS value); with it the item is
+// rebuilt as that type, custom fields named like its template fields filling them.
 //
 // Password-protected exports: key = PBKDF2-SHA256(password, utf8(salt string), kdfIterations, 32 B),
 // stretched with HKDF-Expand(SHA-256, info "enc" / "mac", 32 B). `encKeyValidation_DO_NOT_EDIT`
 // and `data` are EncStrings "2.<iv b64>|<ciphertext b64>|<mac b64>" — AES-256-CBC with
 // HMAC-SHA256(macKey, iv ‖ ciphertext), verified before decrypting.
 
-import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
+import { ImportError, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { readZip, findEntry } from '../zip.js';
 import { utf8, fromUtf8, fromB64, toB64url, fromB64url, concat } from '../../../shared/bytes.js';
+import { TYPE_IDS, typeOf, fieldLabel, personName } from '../../../shared/item-types.js';
+import { L, typed, monthOf } from './_fields.js';
 
-const KINDS = { 3: 'クレジットカード', 4: '個人情報', 5: 'SSH キー' };
+/**
+ * Bitwarden key → Akari template key, per item type. Keys not listed become extra fields with
+ * the label given in EXTRA (secret when marked so).
+ */
+const MAP = {
+  3: ['card', 'card', { cardholderName: 'cardholder', number: 'number', code: 'cvv' }],
+  4: ['identity', 'identity', {
+    firstName: 'firstName', middleName: 'middleName', lastName: 'lastName', company: 'company', email: 'email',
+    phone: 'phone', address1: 'address1', address2: 'address2', city: 'city', state: 'state',
+    postalCode: 'postalCode', country: 'country',
+  }],
+  5: ['sshKey', 'sshKey', { privateKey: 'privateKey', publicKey: 'publicKey', keyFingerprint: 'fingerprint' }],
+  6: ['bankAccount', 'bankAccount', {
+    bankName: 'bankName', nameOnAccount: 'accountHolder', accountType: 'accountType', accountNumber: 'accountNumber',
+    routingNumber: 'routingNumber', branchNumber: 'branch', pin: 'pin', swiftCode: 'swift', iban: 'iban',
+  }],
+  7: ['driverLicense', 'driversLicense', {
+    licenseNumber: 'number', licenseClass: 'licenseClass', dateOfBirth: 'birthDate', issueDate: 'issuedOn',
+    expirationDate: 'expiry', issuingAuthority: 'issuer', issuingState: 'issuer', issuingCountry: 'issuer',
+  }],
+  8: ['passport', 'passport', {
+    passportNumber: 'number', nationality: 'nationality', issuingCountry: 'issuingCountry', dateOfBirth: 'birthDate',
+    issueDate: 'issuedOn', expirationDate: 'expiry', issuingAuthority: 'authority',
+  }],
+};
 
-const CARD = [['cardholderName', 'カード名義'], ['brand', 'ブランド'], ['number', 'カード番号'], ['code', 'セキュリティコード']];
-const IDENTITY = [
-  ['title', '敬称'], ['firstName', '名'], ['middleName', 'ミドルネーム'], ['lastName', '姓'],
-  ['company', '会社'], ['email', 'メール'], ['phone', '電話'], ['username', 'ユーザー名'],
-  ['address1', '住所 1'], ['address2', '住所 2'], ['address3', '住所 3'], ['city', '市区町村'],
-  ['state', '都道府県・州'], ['postalCode', '郵便番号'], ['country', '国'],
-  ['ssn', '社会保障番号'], ['passportNumber', 'パスポート番号'], ['licenseNumber', '免許証番号'],
-];
-const SSH = [['privateKey', '秘密鍵'], ['publicKey', '公開鍵'], ['keyFingerprint', 'フィンガープリント']];
-
-const pairs = (obj, map) => map.map(([k, label]) => [label, obj?.[k]]);
-const joinNote = (...parts) => parts.map((s) => (s == null ? '' : String(s).trim())).filter(Boolean).join('\n\n');
+/** Label key, Japanese label and secrecy for Bitwarden keys that have no template key of their own. */
+const EXTRA_LABELS = {
+  title: ['honorific', '敬称'], username: ['username', 'ユーザー名'], address3: ['address3', '住所 3'],
+  ssn: ['ssn', '社会保障番号', true], passportNumber: ['passportNumber', 'パスポート番号', true],
+  licenseNumber: ['licenseNumber', '免許証番号', true], bankContactPhone: ['bankPhone', '銀行の電話番号'],
+  issuingState: ['issuingState', '発行州'], issuingCountry: ['issuingCountry', '発行国'],
+  sex: ['sex', '性別'], birthPlace: ['birthPlace', '出生地'], passportType: ['passportType', '種類'],
+  nationalIdentificationNumber: ['nationalId', '国民識別番号', true],
+};
+/** [label, secret] for a Bitwarden key (labels resolved when used, in the current UI language). */
+const extraLabel = (k) => {
+  const e = EXTRA_LABELS[k];
+  return e ? [L(e[0], e[1]), e[2]] : [];
+};
+const NAME_KEYS = new Set(['firstName', 'middleName', 'lastName', 'givenName', 'surname']);
 
 // --- password-protected export -------------------------------------------------------------
 
@@ -144,7 +176,52 @@ async function toPasskey(f, fallbackCreatedAt) {
 /** Custom fields: 0 text, 1 hidden, 2 boolean, 3 linked (points at another field; no value). */
 function customFields(fields) {
   if (!Array.isArray(fields)) return [];
-  return fields.filter((f) => f && f.type !== 3).map((f) => [String(f.name ?? '').trim() || 'フィールド', f.value]);
+  return fields.filter((f) => f && f.type !== 3)
+    .map((f) => ({ label: String(f.name ?? '').trim() || L('field', '項目'), value: f.value, secret: f.type === 1 }));
+}
+
+/**
+ * Akari's own Bitwarden exports carry the item type in a custom field "akari:type"; with it,
+ * custom fields named like a template field (display label, Japanese source label or key) go
+ * back into that field. Returns the custom fields that matched none.
+ */
+const MARKER = 'akari:type';
+function fillByName(b, custom) {
+  const fds = typeOf(b.type)?.fields || [];
+  const rest = [];
+  for (const e of custom) {
+    const fd = fds.find((x) => !b.has(x.key) && [fieldLabel(b.type, x.key), x.label, x.key].includes(e.label));
+    if (fd) b.put(fd.key, e.value, e.label, e.secret || undefined);
+    else rest.push(e);
+  }
+  return rest;
+}
+
+/** Card, identity, SSH key, bank account, driver's license or passport → typed item. */
+function typedItem(c, custom, marked = false) {
+  const [type, prop, keys] = MAP[c.type];
+  const src = c[prop] && typeof c[prop] === 'object' ? c[prop] : {};
+  const b = typed(type);
+  if (type === 'driverLicense' || type === 'passport') {
+    b.put('fullName', personName(src.firstName ?? src.givenName, src.middleName, src.lastName ?? src.surname));
+  }
+  for (const [k, key] of Object.entries(keys)) b.put(key, src[k], ...extraLabel(k));
+  if (type === 'card') {
+    b.put('expiry', monthOf(src.expMonth, src.expYear));
+    if (!b.has('expiry')) b.add(L('expiry', '有効期限'), [src.expMonth, src.expYear].filter((v) => v != null && v !== '').join('/'));
+    b.brand(src.brand);
+  }
+  for (const [k, v] of Object.entries(src)) {
+    if (k in keys || (type !== 'identity' && NAME_KEYS.has(k)) || (type === 'card' && /^(expMonth|expYear|brand)$/.test(k))) continue;
+    b.add(extraLabel(k)[0] || k, v, extraLabel(k)[1]);
+  }
+  return b.item({ note: c.notes, extra: marked ? fillByName(b, custom) : custom });
+}
+
+/** A type Bitwarden has no cipher for, exported by Akari as a secure note + custom fields. */
+function markedNote(c, type, custom) {
+  const b = typed(type);
+  return b.item({ note: c.notes, extra: fillByName(b, custom) });
 }
 
 /** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
@@ -167,8 +244,7 @@ export async function parse(file, ctx = {}) {
   }
 
   const items = [];
-  const converted = {};
-  let skipped = 0, badTotp = 0, badPasskeys = 0;
+  let skipped = 0, unknown = 0, badTotp = 0, badPasskeys = 0;
   for (const c of json.items) {
     if (!c || typeof c !== 'object' || c.deletedDate) { skipped++; continue; }
     const base = {
@@ -177,16 +253,19 @@ export async function parse(file, ctx = {}) {
       createdAt: toMs(c.creationDate),
       updatedAt: toMs(c.revisionDate),
     };
-    const custom = customFields(c.fields);
+    const fields = Array.isArray(c.fields) ? c.fields : [];
+    const mark = String(fields.find((f) => f?.name === MARKER)?.value ?? '').trim();
+    const akari = TYPE_IDS.includes(mark) ? mark : null;
+    const custom = customFields(fields.filter((f) => f?.name !== MARKER)); // the marker itself is never kept
 
     if (c.type === 1) {
       const l = c.login || {};
       const uris = (Array.isArray(l.uris) ? l.uris : []).map((u) => String(u?.uri ?? '').trim()).filter(Boolean);
-      const extras = uris.slice(1).map((u) => ['URL', u]);
+      const extra = uris.slice(1).map((u) => ({ label: L('url', 'URL'), value: u, secret: false }));
       let totp = null;
       if (l.totp) {
         totp = parseOtp(l.totp, l.username || c.name);
-        if (!totp) { badTotp++; extras.push(['TOTP', l.totp]); }
+        if (!totp) { badTotp++; extra.push({ label: L('otp', 'ワンタイムパスワード'), value: l.totp, secret: true }); }
       }
       const passkeys = [];
       for (const f of Array.isArray(l.fido2Credentials) ? l.fido2Credentials : []) {
@@ -195,38 +274,21 @@ export async function parse(file, ctx = {}) {
         else badPasskeys++;
       }
       items.push({
-        ...base,
-        type: 'login',
-        url: uris[0] || '',
-        username: l.username,
-        password: l.password,
-        totp,
-        passkeys,
-        note: joinNote(c.notes, fieldsToNote([...extras, ...custom])),
+        ...base, type: 'login', url: uris[0] || '', username: l.username, password: l.password, totp, passkeys,
+        note: c.notes, extra: [...extra, ...custom],
       });
-      continue;
+    } else if (akari && akari !== 'login' && akari !== 'note' && MAP[c.type]?.[0] !== akari) {
+      items.push({ ...base, ...markedNote(c, akari, custom) });
+    } else if (MAP[c.type]) {
+      items.push({ ...base, ...typedItem(c, custom, !!akari) });
+    } else {
+      if (c.type !== 2 && !akari) unknown++;
+      items.push({ ...base, type: 'note', note: c.notes, extra: custom });
     }
-    if (c.type === 2) {
-      items.push({ ...base, type: 'note', note: joinNote(c.notes, fieldsToNote(custom)) });
-      continue;
-    }
-    const kind = KINDS[c.type] || 'その他のアイテム';
-    let fields = [];
-    if (c.type === 3) {
-      const card = c.card || {};
-      const exp = [card.expMonth && String(card.expMonth).padStart(2, '0'), card.expYear].filter(Boolean).join('/');
-      fields = [...pairs(card, CARD.slice(0, 3)), ['有効期限', exp], ...pairs(card, CARD.slice(3))];
-    } else if (c.type === 4) {
-      fields = pairs(c.identity, IDENTITY);
-    } else if (c.type === 5) {
-      fields = pairs(c.sshKey, SSH);
-    }
-    converted[kind] = (converted[kind] || 0) + 1;
-    items.push({ ...base, type: 'note', note: fieldsToNote([...fields, ...custom], c.notes) });
   }
 
-  for (const [kind, n] of Object.entries(converted)) warnings.push(`${kind} ${n} 件をセキュアノートとして読み込みました`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はメモに残しました`);
+  if (unknown) warnings.push(`種類の分からないアイテム ${unknown} 件をセキュアノートとして読み込みました`);
+  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
   if (badPasskeys) warnings.push(`パスキー ${badPasskeys} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした`);
   return { items, skipped, warnings };
 }

@@ -12,6 +12,7 @@ import { parse as parseNordpass } from '../../extension/src/lib/import/importers
 import { parse as parseRoboform } from '../../extension/src/lib/import/importers/roboform.js';
 import { parse as parseKaspersky } from '../../extension/src/lib/import/importers/kaspersky.js';
 import { parse as parseGeneric } from '../../extension/src/lib/import/importers/generic.js';
+import { isSecretLabel, toDate, toMonth } from '../../extension/src/lib/import/importers/_csv.js';
 
 const fx = (path) => new Uint8Array(readFileSync(new URL('../fixtures/import/' + path, import.meta.url)));
 const fxText = (path) => readFileSync(new URL('../fixtures/import/' + path, import.meta.url), 'utf8');
@@ -40,9 +41,11 @@ test('apple: Title,URL,Username,Password,Notes,OTPAuth', async () => {
   assert.equal(items[1].username, '太郎');
   assert.equal(items[1].password, 'パスワード123');
   assert.equal(items[1].totp, null);
-  // an OTPAuth value we cannot use is kept in the note, not dropped
+  // an OTPAuth value we cannot use is kept as a secret custom field, not dropped
   assert.equal(items[3].totp, null);
-  assert.match(items[3].note, /steam:\/\/ABCDEFGH/);
+  assert.equal(items[3].note, '');
+  assert.deepEqual(items[3].extra, [{ label: 'ワンタイムパスワード', value: 'steam://ABCDEFGH', secret: true }]);
+  assert.deepEqual(a.extra, []);
 });
 
 test('apple: older Safari export without Notes, column order irrelevant', async () => {
@@ -107,7 +110,9 @@ test('firefox: timestamps, realm, host as title, sync entries left out with a wa
   assert.equal(a.createdAt, 1700000000000);
   assert.equal(a.updatedAt, 1700000200000);
   assert.equal(b.title, 'intranet.local');
-  assert.match(b.note, /Staff Area/);
+  assert.equal(b.note, '');
+  assert.deepEqual(b.extra, [{ label: 'HTTP 認証の領域', value: 'Staff Area', secret: false }]); // a field, not note text
+  assert.deepEqual(a.extra, []);
   assert.equal(c.title, '日本語.example.jp');
   assert.equal(c.username, '太郎');
   assert.equal('createdAt' in c, false);
@@ -137,26 +142,24 @@ test('lastpass: logins, TOTP, fav, structured and plain secure notes', async () 
   assert.equal(byTitle(items, 'No URL').fav, false);
 
   const card = byTitle(items, 'My Visa');
-  assert.equal(card.type, 'note');
-  assert.equal(card.url, '');
-  assert.deepEqual(card.note.split('\n'), [
-    'NoteType: Credit Card',
-    'Name On Card: Taro Yamada',
-    'Type: Visa',
-    'Number: 4111111111111111',
-    'Security Code: 123',
-    'Start Date: January,2020',
-    'Expiration Date: December,2030',
-    'Notes: Primary card',
-    'Do not share: really',
+  assert.equal(card.type, 'card');
+  assert.equal('url' in card, false); // only logins carry url / username / password
+  assert.deepEqual(card.fields, { cardholder: 'Taro Yamada', number: '4111111111111111', expiry: '2030-12', cvv: '123' });
+  assert.deepEqual(card.extra, [
+    { label: 'Type', value: 'Visa', secret: false },
+    { label: 'Start Date', value: '2020-01', secret: false }, // "Month,Year" → YYYY-MM here too
   ]);
+  assert.equal(card.note, 'Primary card\nDo not share: really'); // the free text after "Notes:" only
+
   const plain = byTitle(items, 'Plain note');
   assert.equal(plain.type, 'note');
   assert.equal(plain.note, 'Just a plain note');
   assert.equal(plain.fav, true);
   const steam = byTitle(items, 'Steam');
   assert.equal(steam.totp, null);
-  assert.match(steam.note, /steam:\/\/ABCDEFGH/);
+  assert.equal(steam.note, '');
+  assert.deepEqual(steam.extra, [{ label: 'ワンタイムパスワード', value: 'steam://ABCDEFGH', secret: true }]);
+  assert.deepEqual(gh.extra, []);
 });
 
 test('lastpass: older export without totp / grouping, columns reordered; wrong file', async () => {
@@ -167,6 +170,175 @@ test('lastpass: older export without totp / grouping, columns reordered; wrong f
   assert.deepEqual(r.warnings, []);
   await assert.rejects(parseLastpass(fxFile('chromium/chrome.csv'), {}), invalid);
   await assert.rejects(parseLastpass(fxFile('apple/passwords.csv'), {}), invalid);
+});
+
+test('lastpass: every mapped NoteType becomes its Akari type; others stay notes', async () => {
+  const { items, skipped, warnings } = await parseLastpass(fxFile('lastpass/notetypes.csv'), {});
+  assert.equal(items.length, 15);
+  assert.equal(skipped, 1); // the empty Credit Card placeholder
+  assert.deepEqual(warnings, []);
+  const labels = (it) => it.extra.map((e) => e.label);
+  const plainExtras = (it) => it.extra.every((e) => !e.secret);
+
+  const bank = byTitle(items, 'Bank');
+  assert.equal(bank.type, 'bankAccount');
+  assert.deepEqual(bank.fields, {
+    bankName: 'Mizuho', accountType: 'Checking', routingNumber: '123456789', accountNumber: '00112233',
+    swift: 'MHCBJPJT', iban: 'GB82WEST12345698765432', pin: '4321',
+  });
+  assert.deepEqual(labels(bank), ['Branch Address', 'Branch Phone']);
+  assert.equal(bank.note, 'Main account\nsecond line');
+  assert.equal(bank.fav, true);
+
+  const home = byTitle(items, 'Home');
+  assert.equal(home.type, 'identity');
+  assert.deepEqual(home.fields, {
+    lastName: 'Yamada', firstName: 'Taro', email: 'taro@example.jp', phone: '03-1111-2222', birthDate: '1990-03-05',
+    company: 'Example KK', postalCode: '100-0001', country: 'JP', state: 'Tokyo', city: 'Chiyoda', address1: '1-1 Chiyoda', address2: 'Bldg 2',
+  });
+  assert.deepEqual(labels(home), ['Title', 'Username', 'Evening Phone', 'Mobile Phone', 'Address 3']); // the 2nd phone etc. are not lost
+  assert.ok(plainExtras(home));
+
+  const dl = byTitle(items, 'License');
+  assert.equal(dl.type, 'driverLicense');
+  assert.deepEqual(dl.fields, {
+    fullName: 'Taro Yamada', number: 'D1234567', licenseClass: 'B', birthDate: '1990-03-05', expiry: '2030-01-15', address: '1-1 Chiyoda',
+  });
+  assert.deepEqual(labels(dl), ['City / Town', 'State', 'ZIP / Postal Code', 'Country', 'Sex', 'Height']);
+  assert.ok(plainExtras(dl)); // "ZIP / Postal Code" is not a "code" secret
+
+  const pass = byTitle(items, 'Passport');
+  assert.equal(pass.type, 'passport');
+  assert.deepEqual(pass.fields, {
+    fullName: 'Taro Yamada', number: 'TK1234567', nationality: 'Japanese', issuingCountry: 'Japan',
+    birthDate: '1990-03-05', issuedOn: '2020-06-01', expiry: '2030-05-31', authority: 'MOFA',
+  });
+  assert.deepEqual(labels(pass), ['Type', 'Sex']);
+
+  const ssn = byTitle(items, 'SSN');
+  assert.equal(ssn.type, 'socialSecurity');
+  assert.deepEqual(ssn.fields, { fullName: 'Taro Yamada', number: '123-45-6789' });
+  assert.equal(ssn.note, 'keep safe');
+
+  const db = byTitle(items, 'Prod DB');
+  assert.equal(db.type, 'database');
+  assert.deepEqual(db.fields, { dbType: 'MySQL', host: 'db.example.com', port: '3306', database: 'app', username: 'root', password: 'dbpw' });
+  assert.deepEqual(labels(db), ['SID', 'Alias']);
+
+  const srv = byTitle(items, 'Server');
+  assert.equal(srv.type, 'server');
+  assert.deepEqual(srv.fields, { host: 'srv.example.com', username: 'admin', password: 'srvpw' });
+
+  const ssh = byTitle(items, 'Deploy key');
+  assert.equal(ssh.type, 'sshKey');
+  // the PEM block keeps its "Proc-Type: …" header line instead of splitting it off as a field
+  assert.equal(ssh.fields.privateKey, '-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nMIIEabc\n-----END RSA PRIVATE KEY-----');
+  assert.deepEqual({ ...ssh.fields, privateKey: undefined }, {
+    privateKey: undefined, publicKey: 'ssh-rsa AAAAB3Nza user@host', passphrase: 'pp', host: 'git.example.com',
+  });
+  assert.deepEqual(ssh.extra.map((e) => [e.label, e.value]), [['Bit Strength', '2048'], ['Format', 'RSA'], ['Date', 'June,1,2020']]);
+  assert.equal(ssh.note, 'deploy key');
+
+  const lic = byTitle(items, 'Editor');
+  assert.equal(lic.type, 'softwareLicense');
+  assert.deepEqual(lic.fields, { version: '2.1', licenseKey: 'AAAA-BBBB', licensee: 'Taro', purchaseDate: '2021-04-02', url: 'https://vendor.example' });
+  assert.deepEqual(labels(lic), ['Support Email', 'Publisher', 'Price', 'Number of Licenses']);
+  assert.ok(plainExtras(lic));
+
+  const wifi = byTitle(items, 'Home WiFi');
+  assert.equal(wifi.type, 'wifi');
+  assert.deepEqual(wifi.fields, { ssid: 'HomeNet', password: 'wifipw', security: 'wpa2' }); // option id, not the label
+  assert.deepEqual(labels(wifi), ['Connection Type', 'Connection Mode', 'Encryption']);
+
+  const gym = byTitle(items, 'Gym');
+  assert.equal(gym.type, 'membership');
+  assert.deepEqual(gym.fields, { organization: 'Gym', memberName: 'Taro', memberId: 'M-1', url: 'https://gym.example' });
+  // "Month,Year" cannot fill a day-precise date: kept as written
+  assert.deepEqual(gym.extra.map((e) => [e.label, e.value, e.secret]), [
+    ['Telephone', '03-9999-9999', false], ['Start Date', 'January,2020', false], ['Expiration Date', 'December,2030', false], ['Password', 'gympw', true],
+  ]);
+
+  const health = byTitle(items, 'Health');
+  assert.equal(health.type, 'medicalRecord');
+  assert.deepEqual(health.fields, { patientName: 'Taro', insurer: 'Kenpo', doctor: 'Dr. Sato', policyNumber: 'P-123' });
+  assert.equal(health.extra.length, 7);
+
+  // NoteTypes Akari has no type for keep the old listing
+  const mail = byTitle(items, 'Mail');
+  assert.equal(mail.type, 'note');
+  assert.equal(mail.note, 'NoteType: Email Account\nUsername: me\nPassword: mailpw\nServer: imap.example.com\nPort: 993\nNotes: hello');
+  assert.deepEqual(mail.extra, []);
+  const gift = byTitle(items, 'Gift');
+  assert.equal(gift.type, 'note');
+  assert.match(gift.note, /^NoteType: Custom_123456\nGift Code: XYZ/);
+
+  // values that do not fit their slot are kept as custom fields, not dropped
+  const odd = byTitle(items, 'Odd card');
+  assert.equal(odd.type, 'card');
+  assert.deepEqual(odd.fields, { cardholder: 'Hanako', number: '5555555555554444', cvv: '456' });
+  assert.deepEqual(odd.extra.map((e) => [e.label, e.value]), [['Type', 'Mastercard'], ['Start Date', 'someday'], ['Expiration Date', 'soon']]);
+});
+
+test('lastpass: a single Full Name goes to fullName (First / Last stay separate); product and patient keys', async () => {
+  const note = (body, name) => `http://sn,,,"NoteType:${body}",${name}\n`;
+  const csv = 'url,username,password,extra,name\n'
+    + note('Address\nFull Name:Taro Yamada\nEmail Address:t@example.jp', 'A')
+    + note('Address\nFirst Name:Taro\nLast Name:Yamada', 'B')
+    + note('Software License\nProduct Name:Editor\nVersion:3\nLicense Key:K-1', 'C')
+    + note('Health Insurance\nMember Name:Hanako\nPatient ID:7788\nCompany:Kenpo', 'D');
+  const { items } = await parseLastpass(file('x.csv', csv), {});
+  assert.deepEqual(items[0].fields, { fullName: 'Taro Yamada', email: 't@example.jp' });
+  assert.deepEqual(items[1].fields, { lastName: 'Yamada', firstName: 'Taro' });
+  assert.deepEqual(items[2].fields, { product: 'Editor', version: '3', licenseKey: 'K-1' });
+  assert.deepEqual(items[3].fields, { patientName: 'Hanako', recordNumber: '7788', insurer: 'Kenpo' });
+});
+
+test('lastpass: custom fields are secret when the label says number / code / password / PIN / key', async () => {
+  const extra = 'NoteType:Bank Account\nBank Name:X\nCustomer Number:998\nOnline Banking Password:pw\nSecurity Code Hint:abc\nTelephone Number:03\nBranch Name:Ginza\nApp Key:k\nNotes:n';
+  const csv = `url,username,password,extra,name\nhttp://sn,,,"${extra}",B\n`;
+  const { items } = await parseLastpass(file('x.csv', csv), {});
+  assert.deepEqual(items[0].extra.map((e) => [e.label, e.secret]), [
+    ['Customer Number', true], ['Online Banking Password', true], ['Security Code Hint', true],
+    ['Telephone Number', false], ['Branch Name', false], ['App Key', true],
+  ]);
+  assert.equal(items[0].note, 'n');
+});
+
+test('import dates: month and day spellings are converted to ISO, doubtful ones are refused', () => {
+  assert.equal(toMonth('December,2030'), '2030-12');
+  assert.equal(toMonth('Dec 2030'), '2030-12');
+  assert.equal(toMonth('12/30'), '2030-12');
+  assert.equal(toMonth('12/2030'), '2030-12');
+  assert.equal(toMonth('2030-12'), '2030-12');
+  assert.equal(toMonth('2030年12月'), '2030-12');
+  assert.equal(toMonth('2030-12-31'), '2030-12');
+  assert.equal(toMonth('13/2030'), null);
+  assert.equal(toMonth('2030'), null);
+  assert.equal(toMonth('soon'), null);
+  assert.equal(toMonth(''), null);
+  assert.equal(toDate('January,15,1990'), '1990-01-15');
+  assert.equal(toDate('15 January 1990'), '1990-01-15');
+  assert.equal(toDate('1990/1/5'), '1990-01-05');
+  assert.equal(toDate('1990-01-05T00:00:00Z'), '1990-01-05');
+  assert.equal(toDate('19900105'), '1990-01-05');
+  assert.equal(toDate('1990年1月5日'), '1990-01-05');
+  assert.equal(toDate('31/12/2030'), '2030-12-31');
+  assert.equal(toDate('12/31/2030'), '2030-12-31');
+  assert.equal(toDate('01/02/2030'), null); // day-first or month-first: cannot tell
+  assert.equal(toDate('February,30,2030'), null);
+  assert.equal(toDate('December,2030'), null); // no day
+});
+
+test('import labels: secret-looking names are masked, look-alikes are not', () => {
+  for (const l of ['PIN', 'Card PIN', 'Security Code', 'API key', 'apiKey', 'client_secret', 'Access Token', 'パスワード', '暗証番号', 'Pass', 'Recovery code']) {
+    assert.equal(isSecretLabel(l), true, l);
+  }
+  for (const l of ['Public Key', 'Passport', 'Phone', 'ZIP / Postal Code', 'Country code', 'Telephone', 'Website', 'City', 'Number of Licenses', '電話番号']) {
+    assert.equal(isSecretLabel(l, { numbers: true }), false, l);
+  }
+  assert.equal(isSecretLabel('Account Number'), false); // numbers are only secret where the caller says so
+  assert.equal(isSecretLabel('Account Number', { numbers: true }), true);
+  assert.equal(isSecretLabel('口座番号', { numbers: true }), true);
 });
 
 // ---- NordPass ----
@@ -181,25 +353,26 @@ test('nordpass: login, card, identity, note; folder rows are dropped', async () 
   assert.equal(gh.url, 'https://github.com');
   assert.equal(gh.username, 'alice');
   assert.equal(gh.password, 'pw,1');
-  assert.match(gh.note, /^a note\nsecond line\n\n/);
-  assert.match(gh.note, /追加の URL: https:\/\/gist\.github\.com, https:\/\/github\.io/);
-  assert.match(gh.note, /Recovery code: ABCD-1234/);
-  assert.match(gh.note, /Plan: Pro/);
+  assert.equal(gh.note, 'a note\nsecond line'); // additional URLs and custom fields are custom fields now
+  assert.deepEqual(gh.extra, [
+    { label: '追加の URL', value: 'https://gist.github.com', secret: false },
+    { label: '追加の URL', value: 'https://github.io', secret: false },
+    { label: 'Recovery code', value: 'ABCD-1234', secret: true }, // type "hidden"
+    { label: 'Plan', value: 'Pro', secret: false },
+  ]);
 
   const card = byTitle(items, 'My Card');
-  assert.equal(card.type, 'note');
-  assert.match(card.note, /カード名義: Taro Yamada/);
-  assert.match(card.note, /カード番号: 4111111111111111/);
-  assert.match(card.note, /セキュリティコード: 123/);
-  assert.match(card.note, /PIN: 4321/);
-  assert.match(card.note, /有効期限: 12\/30/);
+  assert.equal(card.type, 'card');
+  assert.deepEqual(card.fields, { cardholder: 'Taro Yamada', number: '4111111111111111', expiry: '2030-12', cvv: '123', pin: '4321' });
+  assert.deepEqual(card.extra, [{ label: '郵便番号', value: '100-0001', secret: false }]); // billing zip has no card slot
 
   const id = byTitle(items, 'Taro');
-  assert.equal(id.type, 'note');
-  assert.match(id.note, /氏名: 山田 太郎/);
-  assert.match(id.note, /電話番号: 090-1234-5678/);
-  assert.match(id.note, /住所1: 千代田1-1/);
-  assert.match(id.note, /都道府県: 東京都/);
+  assert.equal(id.type, 'identity');
+  assert.deepEqual(id.fields, {
+    fullName: '山田 太郎', email: 'taro@example.jp', phone: '090-1234-5678',
+    postalCode: '100-0001', country: 'JP', state: '東京都', city: '千代田区', address1: '千代田1-1', address2: 'Bldg 2',
+  });
+  assert.deepEqual(id.extra, []);
 
   const note = byTitle(items, '秘密のメモ');
   assert.equal(note.type, 'note');
@@ -208,9 +381,52 @@ test('nordpass: login, card, identity, note; folder rows are dropped', async () 
 
 test('nordpass: missing optional columns, unparseable custom_fields kept, wrong file', async () => {
   const r = await parseNordpass(file('x.csv', 'name,url,username,password,note,type,custom_fields\nA,https://a.test,u,p,n,password,not json\n'), {});
-  assert.equal(r.items[0].note, 'n\n\nカスタム項目: not json');
+  assert.equal(r.items[0].note, 'n');
+  assert.deepEqual(r.items[0].extra, [{ label: 'カスタム項目', value: 'not json', secret: false }]);
   await assert.rejects(parseNordpass(fxFile('chromium/chrome.csv'), {}), invalid);
   await assert.rejects(parseNordpass(fxFile('lastpass/export.csv'), {}), invalid);
+});
+
+const NORD_HEAD = 'name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,zipcode,folder,full_name,phone_number,email,address1,address2,city,country,state,type,custom_fields\n';
+
+test('nordpass: card expiry formats; an unreadable expiry stays a custom field', async () => {
+  const card = async (expiry) => (await parseNordpass(file('x.csv', NORD_HEAD + `Card,,,,,,Hanako,5555555555554444,456,,${expiry},,,,,,,,,,,credit_card,\n`), {})).items[0];
+  assert.equal((await card('12/30')).fields.expiry, '2030-12');
+  assert.equal((await card('03/2028')).fields.expiry, '2028-03');
+  assert.equal((await card('2029-07')).fields.expiry, '2029-07');
+  assert.equal((await card('2029-07-31')).fields.expiry, '2029-07');
+  const bad = await card('someday');
+  assert.equal('expiry' in bad.fields, false);
+  assert.deepEqual(bad.extra, [{ label: '有効期限', value: 'someday', secret: false }]);
+});
+
+test('nordpass: full_name is kept as written in identity.fullName (never split); on other rows it is a custom field', async () => {
+  const name = async (full) => (await parseNordpass(file('x.csv', NORD_HEAD + `Id,,,,,,,,,,,,,${full},,,,,,,,identity,\n`), {})).items[0].fields;
+  for (const full of ['山田 太郎', '山田　太郎', 'Taro Yamada', '山田太郎', 'Mary Jane Watson']) {
+    assert.deepEqual(await name(full), { fullName: full }, full);
+  }
+  const card = await parseNordpass(file('x.csv', NORD_HEAD + 'Card,,,,,,Hanako,5555555555554444,456,,12/30,,,Hanako Yamada,,,,,,,,credit_card,\n'), {});
+  assert.deepEqual(card.items[0].extra, [{ label: '氏名', value: 'Hanako Yamada', secret: false }]);
+});
+
+test('nordpass: columns with no place in a row\'s type become custom fields, secrets masked', async () => {
+  const csv = NORD_HEAD
+    + 'Memo,https://a.test,,me,notepw,body,,,,,,,,,,,,,,,,note,"[{""label"":""Backup code"",""type"":""text"",""value"":""777""},{""label"":""Hint"",""type"":""hidden"",""value"":""cat""}]"\n'
+    + 'Site,https://s.test,,u,pw,,Hanako,5555555555554444,456,1111,12/30,,,Taro Yamada,,,,,,,,password,\n';
+  const { items } = await parseNordpass(file('x.csv', csv), {});
+  const [memo, site] = items;
+  assert.equal(memo.type, 'note');
+  assert.equal(memo.note, 'body');
+  assert.deepEqual(memo.extra.map((e) => [e.label, e.value, e.secret]), [
+    ['URL', 'https://a.test', false], ['ユーザー名', 'me', false], ['パスワード', 'notepw', true],
+    ['Backup code', '777', true], // no "hidden" type, but the label says code
+    ['Hint', 'cat', true], // "hidden"
+  ]);
+  assert.equal(site.type, 'login');
+  assert.equal(site.password, 'pw');
+  assert.deepEqual(site.extra.map((e) => [e.value, e.secret]), [
+    ['Hanako', false], ['5555555555554444', true], ['456', true], ['1111', true], ['12/30', false], ['Taro Yamada', false],
+  ]);
 });
 
 // ---- RoboForm ----
@@ -226,18 +442,21 @@ test('roboform: logins, RfFieldsV2 extras and TOTP, Safenote and Identity rows',
   assert.equal(gh.username, 'alice');
   assert.equal(gh.password, 'pw1');
   assert.equal(gh.totp.secret, 'JBSWY3DPEHPK3PXP');
-  assert.match(gh.note, /^メモ\n\n/);
-  assert.match(gh.note, /Security answer: blue/);
-  assert.match(gh.note, /項目: extra value/);
-  assert.doesNotMatch(gh.note, /User ID|Password\$/); // duplicates of Login / Pwd are not repeated
+  assert.equal(gh.note, 'メモ');
+  assert.deepEqual(gh.extra, [
+    { label: 'Security answer', value: 'blue', secret: true }, // field type "pwd"
+    { label: '項目', value: 'extra value', secret: false },
+  ]); // duplicates of Login / Pwd (User ID$, Password$) are not repeated
 
   const safe = byTitle(items, 'Meeting notes');
   assert.equal(safe.type, 'note');
   assert.equal(safe.note, 'Line1\nLine2');
+  assert.deepEqual(safe.extra, []);
 
   const ident = byTitle(items, 'My Identity');
-  assert.equal(ident.type, 'note');
-  assert.equal(ident.note, 'First Name: 太郎\nLast Name: 山田\nEmail: taro@example.jp');
+  assert.equal(ident.type, 'identity');
+  assert.deepEqual(ident.fields, { firstName: '太郎', lastName: '山田', email: 'taro@example.jp' });
+  assert.deepEqual(ident.extra, []);
 
   assert.equal(byTitle(items, 'Bank').password, 's3cret');
 });
@@ -248,9 +467,43 @@ test('roboform: no RfFieldsV2 column, extra User ID$ differing from Login is kep
   assert.equal(r.items[0].note, 'n');
   const alt = await parseRoboform(file('x.csv', 'Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2\nA,https://a.test,,u,p,,,"User ID$,,,txt,other,Password$,,,pwd,p"\n'), {});
   assert.equal(alt.items[0].username, 'u');
-  assert.match(alt.items[0].note, /User ID: other/);
+  assert.deepEqual(alt.items[0].extra, [{ label: 'User ID', value: 'other', secret: false }]);
+  assert.equal(alt.items[0].note, '');
   await assert.rejects(parseRoboform(fxFile('chromium/chrome.csv'), {}), invalid);
   await assert.rejects(parseRoboform(fxFile('nordpass/export.csv'), {}), invalid);
+});
+
+const ROBO_HEAD = 'Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2\n';
+
+test('roboform: identity fields fill the template, birthday becomes a date, the rest are custom fields', async () => {
+  const fields = '"First Name$,,,txt,Taro,Last Name$,,,txt,Yamada,Birthday$,,,txt,March 5 1990,Zip$,,,txt,100-0001,City$,,,txt,Chiyoda,Company$,,,txt,Example KK,Mother\'s maiden name,,,pwd,Suzuki,Favourite colour,,,txt,blue"';
+  const { items } = await parseRoboform(file('x.csv', ROBO_HEAD + `Me,,,,,about me,,${fields}\n`), {});
+  const me = items[0];
+  assert.equal(me.type, 'identity');
+  assert.equal(me.note, 'about me');
+  assert.deepEqual(me.fields, {
+    lastName: 'Yamada', firstName: 'Taro', birthDate: '1990-03-05', company: 'Example KK', postalCode: '100-0001', city: 'Chiyoda',
+  });
+  assert.deepEqual(me.extra, [
+    { label: "Mother's maiden name", value: 'Suzuki', secret: true },
+    { label: 'Favourite colour', value: 'blue', secret: false },
+  ]);
+});
+
+test('roboform: a Full Name field fills identity.fullName', async () => {
+  const r = await parseRoboform(file('x.csv', ROBO_HEAD + 'Me,,,,,,,"Full Name$,,,txt,山田 太郎,Email$,,,txt,t@example.jp"\n'), {});
+  assert.equal(r.items[0].type, 'identity');
+  assert.deepEqual(r.items[0].fields, { fullName: '山田 太郎', email: 't@example.jp' });
+});
+
+test('roboform: a row with fields but no identity key stays a note; unreadable birthday is kept', async () => {
+  const none = await parseRoboform(file('x.csv', ROBO_HEAD + 'Form,,,,,,,"Foo,,,txt,bar"\n'), {});
+  assert.equal(none.items[0].type, 'note');
+  assert.equal(none.items[0].note, 'Foo: bar');
+  const bd = await parseRoboform(file('x.csv', ROBO_HEAD + 'Me,,,,,,,"First Name$,,,txt,Taro,Birthday$,,,txt,someday"\n'), {});
+  assert.equal(bd.items[0].type, 'identity');
+  assert.equal('birthDate' in bd.items[0].fields, false);
+  assert.deepEqual(bd.items[0].extra, [{ label: 'Birthday', value: 'someday', secret: false }]);
 });
 
 // ---- Kaspersky ----
@@ -279,6 +532,21 @@ test('kaspersky: websites, applications, notes; multi-line comment / text', asyn
   assert.equal(note.note, 'SSID: home\nPassword: abc\nlast line');
 });
 
+test('kaspersky: unknown "Key: value" lines are custom fields (masked by name); keyless lines stay in the note', async () => {
+  const text = 'Websites\n\nWebsite name: S\nWebsite URL: https://s.test\nLogin: u\nPassword: p\nSecurity question: first pet\nPIN: 1234\nstray line\nComment: hello\n---\n'
+    + 'Notes\n\nName: N\nCode: 77\nText: body\n';
+  const { items } = await parseKaspersky(file('x.txt', text), {});
+  assert.equal(items.length, 2);
+  assert.equal(items[0].note, 'hello\n\nstray line');
+  assert.deepEqual(items[0].extra, [
+    { label: 'Security question', value: 'first pet', secret: false },
+    { label: 'PIN', value: '1234', secret: true },
+  ]);
+  assert.equal(items[1].type, 'note');
+  assert.equal(items[1].note, 'body');
+  assert.deepEqual(items[1].extra, [{ label: 'Code', value: '77', secret: true }]);
+});
+
 test('kaspersky: CRLF and UTF-8 BOM', async () => {
   const text = fxText('kaspersky/export.txt').replace(/\r?\n/g, '\r\n');
   const bytes = new Uint8Array(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, 'utf8')]));
@@ -299,7 +567,7 @@ test('kaspersky: sections may be missing, last entry without a closing separator
 
 // ---- Generic ----
 
-test('generic: Japanese headers, TOTP, favourite, unknown columns kept in the note', async () => {
+test('generic: Japanese headers, TOTP, favourite, unknown columns kept as custom fields', async () => {
   const { items, warnings } = await parseGeneric(fxFile('generic/japanese.csv'), { source: 'generic' });
   assert.equal(items.length, 2);
   const a = items[0];
@@ -307,13 +575,128 @@ test('generic: Japanese headers, TOTP, favourite, unknown columns kept in the no
   assert.equal(a.url, 'https://bank.example.jp');
   assert.equal(a.username, 'taro');
   assert.equal(a.password, 'p,w');
-  assert.equal(a.note, 'メモ内容\n2行目\n\n電話番号: 03-1234-5678');
+  assert.equal(a.note, 'メモ内容\n2行目');
+  assert.deepEqual(a.extra, [{ label: '電話番号', value: '03-1234-5678', secret: false }]);
   assert.equal(a.totp.secret, 'JBSWY3DPEHPK3PXP');
   assert.equal(a.fav, true);
   assert.equal(items[1].username, 'hanako@example.jp'); // メール used as the user name
   assert.equal(items[1].fav, false);
   assert.equal(warnings.length, 1); // カテゴリ is organisational and reported
   assert.match(warnings[0], /カテゴリ/);
+});
+
+test('generic: unknown columns become custom fields, masked when the header looks secret', async () => {
+  const csv = 'url,username,password,Security PIN,API Token,Backup Code,Zip Code,Memo2\nhttps://a.test,u,p,1,2,3,100,4\n';
+  const { items } = await parseGeneric(file('x.csv', csv), {});
+  assert.equal(items[0].note, '');
+  assert.deepEqual(items[0].extra.map((e) => [e.label, e.value, e.secret]), [
+    ['Security PIN', '1', true], ['API Token', '2', true], ['Backup Code', '3', true], ['Zip Code', '100', false], ['Memo2', '4', false], // the header's own spelling
+  ]);
+  // a row with only custom fields is a secure note
+  const only = await parseGeneric(file('x.csv', 'title,password,Extra Info\nT,,hi\n'), {});
+  assert.equal(only.items[0].type, 'note');
+  assert.deepEqual(only.items[0].extra, [{ label: 'Extra Info', value: 'hi', secret: false }]);
+});
+
+test('generic: a type column with an Akari type (id, Japanese or English name) imports that type', async () => {
+  const { items, warnings } = await parseGeneric(fxFile('generic/akari-types.csv'), {});
+  assert.equal(items.length, 9);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /type/); // only the unrecognised value ("Business") is reported
+  assert.deepEqual(items.map((i) => i.type), ['login', 'card', 'card', 'wifi', 'server', 'passport', 'sshKey', 'note', 'login']);
+
+  const [gh, card, jp, wifi, srv, pass, ssh, memo, odd] = items;
+  assert.equal(gh.password, 'pw');
+  assert.deepEqual(card.fields, { cardholder: 'Taro Yamada', number: '4111 1111 1111 1111', expiry: '2030-12', cvv: '123' });
+  assert.equal(card.note, 'card note');
+  assert.deepEqual(card.extra, [{ label: 'Recovery PIN', value: '9876', secret: true }, { label: 'custom', value: 'billing', secret: false }]);
+  // Japanese type name and Japanese-label matching are covered below; here a stray password column is kept, masked
+  assert.deepEqual(jp.fields, { cardholder: '山田太郎', number: '4222222222222222', expiry: '2031-05', cvv: '999' });
+  assert.deepEqual(jp.extra, [{ label: 'password', value: 'cardpw', secret: true }]);
+  assert.deepEqual(wifi.fields, { ssid: 'HomeNet', password: 'wifipw', security: 'wpa2' });
+  assert.deepEqual(srv.fields, { host: 'srv.example.com', port: '22', username: 'root', password: 'srvpw', url: 'https://admin.example' });
+  assert.deepEqual(srv.extra, [{ label: 'totp', value: 'JBSWY3DPEHPK3PXP', secret: true }]); // a server has no TOTP slot
+  assert.deepEqual(pass.fields, { fullName: 'Taro Yamada', number: 'TK123', birthDate: '1990-03-05', expiry: '2030-05-31' });
+  assert.deepEqual(ssh.fields, { host: 'git.example.com' });
+  assert.equal(memo.note, 'remember this');
+  assert.equal(odd.url, 'https://odd.example');
+});
+
+test('generic: type names — every Akari type by id, Japanese label and English name', async () => {
+  const names = [
+    ['Credit Card', 'card'], ['クレジットカード', 'card'], ['Identity', 'identity'], ['ID', 'identity'], ['Bank Account', 'bankAccount'],
+    ["Driver's License", 'driverLicense'], ['運転免許証', 'driverLicense'], ['Social Security', 'socialSecurity'], ['API Key', 'apiCredential'],
+    ['Crypto Wallet', 'cryptoWallet'], ['Medical Record', 'medicalRecord'], ['Software License', 'softwareLicense'], ['sshKey', 'sshKey'],
+    ['Reward Program', 'rewardProgram'], ['メンバーシップ', 'membership'], ['WiFiネットワーク', 'wifi'], ['Wi-Fi', 'wifi'], ['Database', 'database'],
+    ['Secure Note', 'note'], ['セキュアノート', 'note'], ['ログイン', 'login'], ['Passport', 'passport'], ['SERVER', 'server'],
+  ];
+  const csv = 'type,title,password\n' + names.map(([n], i) => `"${n}",T${i},pw`).join('\n') + '\n';
+  const { items, warnings } = await parseGeneric(file('x.csv', csv), {});
+  assert.deepEqual(items.map((i) => i.type), names.map(([, id]) => id));
+  assert.deepEqual(warnings, []);
+});
+
+test('generic: typed rows match template keys by key or Japanese label; selects store option ids; misfits stay custom fields', async () => {
+  const jp = await parseGeneric(file('x.csv', 'type,title,password,カード番号,有効期限,名義\nクレジットカード,V,,4111111111111111,2030/12,Taro\n'), {});
+  assert.deepEqual(jp.items[0].fields, { cardholder: 'Taro', number: '4111111111111111', expiry: '2030-12' });
+  assert.deepEqual(jp.items[0].extra, []);
+  const wifi = await parseGeneric(file('x.csv', 'type,title,password,ssid,security\nwifi,A,pw,Net,Open\nwifi,B,pw,Net2,weird\nwifi,C,pw,Net3,なし\nwifi,D,pw,Net4,WPA3\n'), {});
+  assert.deepEqual(wifi.items.map((i) => i.fields.security), ['none', undefined, 'none', 'wpa3']);
+  assert.deepEqual(wifi.items[1].extra, [{ label: 'security', value: 'weird', secret: false }]);
+  const srv = await parseGeneric(file('x.csv', 'type,title,password,host,port\nserver,S,pw,h,abc\nserver,T,pw,h,5 432\n'), {});
+  assert.equal(srv.items[0].fields.port, undefined);
+  assert.deepEqual(srv.items[0].extra, [{ label: 'port', value: 'abc', secret: false }]);
+  assert.equal(srv.items[1].fields.port, '5432');
+  const dates = await parseGeneric(file('x.csv', 'type,title,password,fullname,birthdate,expiry\npassport,P,,Taro,1990/3/5,31/12/2030\npassport,Q,,Hanako,someday,\n'), {});
+  assert.deepEqual(dates.items[0].fields, { fullName: 'Taro', birthDate: '1990-03-05', expiry: '2030-12-31' });
+  assert.equal(dates.items[1].fields.birthDate, undefined);
+  assert.deepEqual(dates.items[1].extra, [{ label: 'birthdate', value: 'someday', secret: false }]);
+});
+
+test('generic: typed rows fill fullName / product / patientName / recordNumber / reward expiry by key or Japanese label', async () => {
+  const csv = 'type,title,password,fullName,氏名,product,製品名,patientName,診察券番号,expiry\n'
+    + 'identity,Me,,Taro Yamada,ignored,,,,,\n'
+    + 'identity,Me2,,,山田 太郎,,,,,\n'
+    + 'softwareLicense,Editor,,,,Editor Pro,,,,2031-01-31\n'
+    + 'ソフトウェアライセンス,Editor2,,,,,エディタ,,,\n'
+    + 'Medical Record,Clinic,,,,,,Hanako,12345,\n'
+    + 'rewardProgram,Airline,pw,,,,,,,2030-06-30\n';
+  const { items } = await parseGeneric(file('x.csv', csv), {});
+  assert.deepEqual(items.map((i) => i.type), ['identity', 'identity', 'softwareLicense', 'softwareLicense', 'medicalRecord', 'rewardProgram']);
+  assert.deepEqual(items[0].fields, { fullName: 'Taro Yamada' });
+  assert.deepEqual(items[0].extra, [{ label: '氏名', value: 'ignored', secret: false }]); // the second column naming the same key is kept, not lost
+  assert.deepEqual(items[1].fields, { fullName: '山田 太郎' });
+  assert.deepEqual(items[2].fields, { product: 'Editor Pro', expiry: '2031-01-31' });
+  assert.deepEqual(items[3].fields, { product: 'エディタ' });
+  assert.deepEqual(items[4].fields, { patientName: 'Hanako', recordNumber: '12345' });
+  assert.deepEqual(items[5].fields, { expiry: '2030-06-30' });
+  assert.deepEqual(items[5].extra, [{ label: 'password', value: 'pw', secret: true }]);
+});
+
+test('generic: custom-field labels and the unused-columns warning keep the header spelling', async () => {
+  const { items, warnings } = await parseGeneric(file('x.csv', 'URL,UserName,Password,Folder,Security Question,Backup CODE\nhttps://a.test,u,p,Work,pet,7\n'), {});
+  assert.deepEqual(items[0].extra.map((e) => [e.label, e.value, e.secret]), [['Security Question', 'pet', false], ['Backup CODE', '7', true]]);
+  assert.match(warnings[0], /: Folder$/);
+  // typed rows too: the first column that names a key fills it, the other keeps its label
+  const typed = await parseGeneric(file('x.csv', 'Type,Title,Card Holder,cardHolder,Billing Zip,Number\ncard,V,Taro,Hanako,100,4111\n'), {});
+  assert.deepEqual(typed.items[0].fields, { cardholder: 'Taro', number: '4111' });
+  assert.deepEqual(typed.items[0].extra.map((e) => e.label), ['cardHolder', 'Billing Zip']);
+});
+
+test('generic: a type column plus a template-field column is enough (no password / url needed)', async () => {
+  const card = await parseGeneric(file('x.csv', 'type,title,number,expiry,cardholder\ncard,Visa,4111111111111111,12/30,Taro\nクレジットカード,x,1,2,3\n'), {});
+  assert.equal(card.items.length, 2);
+  assert.equal(card.items[0].type, 'card');
+  assert.deepEqual(card.items[0].fields, { number: '4111111111111111', expiry: '2030-12', cardholder: 'Taro' });
+  assert.equal(card.items[1].type, 'card');
+  const jp = await parseGeneric(file('x.csv', '種類,タイトル,カード番号\nクレジットカード,V,4111\n'), {});
+  assert.deepEqual(jp.items[0].fields, { number: '4111' });
+  assert.equal((await parseGeneric(file('x.csv', 'Item Type,Name,Host\nserver,S,h.test\n'), {})).items[0].fields.host, 'h.test');
+  // still rejected: no type column, a type column with nothing it can fill, unrelated columns
+  await assert.rejects(parseGeneric(file('x.csv', 'title,number,expiry\nV,4111,12/30\n'), {}), invalid);
+  await assert.rejects(parseGeneric(file('x.csv', 'type,title,note\ncard,V,hi\n'), {}), invalid);
+  await assert.rejects(parseGeneric(file('x.csv', 'type,a,b\n1,2,3\n'), {}), invalid);
+  await assert.rejects(parseGeneric(file('x.csv', '種類,タイトル\nx,y\n'), {}), invalid); // 種類 is also the database "type" label, but it is the type column itself
 });
 
 test('generic: English synonyms, e-mail alongside a user name, bare base32 TOTP', async () => {
@@ -324,7 +707,8 @@ test('generic: English synonyms, e-mail alongside a user name, bare base32 TOTP'
   assert.equal(a.url, 'https://github.com');
   assert.equal(a.username, 'alice');
   assert.equal(a.password, 'pw "1"');
-  assert.equal(a.note, 'note, with comma\n\nメール: alice@example.com');
+  assert.equal(a.note, 'note, with comma');
+  assert.deepEqual(a.extra, [{ label: 'メール', value: 'alice@example.com', secret: false }]);
   assert.equal(a.totp.secret, 'JBSWY3DPEHPK3PXP');
   assert.equal(a.fav, true);
   assert.equal(items[1].username, 'bob@example.com');
@@ -463,6 +847,21 @@ test('detect: CSV header fingerprints, most specific first', async () => {
   assert.equal(await detectSource(file('x.csv', 'username,note\nbob,hi\n')), null);
 });
 
+test('detect: a type column makes a title/url/username/password CSV generic, not Apple', async () => {
+  assert.equal(await detectSource(file('x.csv', 'Title,URL,Username,Password,Notes,OTPAuth\n')), 'apple'); // exact Apple header
+  assert.equal(await detectSource(file('x.csv', 'Title,URL,Username,Password\nA,https://a.test,u,p\n')), 'apple');
+  assert.equal(await detectSource(file('x.csv', 'type,title,url,username,password,note\ncard,A,,,,\n')), 'generic');
+  assert.equal(await detectSource(file('x.csv', 'Title,URL,Username,Password,Notes,OTPAuth,Item Type\n')), 'generic');
+  assert.equal(await detectSource(file('x.csv', 'title,url,username,password,種類\n')), 'generic');
+  assert.equal(await detectSource(fxFile('generic/akari-types.csv')), 'generic');
+  // a typed CSV with only card columns is generic too; a type column alone is nothing
+  assert.equal(await detectSource(file('x.csv', 'type,title,number,expiry\ncard,V,4111,12/30\n')), 'generic');
+  assert.equal(await detectSource(file('x.csv', 'type,note\nx,y\n')), null);
+  // formats with their own type column keep winning
+  assert.equal(await detectSource(fxFile('nordpass/export.csv')), 'nordpass');
+  assert.equal(await detectSource(fxFile('detect/protonpass/export.csv')), 'protonpass');
+});
+
 test('detect: nothing recognisable, PGP, empty and binary input', async () => {
   assert.equal(await detectSource(file('x.txt', '')), null);
   assert.equal(await detectSource(file('x.txt', 'just some text\nwith lines')), null);
@@ -532,13 +931,20 @@ test('csv caps: too many rows is UNSUPPORTED through the importers', async () =>
 // ---- generic: prototype-looking column names ----
 
 test('generic: columns named constructor / __proto__ / toString never leak Object members', async () => {
-  const csv = 'url,username,password,constructor,__proto__,tostring,hasownproperty\nhttps://a.test,u,p,c,d,e,f\n';
+  const csv = 'url,username,password,constructor,__proto__,toString,hasOwnProperty\nhttps://a.test,u,p,c,d,e,f\n';
   const { items } = await parseGeneric(file('x.csv', csv), {});
   assert.equal(items.length, 1);
-  assert.doesNotMatch(items[0].note, /function|\[object|native code/);
-  assert.match(items[0].note, /tostring: e/);
-  assert.match(items[0].note, /hasownproperty: f/);
+  assert.equal(items[0].note, '');
+  assert.doesNotMatch(JSON.stringify(items[0].extra), /function|\[object|native code/);
+  assert.deepEqual(items[0].extra.map((e) => [e.label, e.value]), [['constructor', 'c'], ['__proto__', 'd'], ['toString', 'e'], ['hasOwnProperty', 'f']]);
   assert.equal(items[0].username, 'u');
+});
+
+test('lastpass: a NoteType named like an Object member is just an unknown note', async () => {
+  const csv = 'url,username,password,extra,name\nhttp://sn,,,"NoteType:constructor\nKey:v",n\n';
+  const r = await parseLastpass(file('x.csv', csv), {});
+  assert.equal(r.items[0].type, 'note');
+  assert.equal(r.items[0].note, 'NoteType: constructor\nKey: v');
 });
 
 // ---- detect: ZIP limits ----

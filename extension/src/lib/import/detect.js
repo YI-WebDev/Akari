@@ -10,7 +10,7 @@ import { findEntry, readZip } from './zip.js';
 import { accepts as appleCsv } from './importers/apple.js';
 import { accepts as chromiumCsv } from './importers/chromium.js';
 import { accepts as firefoxCsv } from './importers/firefox.js';
-import { accepts as genericCsv } from './importers/generic.js';
+import { accepts as genericCsv, hasTypeColumn } from './importers/generic.js';
 import { looksLikeKaspersky } from './importers/kaspersky.js';
 import { accepts as lastpassCsv } from './importers/lastpass.js';
 import { accepts as nordpassCsv } from './importers/nordpass.js';
@@ -97,7 +97,8 @@ function csvSource(text) {
   if (nordpassCsv(headers)) return 'nordpass';
   if (roboformCsv(headers)) return 'roboform';
   if (firefoxCsv(headers)) return 'firefox';
-  if (appleCsv(headers)) return 'apple';
+  // A `type` column means Akari-style typed rows (Apple's export has none).
+  if (appleCsv(headers) && !hasTypeColumn(headers)) return 'apple';
   if (chromiumOnly(headers)) return 'chrome';
   if (genericCsv(headers)) return 'generic';
   return null;

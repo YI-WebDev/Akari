@@ -15,6 +15,7 @@
 
 | 機能 | 内容 |
 | --- | --- |
+| アイテムの種類 | ログイン・セキュアノート・クレジットカード・ID のほか、テクノロジー（API認証情報・データベース・サーバー・ソフトウェアライセンス・SSHキー・WiFiネットワーク）、ファイナンス（銀行口座・暗号通貨ウォレット）、個人（運転免許証・医療記録・メンバーシップ・パスポート・報酬プログラム・社会保障）。番号やコードは伏せ字で表示・コピーでき、どの種類にも追加の項目を付けられる。カードや住所のフォーム自動入力はしない |
 | 保管庫 | 個人 / 仕事 / 家族。検索（`/`）、↑↓ で選択、Enter でパスワードをコピー、すべて / 最近 / ★、新着 / A-Z |
 | パスワード作成 | ランダム（8〜48 文字・大文字 / 数字 / 記号 / 紛らわしい文字を除外）と パスフレーズ（日本語ローマ字 1,454 語から 3〜8 語）。生成方式から計算した正確なエントロピーを表示 |
 | 強度チェック | よくあるパスワード・並び・年号・単語＋数字などを減点。弱い・使い回しは赤い点と「強化する」 |
@@ -22,7 +23,7 @@
 | パスキー | サイトの「パスキーを登録 / パスキーでサインイン」を Akari が引き受け、確認ウィンドウで承認。保存先の保管庫を選べる。「この端末のパスキーを使う」でブラウザ標準にも切り替え可 |
 | 自動入力 | ポップアップの「このサイトで使える」→ 入力、入力欄の 灯 ボタンのメニュー、`Ctrl+Shift+L` |
 | 保存の提案 | ログイン送信後に「Akari に保存しますか？ / パスワードを更新しますか？」 |
-| インポート | 1Password（1pux / 1pif / zip）、Apple Passwords、Bitwarden（json / zip、パスワード保護 JSON）、Brave、Chrome、Dashlane（zip / csv）、Edge、Enpass、Firefox、Kaspersky（txt）、KeePass（xml）、Keeper、LastPass、NordPass、Proton Pass（zip / pgp / csv）、Roboform、Safari、汎用 CSV、PGP で暗号化されたこれらのファイル、Akari バックアップ。カードや ID など Akari にない種類はセキュアノートとして取り込み、重複は飛ばします |
+| インポート | 1Password（1pux / 1pif / zip）、Apple Passwords、Bitwarden（json / zip、パスワード保護 JSON）、Brave、Chrome、Dashlane（zip / csv）、Edge、Enpass、Firefox、Kaspersky（txt）、KeePass（xml）、Keeper、LastPass、NordPass、Proton Pass（zip / pgp / csv）、Roboform、Safari、汎用 CSV、PGP で暗号化されたこれらのファイル、Akari バックアップ。カード・ID・銀行口座・パスポートなどはそれぞれの種類として取り込み（対応する種類がないものはセキュアノート）、重複は飛ばします |
 | エクスポート | Akari バックアップ（暗号化）、CSV（Chrome などで読める）、Bitwarden JSON（パスキーも含む）。平文の形式はマスターパスワードの再入力が必要で、PGP で暗号化して保存することもできます |
 | 設定 | 自動ロック（1〜60 分 / ブラウザを閉じたとき）、クリップボード消去（10〜60 秒）、マスターパスワード変更 |
 
@@ -57,6 +58,8 @@ node tests/ui/screenshot.mjs        # 画面のスクリーンショット（tes
 ```
 
 E2E は Chrome 137 以降で `--load-extension` が使えないため、CDP の `Extensions.loadUnpacked` で読み込みます（`tests/e2e/helpers.js`）。
+
+アイテムの種類と項目は `extension/src/shared/item-types.js` の定義から、検証・取り込み・書き出し・画面がすべて作られます。表示言語は将来切り替えられるようにする予定のため、新しい画面の文言は `extension/src/shared/i18n.js` の `t()` を通し、保存するデータには言語に依存しない ID と ISO 形式の日付だけを入れます。
 
 ## サードパーティ
 

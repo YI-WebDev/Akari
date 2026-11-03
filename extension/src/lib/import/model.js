@@ -1,18 +1,21 @@
 // Shared types and helpers for importers (PLAN.md §7).
 //
 // ImportedItem = {
-//   type: 'login' | 'note',
-//   title, url, username, password, note,        // strings ('' when absent)
-//   totp: TotpConfig | null,                      // see lib/totp.js
-//   fav: boolean,
-//   passkeys: [{ credentialId, rpId, userHandle, userName, userDisplayName,
-//                privateKey /* PKCS8 ES256, b64url */, createdAt }],
-//   createdAt?: number, updatedAt?: number,      // ms
+//   type: one of shared/item-types.js TYPE_IDS ('login', 'note', 'card', 'identity', 'sshKey', …),
+//   title, note,                                  // strings ('' when absent)
+//   url, username, password, totp, passkeys,      // login only
+//   fields: { [templateKey]: string },            // every other type except note (see item-types.js)
+//   extra: [{ label, value, secret: boolean }],   // custom fields that fit no template key, any type
+//   fav: boolean, createdAt?: number, updatedAt?: number,   // ms
 // }
-// Items of kinds Akari has no type for (cards, identities, …) become 'note'
-// items whose note lists their fields as "label: value" lines, so nothing is lost.
+// totp: TotpConfig | null (lib/totp.js). passkeys: [{ credentialId, rpId, userHandle, userName,
+// userDisplayName, privateKey /* PKCS8 ES256, b64url */, createdAt }].
+// Records of a kind with no Akari type at all become 'note' items whose note lists their
+// fields as "label: value" lines (fieldsToNote), so nothing is lost.
 
 import { parseOtpauthUri, normalizeSecret, isValidSecret } from '../totp.js';
+import { TYPE_IDS, typeOf, typeLabel, hasTemplate, LIMITS } from '../../shared/item-types.js';
+import { t } from '../../shared/i18n.js';
 
 export class ImportError extends Error {
   /** @param {'NEEDS_PASSWORD'|'BAD_PASSWORD'|'INVALID_FORMAT'|'UNSUPPORTED'|'EMPTY'} code */
@@ -25,23 +28,55 @@ export class ImportError extends Error {
 
 const str = (v) => (v == null ? '' : String(v)).trim();
 
+/** Keep only the template's keys, as non-empty strings (secrets keep surrounding spaces). */
+function cleanFields(type, fields) {
+  const out = {};
+  if (!fields || typeof fields !== 'object') return out;
+  for (const fd of typeOf(type).fields) {
+    if (!Object.hasOwn(fields, fd.key) || fields[fd.key] == null) continue;
+    const v = fd.kind.startsWith('secret') ? String(fields[fd.key]) : str(fields[fd.key]);
+    if (v.trim()) out[fd.key] = v.replace(/\r\n?/g, '\n');
+  }
+  return out;
+}
+
+function cleanExtra(extra) {
+  if (!Array.isArray(extra)) return [];
+  return extra
+    .map((e) => ({ label: str(e?.label) || t('import.label.field', null, '項目'), value: e?.value == null ? '' : String(e.value), secret: !!e?.secret }))
+    .filter((e) => e.value.trim());
+}
+
 /** Fill defaults and trim strings; returns null for items with nothing worth keeping. */
 export function makeImported(p) {
-  const it = {
-    type: p.type === 'note' ? 'note' : 'login',
-    title: str(p.title),
-    url: str(p.url),
-    username: str(p.username),
-    password: p.password == null ? '' : String(p.password), // passwords keep surrounding spaces
-    note: p.note == null ? '' : String(p.note).replace(/\r\n?/g, '\n').trim(),
-    totp: p.totp || null,
-    fav: !!p.fav,
-    passkeys: Array.isArray(p.passkeys) ? p.passkeys : [],
-  };
+  const type = TYPE_IDS.includes(p.type) ? p.type : 'login';
+  const extra = cleanExtra(p.extra);
+  let note = p.note == null ? '' : String(p.note).replace(/\r\n?/g, '\n').trim();
+  if (extra.length > LIMITS.extraCount) {
+    // The SW accepts at most LIMITS.extraCount extra fields; keep the rest as note lines.
+    note = [note, fieldsToNote(extra.splice(LIMITS.extraCount).map((e) => [e.label, e.value]))].filter(Boolean).join('\n\n');
+  }
+  const it = { type, title: str(p.title), note, fav: !!p.fav, extra };
+  if (type === 'login') {
+    Object.assign(it, {
+      url: str(p.url),
+      username: str(p.username),
+      password: p.password == null ? '' : String(p.password), // passwords keep surrounding spaces
+      totp: p.totp || null,
+      passkeys: Array.isArray(p.passkeys) ? p.passkeys : [],
+    });
+  } else if (hasTemplate(type)) {
+    it.fields = cleanFields(type, p.fields);
+  }
   if (Number.isFinite(p.createdAt)) it.createdAt = p.createdAt;
   if (Number.isFinite(p.updatedAt)) it.updatedAt = p.updatedAt;
-  if (!it.title) it.title = hostOf(it.url) || it.username || (it.type === 'note' ? 'メモ' : '');
-  const empty = !it.url && !it.username && !it.password && !it.note && !it.totp && !it.passkeys.length;
+  if (!it.title) {
+    it.title = type === 'login' ? hostOf(it.url) || it.username : '';
+    it.title ||= type === 'note' ? t('import.title.note', null, 'メモ') : typeLabel(type);
+  }
+  const loginEmpty = type === 'login' && !it.url && !it.username && !it.password && !it.totp && !it.passkeys.length;
+  const fieldsEmpty = hasTemplate(type) && !Object.keys(it.fields).length;
+  const empty = !it.note && !it.extra.length && (type === 'note' || loginEmpty || fieldsEmpty);
   return empty ? null : it;
 }
 

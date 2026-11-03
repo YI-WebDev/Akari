@@ -1,0 +1,84 @@
+{
+  "shared_folders": [],
+  "records": [
+    {
+      "uid": "keeper-types-01", "title": "給与口座", "$type": "bankAccount",
+      "login": "saburo-net", "password": "net-pass", "login_url": "https://bank.example.jp",
+      "custom_fields": {
+        "$bankAccount::1": { "accountType": "Savings", "routingNumber": "0045", "accountNumber": "5556667", "otherType": "" },
+        "$name::1": { "first": "Saburo", "middle": "", "last": "Tanaka" }
+      }
+    },
+    {
+      "uid": "keeper-types-02", "title": "三郎の連絡先", "$type": "contact", "notes": "",
+      "custom_fields": {
+        "$name::1": { "first": "三郎", "last": "田中" },
+        "$text:company:1": "灯株式会社",
+        "$email::1": "saburo@example.jp",
+        "$phone::1": [{ "region": "JP", "number": "090-3333-4444", "type": "Mobile" }, { "number": "03-5555-6666", "ext": "12" }]
+      }
+    },
+    {
+      "uid": "keeper-types-03", "title": "自宅住所", "$type": "address",
+      "custom_fields": { "$address::1": { "street1": "京都市中京区 1-2", "street2": "", "city": "京都市", "state": "京都府", "zip": "604-0000", "country": "JP" } }
+    },
+    {
+      "uid": "keeper-types-04", "title": "三郎のパスポート", "$type": "passport", "password": "",
+      "custom_fields": {
+        "$accountNumber:passportNumber:1": "TS2223334",
+        "$name::1": { "first": "SABURO", "last": "TANAKA" },
+        "$birthDate::1": 495072000000,
+        "$expirationDate::1": 1893456000000,
+        "$date:dateIssued:1": 1577836800000
+      }
+    },
+    {
+      "uid": "keeper-types-05", "title": "三郎の免許", "$type": "driverLicense",
+      "custom_fields": {
+        "$accountNumber:dlNumber:1": "600011112222",
+        "$name::1": { "first": "三郎", "last": "田中" },
+        "$birthDate::1": 495072000000,
+        "$expirationDate::1": 1830297600000
+      }
+    },
+    {
+      "uid": "keeper-types-06", "title": "本番サーバー", "$type": "serverCredentials", "login": "deploy", "password": "srv-pass",
+      "custom_fields": { "$host::1": { "hostName": "srv.example.jp", "port": "2222" } }
+    },
+    {
+      "uid": "keeper-types-07", "title": "顧客 DB", "$type": "databaseCredentials", "login": "crm", "password": "crm-pass",
+      "custom_fields": { "$text:type:1": "PostgreSQL", "$host::1": { "hostName": "crm-db.example.jp", "port": "5432" } }
+    },
+    {
+      "uid": "keeper-types-08", "title": "踏み台の鍵", "$type": "sshKeys", "login": "ops", "password": "key-passphrase",
+      "custom_fields": {
+        "$keyPair::1": { "publicKey": "ssh-ed25519 AAAAkeeper", "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nKEEPER\n-----END OPENSSH PRIVATE KEY-----" },
+        "$host::1": { "hostName": "bastion.example.jp", "port": "22" }
+      }
+    },
+    {
+      "uid": "keeper-types-09", "title": "オフィスソフト", "$type": "softwareLicense",
+      "custom_fields": { "$licenseNumber::1": "OFFICE-1234-5678", "$expirationDate::1": 1798675200000, "$date:dateActive:1": 1704067200000 }
+    },
+    {
+      "uid": "keeper-types-10", "title": "書店の会員", "$type": "membership", "password": "member-pass",
+      "custom_fields": { "$accountNumber::1": "BK-9999", "$name::1": { "first": "三郎", "last": "田中" } }
+    },
+    {
+      "uid": "keeper-types-11", "title": "健康保険証", "$type": "healthInsurance",
+      "custom_fields": { "$accountNumber::1": "HI-12345", "$name:insuredsName:1": { "first": "三郎", "last": "田中" } }
+    },
+    {
+      "uid": "keeper-types-12", "title": "社会保障カード", "$type": "ssnCard",
+      "custom_fields": { "$accountNumber:identityNumber:1": "078-05-1120", "$name::1": { "first": "Saburo", "last": "Tanaka" } }
+    },
+    {
+      "uid": "keeper-types-13", "title": "ゲスト Wi-Fi", "$type": "wifiCredentials", "password": "guest-pass",
+      "custom_fields": { "$text:SSID:1": "Akari-Guest", "$text:Security:1": "WPA3-Personal", "$secret:管理者 PIN:1": "8080" }
+    },
+    {
+      "uid": "keeper-types-14", "title": "出生証明書", "$type": "birthCertificate",
+      "custom_fields": { "$name::1": { "first": "三郎", "last": "田中" }, "$birthDate::1": 495072000000 }
+    }
+  ]
+}

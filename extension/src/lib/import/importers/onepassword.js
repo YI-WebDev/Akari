@@ -2,31 +2,84 @@
 //  - .1pux: ZIP with export.data (JSON accounts[].vaults[].items[]) and files/ (attachments).
 //  - .1pif: JSON records separated by "***5642bee8-a5ff-11dc-8314-0800200c9a66***" lines.
 //  - .zip: treated as 1pux when it holds export.data (or as 1pif when it holds a .1pif file).
+// Categories with an Akari type are mapped onto it by 1Password's stable field ids; fields that
+// fit no template key (and custom fields of logins) become extra fields.
 
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { readZip, findEntry } from '../zip.js';
+import { hasTemplate, fieldLabel } from '../../../shared/item-types.js';
+import { L, toDate, toMonth, monthOf, fromEntries, LABEL_RULES } from './_fields.js';
 
 const LOGIN = 'login', PASSWORD = 'password', NOTE = 'note';
 
-/** 1pux categoryUuid → login / password / note, or the Japanese name of a converted kind. */
+/** 1pux categoryUuid → Akari type id, or the Japanese name of a kind that is kept as a note. */
 const CATEGORIES = {
-  '001': LOGIN, '002': 'クレジットカード', '003': NOTE, '004': '個人情報', '005': PASSWORD,
-  '006': 'ドキュメント', '100': 'ソフトウェアライセンス', '101': '銀行口座', '102': 'データベース',
-  '103': '運転免許証', '104': '狩猟・釣りのライセンス', '105': '会員証', '106': 'パスポート',
-  '107': 'ポイントプログラム', '108': '社会保障番号', '109': 'Wi-Fi', '110': 'サーバー',
-  '111': 'メールアカウント', '112': 'API 認証情報', '113': '医療記録', '114': 'SSH キー', '115': '暗号資産ウォレット',
+  '001': LOGIN, '002': 'card', '003': NOTE, '004': 'identity', '005': PASSWORD,
+  '006': 'ドキュメント', '100': 'softwareLicense', '101': 'bankAccount', '102': 'database',
+  '103': 'driverLicense', '104': '狩猟・釣りのライセンス', '105': 'membership', '106': 'passport',
+  '107': 'rewardProgram', '108': 'socialSecurity', '109': 'wifi', '110': 'server',
+  '111': 'メールアカウント', '112': 'apiCredential', '113': 'medicalRecord', '114': 'sshKey', '115': 'cryptoWallet',
 };
 
 /** 1pif typeName → same as above. system.* records (folders, tombstones) are not items. */
 const TYPE_NAMES = {
   'webforms.WebForm': LOGIN, 'passwords.Password': PASSWORD, 'securenotes.SecureNote': NOTE,
-  'wallet.financial.CreditCard': 'クレジットカード', 'wallet.financial.BankAccountUS': '銀行口座',
-  'wallet.computer.License': 'ソフトウェアライセンス', 'wallet.computer.Router': 'Wi-Fi',
-  'wallet.computer.Database': 'データベース', 'wallet.computer.UnixServer': 'サーバー',
-  'wallet.government.Passport': 'パスポート', 'wallet.government.DriversLicense': '運転免許証',
-  'wallet.government.HuntingLicense': '狩猟・釣りのライセンス', 'wallet.government.SsnUS': '社会保障番号',
-  'wallet.membership.Membership': '会員証', 'wallet.membership.RewardProgram': 'ポイントプログラム',
-  'wallet.onlineservices.Email.v2': 'メールアカウント', 'identities.Identity': '個人情報',
+  'wallet.financial.CreditCard': 'card', 'wallet.financial.BankAccountUS': 'bankAccount',
+  'wallet.computer.License': 'softwareLicense', 'wallet.computer.Router': 'wifi',
+  'wallet.computer.Database': 'database', 'wallet.computer.UnixServer': 'server',
+  'wallet.government.Passport': 'passport', 'wallet.government.DriversLicense': 'driverLicense',
+  'wallet.government.HuntingLicense': '狩猟・釣りのライセンス', 'wallet.government.SsnUS': 'socialSecurity',
+  'wallet.membership.Membership': 'membership', 'wallet.membership.RewardProgram': 'rewardProgram',
+  'wallet.onlineservices.Email.v2': 'メールアカウント', 'identities.Identity': 'identity',
+};
+
+/** Template key ← 1Password field ids (first one with a value wins). */
+const RULES = {
+  card: [['cardholder', 'cardholder'], ['number', 'ccnum'], ['expiry', 'expiry'], ['cvv', 'cvv'], ['pin', 'pin']],
+  identity: [
+    ['firstName', 'firstname'], ['middleName', 'initial'], ['lastName', 'lastname'], ['birthDate', 'birthdate'],
+    ['company', 'company'], ['jobTitle', 'jobtitle'], ['email', 'email'],
+    ['phone', 'defphone', 'cellphone', 'homephone', 'busphone'], ['website', 'website'],
+    ['address1', 'address.street'], ['city', 'address.city'], ['state', 'address.state'],
+    ['postalCode', 'address.zip'], ['country', 'address.country'],
+  ],
+  bankAccount: [
+    ['bankName', 'bankName'], ['accountHolder', 'owner'], ['accountType', 'accountType'], ['routingNumber', 'routingNo'],
+    ['accountNumber', 'accountNo'], ['swift', 'swift'], ['iban', 'iban'], ['pin', 'telephonePin'],
+  ],
+  database: [
+    ['dbType', 'database_type'], ['host', 'hostname'], ['port', 'port'], ['database', 'database'],
+    ['username', 'username'], ['password', 'password'],
+  ],
+  driverLicense: [
+    ['fullName', 'fullname'], ['number', 'number'], ['licenseClass', 'class'], ['birthDate', 'birthdate'],
+    ['expiry', 'expiry_date'], ['issuer', 'state', 'country'], ['address', 'address'],
+  ],
+  membership: [
+    ['organization', 'org_name'], ['memberName', 'member_name'], ['memberId', 'membership_no'],
+    ['since', 'member_since'], ['expiry', 'expiry_date'], ['pin', 'pin'], ['url', 'website'],
+  ],
+  passport: [
+    ['fullName', 'fullname'], ['number', 'number'], ['nationality', 'nationality'], ['issuingCountry', 'issuing_country'],
+    ['birthDate', 'birthdate'], ['issuedOn', 'issue_date'], ['expiry', 'expiry_date'], ['authority', 'issuing_authority'],
+  ],
+  rewardProgram: [
+    ['company', 'company_name'], ['memberName', 'member_name'], ['memberId', 'membership_no'], ['pin', 'pin'], ['url', 'website'],
+  ],
+  socialSecurity: [['fullName', 'name'], ['number', 'number']],
+  wifi: [['ssid', 'network_name'], ['password', 'wireless_password'], ['security', 'wireless_security']],
+  server: [['host', 'url'], ['username', 'username'], ['password', 'password'], ['url', 'admin_console_url']],
+  apiCredential: [['host', 'hostname'], ['keyId', 'username'], ['secret', 'credential'], ['expiry', 'expires']],
+  medicalRecord: [['patientName', 'patient'], ['provider', 'location'], ['doctor', 'healthcareprofessional'], ['medications', 'medication']],
+  sshKey: [
+    ['privateKey', 'private_key'], ['publicKey', 'public_key'], ['fingerprint', 'fingerprint'],
+    ...LABEL_RULES.sshKey.filter(([k]) => ['passphrase', 'host', 'username'].includes(k)),
+  ],
+  softwareLicense: [
+    ['version', 'product_version'], ['licenseKey', 'reg_code'], ['licensee', 'reg_name'], ['email', 'reg_email'],
+    ['purchaseDate', 'order_date'], ['url', 'download_link', 'publisher_website'],
+  ],
+  cryptoWallet: LABEL_RULES.cryptoWallet, // no published field ids; matched by label
 };
 
 // Login form fields that carry no data worth keeping (buttons, checkboxes, radios, selects…).
@@ -34,95 +87,136 @@ const FORM_NOISE = new Set(['B', 'C', 'I', 'R', 'S']);
 const PIF_SEPARATOR = /^\*{3}[0-9a-f-]+\*{3}[ \t]*$/im;
 
 const str = (v) => (v == null ? '' : String(v).trim());
-const joinNote = (...parts) => parts.map(str).filter(Boolean).join('\n\n');
-const isoDate = (secs) => {
-  const d = new Date(toMs(secs) ?? NaN);
-  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : str(secs);
-};
-const monthYear = (v) => {
-  const s = str(v);
-  return /^\d{6}$/.test(s) ? `${s.slice(0, 4)}/${s.slice(4)}` : s;
-};
-const address = (a) => (a && typeof a === 'object'
-  ? [a.street, a.city, a.state, a.zip, a.country].map(str).filter(Boolean).join(', ')
-  : str(a));
+const scalars = (o) => Object.values(o).filter((v) => v != null && typeof v !== 'object').join(' ');
+const ADDRESS_PARTS = [['street', 'address1'], ['city', 'city'], ['state', 'state'], ['zip', 'postalCode'], ['country', 'country']];
+
+/** A 1Password address object → one entry (joined), or one entry per part for identities. */
+function addressEntries(id, label, a, split) {
+  if (!a || typeof a !== 'object') return [{ id, label, value: str(a) }];
+  if (!split) return [{ id, label, value: ADDRESS_PARTS.map(([k]) => str(a[k])).filter(Boolean).join(', ') }];
+  return ADDRESS_PARTS.map(([k, key]) => ({ id: `${id}.${k}`, label: fieldLabel('identity', key), value: str(a[k]) }));
+}
 
 /** Shared state for one parse run. */
 function makeRun() {
   return { items: [], skipped: 0, converted: {}, attachments: 0, badTotp: 0 };
 }
 
+const otpExtra = (t) => ({ label: t.label || L('otp', 'ワンタイムパスワード'), value: t.value, secret: true });
+const toExtra = (e) => ({ label: e.label, value: e.value, secret: !!e.secret });
+
 /**
  * Build the ImportedItem for any 1Password item once its parts are normalised.
- * `extras` are [label, value] pairs that are not username/password/url/totp.
+ * `entries` are [{ id, label, value, secret }] that are not username/password/url/totp;
+ * `totps` are [{ label, value }].
  */
 function emit(run, kind, p) {
-  const { title, username, password, urls, totps, extras, notes, tags, fav, createdAt, updatedAt } = p;
-  const urlList = [...new Set(urls.map(str).filter(Boolean))];
-  const tagLine = tags.length ? [['タグ', tags.join(', ')]] : [];
+  const { title, username, password, totps, entries, notes, tags, fav, createdAt, updatedAt } = p;
+  const urls = [...new Set(p.urls.map(str).filter(Boolean))];
+  const urlExtra = (list) => list.map((u) => ({ label: L('url', 'URL'), value: u, secret: false }));
+  const tagExtra = tags.length ? [{ label: L('tags', 'タグ'), value: tags.join(', '), secret: false }] : [];
+  const base = { title, fav, createdAt, updatedAt };
   if (kind === LOGIN || kind === PASSWORD) {
     let totp = null;
     const extraOtp = [];
-    for (const raw of totps) {
-      const cfg = !totp && parseOtp(raw, username || title);
+    for (const t of totps) {
+      const cfg = !totp && parseOtp(t.value, username || title);
       if (cfg) totp = cfg;
       else {
-        if (!parseOtp(raw)) run.badTotp++;
-        extraOtp.push(['TOTP', raw]);
+        if (!parseOtp(t.value)) run.badTotp++;
+        extraOtp.push(otpExtra(t));
       }
     }
     run.items.push({
-      type: 'login', title, url: urlList[0] || '', username, password, totp, fav, createdAt, updatedAt,
-      note: joinNote(notes, fieldsToNote([...urlList.slice(1).map((u) => ['URL', u]), ...extraOtp, ...extras, ...tagLine])),
+      ...base, type: 'login', url: urls[0] || '', username, password, totp, note: str(notes),
+      extra: [...urlExtra(urls.slice(1)), ...extraOtp, ...entries.map(toExtra), ...tagExtra],
     });
     return;
   }
-  const otpLines = totps.map((t) => ['TOTP', t]);
+  const creds = [
+    { id: 'username', label: L('username', 'ユーザー名'), value: username },
+    { id: 'password', label: L('password', 'パスワード'), value: password, secret: true },
+  ];
   if (kind === NOTE) {
     run.items.push({
-      type: 'note', title, fav, createdAt, updatedAt,
-      note: joinNote(notes, fieldsToNote([['ユーザー名', username], ['パスワード', password], ...urlList.map((u) => ['URL', u]), ...otpLines, ...extras, ...tagLine])),
+      ...base, type: 'note', note: str(notes),
+      extra: [...creds, ...entries].map(toExtra).concat(urlExtra(urls), totps.map(otpExtra), tagExtra),
     });
+    return;
+  }
+  if (hasTemplate(kind)) {
+    const list = [...entries, ...creds];
+    const take = (id) => {
+      const i = list.findIndex((e) => e.id === id);
+      return i < 0 ? null : list.splice(i, 1)[0];
+    };
+    // Cards: the brand only matters when the number does not tell it; 1pif also keeps the
+    // expiry as flat expiry_mm / expiry_yy keys.
+    const brand = kind === 'card' ? take('type') || take('cctype') : null;
+    let flatExpiry = '';
+    if (kind === 'card') {
+      const mm = take('expiry_mm'), yy = take('expiry_yy');
+      flatExpiry = monthOf(mm?.value, yy?.value);
+      if (!flatExpiry) list.push(...[mm, yy].filter(Boolean));
+    }
+    const b = fromEntries(kind, list, RULES[kind] || []);
+    b.put('expiry', flatExpiry);
+    if (brand) b.brand(brand.value, brand.label);
+    const urlKey = ['url', 'website'].find((k) => RULES[kind]?.some(([key]) => key === k));
+    if (urlKey && urls.length && !b.has(urlKey)) b.put(urlKey, urls.shift());
+    run.items.push({ ...base, ...b.item({ note: str(notes), extra: [...urlExtra(urls), ...totps.map(otpExtra), ...tagExtra] }) });
     return;
   }
   run.converted[kind] = (run.converted[kind] || 0) + 1;
   run.items.push({
-    type: 'note', title, fav, createdAt, updatedAt,
-    note: fieldsToNote([['ユーザー名', username], ['パスワード', password], ...urlList.map((u) => ['URL', u]), ...otpLines, ...extras, ...tagLine], notes),
+    ...base, type: 'note',
+    note: fieldsToNote([
+      ...creds.map((e) => [e.label, e.value]), ...urls.map((u) => [L('url', 'URL'), u]),
+      ...totps.map((t) => [t.label || L('otp', 'ワンタイムパスワード'), t.value]),
+      ...entries.map((e) => [e.label, e.value]), ...tagExtra.map((e) => [e.label, e.value]),
+    ], notes),
   });
 }
 
 function finish(run) {
   const warnings = Object.entries(run.converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
   if (run.attachments) warnings.push(`添付ファイル・ドキュメントの中身 ${run.attachments} 件は読み込まれません`);
-  if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はメモに残しました`);
+  if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はカスタムフィールドに残しました`);
   return { items: run.items, skipped: run.skipped, warnings };
 }
 
 // --- 1pux ----------------------------------------------------------------------------------
 
-/** One 1pux section field → [label, value] pairs (value kinds: string, concealed, email, date…). */
-function puxFieldPairs(f, run) {
-  const label = str(f.title) || str(f.id) || 'フィールド';
+/** One 1pux section field → entries (value kinds: string, concealed, email, date, monthYear…). */
+function puxFieldEntries(f, run, splitAddress) {
+  const id = str(f.id);
+  const label = str(f.title) || id || L('field', '項目');
   const value = f.value && typeof f.value === 'object' ? f.value : {};
   const [kind, x] = Object.entries(value)[0] || [];
   if (x == null || x === '') return [];
+  const one = (v, secret = false) => [{ id, label, value: v == null ? '' : String(v), secret }];
   switch (kind) {
-    case 'date': return [[label, isoDate(x)]];
-    case 'monthYear': return [[label, monthYear(x)]];
-    case 'email': return [[label, typeof x === 'object' ? x.email_address : x]];
-    case 'address': return [[label, address(x)]];
+    case 'concealed': return one(x, true);
+    case 'date': return one(toDate(x) || x);
+    case 'monthYear': return one(toMonth(x) || x);
+    case 'email': return one(typeof x === 'object' ? x.email_address : x);
+    case 'address': return addressEntries(id, label, x, splitAddress);
     case 'reference': return [];
     case 'file':
       run.attachments++;
-      return [[label, `（添付ファイル: ${str(x.fileName) || '名前なし'}）`]];
+      return one(`（添付ファイル: ${str(x.fileName) || '名前なし'}）`);
     case 'sshKey': {
-      if (typeof x !== 'object') return [[label, x]];
+      if (typeof x !== 'object') return one(x, true);
       const m = x.metadata || {};
-      return [[label, x.privateKey || m.privateKey], ['公開鍵', m.publicKey], ['フィンガープリント', m.fingerprint]];
+      return [
+        { id, label, value: str(x.privateKey || m.privateKey), secret: true },
+        { id: 'public_key', label: fieldLabel('sshKey', 'publicKey'), value: str(m.publicKey) },
+        { id: 'fingerprint', label: fieldLabel('sshKey', 'fingerprint'), value: str(m.fingerprint) },
+        { id: 'key_type', label: L('keyType', '鍵の種類'), value: str(m.keyType) },
+      ];
     }
     default:
-      return [[label, typeof x === 'object' ? Object.values(x).filter((v) => v != null && typeof v !== 'object').join(' ') : x]];
+      return one(typeof x === 'object' ? scalars(x) : x);
   }
 }
 
@@ -133,13 +227,15 @@ function from1puxItem(run, item) {
   const ov = item.overview || {};
   const d = item.details || {};
   let username = '', password = '';
-  const totps = [], extras = [];
+  const totps = [], entries = [];
 
   for (const f of Array.isArray(d.loginFields) ? d.loginFields : []) {
     if (!f || f.value == null || f.value === '') continue;
     if (f.designation === 'username' && !username) username = f.value;
     else if (f.designation === 'password' && !password) password = f.value;
-    else if (!FORM_NOISE.has(f.fieldType)) extras.push([str(f.name) || str(f.id) || 'フィールド', f.value]);
+    else if (!FORM_NOISE.has(f.fieldType)) {
+      entries.push({ id: str(f.name) || str(f.id), label: str(f.name) || str(f.id) || L('field', '項目'), value: String(f.value), secret: f.fieldType === 'P' });
+    }
   }
   if (!password && typeof d.password === 'string') password = d.password;
 
@@ -147,15 +243,15 @@ function from1puxItem(run, item) {
     for (const f of Array.isArray(s?.fields) ? s.fields : []) {
       if (!f) continue;
       if (f.value && typeof f.value === 'object' && 'totp' in f.value) {
-        if (str(f.value.totp)) totps.push(str(f.value.totp));
+        if (str(f.value.totp)) totps.push({ label: str(f.title), value: str(f.value.totp) });
         continue;
       }
-      extras.push(...puxFieldPairs(f, run));
+      entries.push(...puxFieldEntries(f, run, kind === 'identity'));
     }
   }
   if (d.documentAttributes) {
     run.attachments++;
-    extras.push(['ファイル名', d.documentAttributes.fileName]);
+    entries.push({ id: 'fileName', label: L('fileName', 'ファイル名'), value: str(d.documentAttributes.fileName) });
   }
 
   emit(run, kind, {
@@ -164,7 +260,7 @@ function from1puxItem(run, item) {
     password,
     urls: [ov.url, ...(Array.isArray(ov.urls) ? ov.urls.map((u) => u?.url) : [])],
     totps,
-    extras,
+    entries,
     notes: d.notesPlain,
     tags: (Array.isArray(ov.tags) ? ov.tags : []).map(str).filter(Boolean),
     fav: Number(item.favIndex) > 0,
@@ -188,12 +284,16 @@ function parse1puxData(run, data) {
 
 const PIF_KNOWN = new Set(['fields', 'sections', 'URLs', 'URL', 'notesPlain', 'htmlForm', 'passwordHistory', 'password']);
 
-function pifFieldValue(f) {
+function pifFieldEntries(f, splitAddress) {
+  const id = str(f.n);
+  const label = str(f.t) || id || L('field', '項目');
+  const one = (v, secret = false) => [{ id, label, value: v == null ? '' : String(v), secret }];
   switch (f.k) {
-    case 'date': return isoDate(f.v);
-    case 'monthYear': return monthYear(f.v);
-    case 'address': return address(f.v);
-    default: return typeof f.v === 'object' && f.v ? Object.values(f.v).filter((v) => v != null && typeof v !== 'object').join(' ') : f.v;
+    case 'concealed': return one(f.v, true);
+    case 'date': return one(toDate(f.v) || f.v);
+    case 'monthYear': return one(toMonth(f.v) || f.v);
+    case 'address': return addressEntries(id, label, f.v, splitAddress);
+    default: return one(typeof f.v === 'object' && f.v ? scalars(f.v) : f.v);
   }
 }
 
@@ -204,13 +304,15 @@ function from1pifRecord(run, rec) {
   const kind = TYPE_NAMES[typeName] || 'その他のアイテム';
   const sc = rec.secureContents || {};
   let username = '', password = '';
-  const totps = [], extras = [];
+  const totps = [], entries = [];
 
   for (const f of Array.isArray(sc.fields) ? sc.fields : []) {
     if (!f || f.value == null || f.value === '') continue;
     if (f.designation === 'username' && !username) username = f.value;
     else if (f.designation === 'password' && !password) password = f.value;
-    else if (!FORM_NOISE.has(f.type)) extras.push([str(f.name) || str(f.id) || 'フィールド', f.value]);
+    else if (!FORM_NOISE.has(f.type)) {
+      entries.push({ id: str(f.name) || str(f.id), label: str(f.name) || str(f.id) || L('field', '項目'), value: String(f.value), secret: f.type === 'P' });
+    }
   }
   if (!password && typeof sc.password === 'string') password = sc.password;
 
@@ -220,16 +322,16 @@ function from1pifRecord(run, rec) {
       if (!f) continue;
       sectionNames.add(f.n);
       if (f.v == null || f.v === '') continue;
-      if (/^TOTP_/i.test(str(f.n)) || f.k === 'totp') { totps.push(str(f.v)); continue; }
+      if (/^TOTP_/i.test(str(f.n)) || f.k === 'totp') { totps.push({ label: str(f.t), value: str(f.v) }); continue; }
       if (f.k === 'reference') continue;
-      extras.push([str(f.t) || str(f.n) || 'フィールド', pifFieldValue(f)]);
+      entries.push(...pifFieldEntries(f, kind === 'identity'));
     }
   }
   // Older records keep wallet data as flat secureContents keys (often duplicated in sections).
   if (kind !== LOGIN && kind !== PASSWORD) {
     for (const [k, v] of Object.entries(sc)) {
       if (PIF_KNOWN.has(k) || sectionNames.has(k) || v == null || typeof v === 'object') continue;
-      extras.push([k, v]);
+      entries.push({ id: k, label: k, value: String(v) });
     }
   }
 
@@ -240,7 +342,7 @@ function from1pifRecord(run, rec) {
     password,
     urls: [rec.location, sc.URL, ...(Array.isArray(sc.URLs) ? sc.URLs.map((u) => u?.url) : [])],
     totps,
-    extras,
+    entries,
     notes: sc.notesPlain,
     tags: (Array.isArray(rec.openContents?.tags) ? rec.openContents.tags : []).map(str).filter(Boolean),
     fav: Number.isFinite(Number(fave)) && Number(fave) !== 0,

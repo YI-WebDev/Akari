@@ -33,6 +33,25 @@
     return Object.assign(it, x || {});
   }
   var T = function (secret, issuer, label) { return { secret: secret, algorithm: 'SHA1', digits: 6, period: 30, issuer: issuer, label: label }; };
+  // every other item type (shared/item-types.js): values live in `fields`
+  function X(id, type, vault, title, hue, fields, x) {
+    return Object.assign({
+      id: id, type: type, vault: vault, title: title, note: '', fav: false, hue: hue, fields: fields, extra: [],
+      createdAt: date('2025/02/10'), updatedAt: date('2025/10/02'), lastUsedAt: null,
+    }, x || {});
+  }
+  var TYPE_IDS = ['login', 'note', 'card', 'identity', 'apiCredential', 'database', 'server', 'softwareLicense', 'sshKey', 'wifi',
+    'bankAccount', 'cryptoWallet', 'driverLicense', 'medicalRecord', 'membership', 'passport', 'rewardProgram', 'socialSecurity'];
+  var SSH_PRIVATE = [
+    '-----BEGIN OPENSSH PRIVATE KEY-----',
+    'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW',
+    'QyNTUxOQAAACDk2Ld0ZXN0LWtleS1mb3ItYWthcmktc2NyZWVuc2hvdHMAAAAAAAAAAAAA',
+    'AJgQe8VbEHvFWwAAAAtzc2gtZWQyNTUxOQAAACDk2Ld0ZXN0LWtleS1mb3ItYWthcmktc2',
+    'NyZWVuc2hvdHMAAAAAAAAAAAAAAEBkdW1teS1wcml2YXRlLWtleS1ub3QtYS1yZWFsLWtl',
+    'eQAAAA9oYXJ1a2FAbW9yaS1tYnABAgMEBQ==',
+    '-----END OPENSSH PRIVATE KEY-----',
+    '', // the file's final newline
+  ].join('\n');
 
   // Component.seed() from design/Akari Terminal.dc.html, mapped onto the PLAN §2 item model.
   function seed() {
@@ -53,11 +72,78 @@
       L('netflix', 'family', 'netflix.com', 'family@sato-home.jp', 'Popcorn&Kotatsu_31', 15, { lastUsedAt: now - 9 * DAY - 6 * HOUR }),
       L('rakuten', 'personal', 'rakuten.co.jp', 'haruka.sato@gmail.com', 'R@kuten!Ichiba2025', 5, { lastUsedAt: now - 15 * DAY }),
       L('slack', 'work', 'studio-mori.slack.com', 'haruka@studio-mori.jp', 'S1ack#Mori!Team', 330, { totp: T('MFRGGZDFMZTWQ2LK', 'Slack', 'haruka@studio-mori.jp'), lastUsedAt: now - 16 * DAY }),
-      L('aws', 'work', 'aws.amazon.com', 'admin@studio-mori.jp', 'X9!vQ#2mL$8wZr&4Tp', 55, { fav: true, totp: T('NBSWY3DPO5XXE3DE', 'AWS', 'admin'), note: 'ルートアカウント。普段は IAM ユーザーでログインする。', lastUsedAt: now - 22 * DAY }),
+      L('aws', 'work', 'aws.amazon.com', 'admin@studio-mori.jp', 'X9!vQ#2mL$8wZr&4Tp', 55, { fav: true, totp: T('NBSWY3DPO5XXE3DE', 'AWS', 'admin'), note: 'ルートアカウント。普段は IAM ユーザーでログインする。', lastUsedAt: now - 22 * DAY,
+        extra: [{ label: 'アカウント ID', value: '1234-5678-9012', secret: false }, { label: 'MFA 復旧コード', value: '7KQ2-M9XP-4RTV', secret: true }] }),
       L('spotify', 'family', 'spotify.com', 'family@sato-home.jp', 'Hikari-Oto-Ame-88', 150, { lastUsedAt: now - 32 * DAY }),
       L('x', 'personal', 'x.com', '@haruka_mori', 'tw33t#Sakura!', 230, { lastUsedAt: now - 33 * DAY }),
       L('dropbox', 'family', 'dropbox.com', 'family@sato-home.jp', 'Box!Photos#2019', 240, { lastUsedAt: now - 35 * DAY }),
       { id: 'wifi', type: 'note', vault: 'family', title: '自宅の Wi-Fi', url: '', username: '', password: '', totp: null, note: 'SSID: sato-home-5G\nパスワード: kotatsu-mikan-2024\nルーターの管理画面は 192.168.0.1', fav: false, hue: 180, passkeys: [], createdAt: date('2024/12/01'), updatedAt: now - 40 * DAY, passwordUpdatedAt: null, lastUsedAt: null },
+
+      // ── the other item types ──
+      X('card-jcb', 'card', 'personal', 'JCB カード W', 160, {
+        cardholder: 'HARUKA SATO', number: '3540618291742302', expiry: '2029-08', cvv: '418', pin: '2580',
+      }, {
+        fav: true, lastUsedAt: now - 2 * DAY - 3 * HOUR, note: 'Amazon と楽天の支払い用。ポイントは Oki Doki ポイント。',
+        extra: [{ label: 'カード会社 電話', value: '0120-123-456', secret: false }, { label: 'ネット会員 ID', value: 'haruka-sato-jcb', secret: false }],
+      }),
+      X('card-visa-old', 'card', 'personal', '三井住友カード（旧）', 215, {
+        cardholder: 'HARUKA SATO', number: '4980123456789011', expiry: '2025-03', cvv: '902', pin: '',
+      }, { note: '更新前のカード。2025 年 3 月で期限切れ。' }),
+      X('identity-home', 'identity', 'personal', '佐藤 遥', 200, {
+        fullName: '佐藤 遥', lastName: '佐藤', firstName: '遥', middleName: '', email: 'haruka.sato@gmail.com', phone: '090-1234-5678',
+        birthDate: '1992-04-18', company: 'スタジオ森', jobTitle: 'デザイナー', postalCode: '150-0001', country: '日本',
+        state: '東京都', city: '渋谷区', address1: '神宮前 3-14-5', address2: 'メゾン原宿 402', website: 'https://haruka.studio-mori.jp',
+      }),
+      X('api-sakura', 'apiCredential', 'work', 'さくらのクラウド API', 330, {
+        host: 'secure.sakura.ad.jp', keyId: 'a7c3e1f2-58b4-4d0e-9a61-3f2c8b7d5e90', secret: 'Zt8qW3nLx5vR2pK9sYb4mJ7cH6fD1gA0', expiry: '2027-03-31',
+      }, { note: 'ゾーン tk1a 用。Terraform から使う。' }),
+      X('db-prod', 'database', 'work', '本番 PostgreSQL', 230, {
+        dbType: 'PostgreSQL 16', host: 'db.studio-mori.internal', port: '5432', database: 'mori_prod', username: 'app_admin', password: 'Pg!Mori-Prod-2026#x',
+      }, { extra: [{ label: 'SSL モード', value: 'verify-full', secret: false }, { label: '読み取り専用ユーザー', value: 'ro_report / Ro#Report-88', secret: true }] }),
+      X('srv-vps', 'server', 'work', 'さくらの VPS', 120, {
+        host: '203.0.113.24', port: '22', username: 'deploy', password: 'Vps#Deploy-2026!q', url: 'https://secure.sakura.ad.jp/vps/',
+      }),
+      X('lic-affinity', 'softwareLicense', 'personal', 'Affinity Designer 2', 300, {
+        product: 'Affinity Designer', version: '2.5', licenseKey: 'AFD2-7KQ9-M3XP-8RTV-WN42', licensee: '佐藤 遥', email: 'haruka.sato@gmail.com',
+        purchaseDate: '2024-11-29', expiry: '', url: 'https://affinity.serif.com',
+      }),
+      X('ssh-deploy', 'sshKey', 'work', 'デプロイ鍵（ed25519）', 90, {
+        privateKey: SSH_PRIVATE,
+        publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOTYt3Rlc3Qta2V5LWZvci1ha2FyaS1zY3JlZW5zaG90cw haruka@mori-mbp',
+        fingerprint: 'SHA256:q7Lw0mH3sVt9yXcB2nRk5aE8uJpF1dGz4oQiW6eYxTs', passphrase: 'hotaru-yuki-kaze-07', host: '203.0.113.24', username: 'deploy',
+      }, { lastUsedAt: now - 4 * DAY - 2 * HOUR }),
+      X('wifi-office', 'wifi', 'work', 'オフィスの Wi-Fi', 175, {
+        ssid: 'StudioMori-5G', password: 'kinoko-takenoko-2026', security: 'wpa3',
+      }, { lastUsedAt: now - 5 * DAY, note: 'ゲスト用は StudioMori-Guest（パスワードは受付に掲示）' }),
+      X('bank-mufg', 'bankAccount', 'personal', '三菱UFJ銀行（給与口座）', 0, {
+        bankName: '三菱UFJ銀行', branch: '渋谷支店', accountType: '普通', accountNumber: '1234567', accountHolder: 'サトウ ハルカ',
+        routingNumber: '135', swift: 'BOTKJPJT', iban: '', pin: '4821',
+      }, { note: 'ネットバンキングの契約番号は別のノートに。' }),
+      X('crypto-eth', 'cryptoWallet', 'personal', 'MetaMask（メイン）', 275, {
+        network: 'Ethereum', address: '0x52908400098527886E0F7030069857D2E4169EE7',
+        recoveryPhrase: 'river amber glow lantern quiet harbor\nmaple twelve orbit candle velvet frost',
+        privateKey: '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318', password: 'Mm!Wallet-Hikari-26',
+      }),
+      X('dl', 'driverLicense', 'personal', '運転免許証', 40, {
+        fullName: '佐藤 遥', number: '301234567890', licenseClass: '普通・準中型', birthDate: '1992-04-18', issuedOn: '2023-05-10',
+        expiry: '2028-05-18', issuer: '東京都公安委員会', address: '東京都渋谷区神宮前 3-14-5',
+      }),
+      X('med', 'medicalRecord', 'family', 'かかりつけ医', 140, {
+        patientName: '佐藤 遥', provider: '神宮前クリニック', recordNumber: '00428157', doctor: '山田 太郎 先生', insurer: '関東 IT ソフトウェア健康保険組合', policyNumber: '記号 1234 番号 567',
+        bloodType: 'A 型 Rh+', allergies: 'スギ花粉\nペニシリン系の抗生物質', medications: 'アレグラ 60mg（朝・晩）',
+      }),
+      X('mem-jaf', 'membership', 'family', 'JAF 会員証', 60, {
+        organization: 'JAF（日本自動車連盟）', memberName: '佐藤 遥', memberId: '1234-5678-90', since: '2019-04-01', expiry: '2027-03-31',
+        pin: '', url: 'https://jaf.or.jp',
+      }),
+      X('passport', 'passport', 'personal', 'パスポート', 10, {
+        fullName: 'SATO HARUKA', number: 'TR1234567', nationality: '日本', issuingCountry: '日本', birthDate: '1992-04-18',
+        issuedOn: '2016-12-20', expiry: new Date(now + 47 * DAY).toISOString().slice(0, 10), authority: '外務省',
+      }, { note: '更新は有効期限の 1 年前から。' }),
+      X('reward-ana', 'rewardProgram', 'personal', 'ANA マイレージクラブ', 225, {
+        company: 'ANA', memberName: 'SATO HARUKA', memberId: '4123456789', pin: '0418', expiry: '2027-12-31', url: 'https://www.ana.co.jp/ja/jp/amc/',
+      }),
+      X('ssn', 'socialSecurity', 'personal', 'マイナンバー', 345, { fullName: '佐藤 遥', number: '123456789012' }),
     ];
   }
 
@@ -69,6 +155,13 @@
     items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30 },
   };
+  // cfg.seedPatch: { [id]: partial item } — `fields` is merged, other keys replace (edge cases for tests)
+  Object.keys(cfg.seedPatch || {}).forEach(function (id) {
+    var it = db.items.find(function (x) { return x.id === id; });
+    if (!it) return;
+    var p = cfg.seedPatch[id];
+    Object.assign(it, p, p.fields ? { fields: Object.assign({}, it.fields, p.fields) } : {});
+  });
   window.__AKARI_DB__ = db;
 
   function AkErr(code, message) { var e = new Error(message || code); e.code = code; return e; }
@@ -109,8 +202,14 @@
         if (pwChanged) cur.passwordUpdatedAt = t;
         return { item: clone(cur) };
       }
-      var created = Object.assign({ type: 'login', vault: 'personal', title: '', url: '', username: '', password: '', totp: null, note: '', fav: false, hue: Math.floor(Math.random() * 360) },
-        it, { id: 'new-' + t.toString(36), passkeys: [], createdAt: t, updatedAt: t, passwordUpdatedAt: it.password ? t : null, lastUsedAt: null });
+      if (it.type && TYPE_IDS.indexOf(it.type) < 0) throw AkErr('INVALID', 'unknown type');
+      var login = !it.type || it.type === 'login';
+      var base = login
+        ? { type: 'login', url: '', username: '', password: '', totp: null }
+        : it.type === 'note' ? {} : { fields: {} };
+      var created = Object.assign(base, { vault: 'personal', title: '', note: '', fav: false, extra: [], hue: Math.floor(Math.random() * 360) },
+        it, { id: 'new-' + t.toString(36), createdAt: t, updatedAt: t, lastUsedAt: null },
+        login ? { passkeys: [], passwordUpdatedAt: it.password ? t : null } : {});
       db.items.push(created);
       return { item: clone(created) };
     },
@@ -153,16 +252,18 @@
       var t = Date.now();
       var out = { added: 0, duplicates: 0, invalid: 0, passkeys: 0 };
       m.items.forEach(function (it, i) {
-        if (!it || (it.type !== 'login' && it.type !== 'note') || !it.title) { out.invalid++; return; }
+        if (!it || TYPE_IDS.indexOf(it.type || 'login') < 0 || !it.title) { out.invalid++; return; }
         var dup = db.items.some(function (x) {
-          return x.type === it.type && (it.type === 'note'
-            ? x.title === it.title && x.note === it.note
-            : hostOf(x.url) === hostOf(it.url) && x.username === it.username && x.password === it.password);
+          if (x.type !== (it.type || 'login')) return false;
+          if (it.type === 'note') return x.title === it.title && x.note === it.note;
+          if (it.type && it.type !== 'login') return x.title === it.title && JSON.stringify(x.fields || {}) === JSON.stringify(it.fields || {});
+          return hostOf(x.url) === hostOf(it.url) && x.username === it.username && x.password === it.password;
         });
         if (dup) { out.duplicates++; return; }
         var pks = (it.passkeys || []).map(function (p) { return Object.assign({}, p, { privateKey: undefined, publicKey: 'pk', alg: -7, signCount: 0, lastUsedAt: null }); });
         out.passkeys += pks.length;
-        db.items.push(Object.assign({ url: '', username: '', password: '', note: '', totp: null, fav: false }, it, {
+        var defaults = !it.type || it.type === 'login' ? { url: '', username: '', password: '', totp: null } : {};
+        db.items.push(Object.assign(defaults, { note: '', fav: false, extra: [] }, it, {
           id: 'imp-' + t.toString(36) + '-' + i, vault: m.vault, hue: Math.floor(Math.random() * 360), passkeys: pks,
           createdAt: it.createdAt || t, updatedAt: it.updatedAt || t, passwordUpdatedAt: it.password ? t : null, lastUsedAt: null,
         }));

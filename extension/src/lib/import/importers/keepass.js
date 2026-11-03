@@ -3,7 +3,8 @@
 // XML reader is included: elements, attributes, text, CDATA, comments, PIs, DOCTYPE,
 // and the predefined + numeric character entities.
 
-import { ImportError, fieldsToNote, parseOtp, bytesToText } from '../model.js';
+import { ImportError, parseOtp, bytesToText } from '../model.js';
+import { L, looksSecret } from './_fields.js';
 import { normalizeSecret, isValidSecret, base32Encode } from '../../totp.js';
 import { fromB64 } from '../../../shared/bytes.js';
 
@@ -246,6 +247,7 @@ export async function parse(file) {
 
   const toItem = (entry) => {
     const strings = new Map();
+    const hidden = new Set(); // "protect in memory" values: password-like by the user's own choice
     for (const s of kids(entry, 'String')) {
       const key = textOf(s, 'Key').trim();
       const val = kid(s, 'Value');
@@ -254,6 +256,7 @@ export async function parse(file) {
         throw new ImportError('UNSUPPORTED', '暗号化された値を含む XML です。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください');
       }
       strings.set(key, val.text);
+      if (/^true$/i.test(val.attrs.ProtectInMemory || '')) hidden.add(key);
     }
     attachments += kids(entry, 'Binary').length;
     const username = (strings.get('UserName') || '').trim();
@@ -261,28 +264,28 @@ export async function parse(file) {
     const { totp, used } = findTotp(strings, username || title);
     const hadOtp = ['otp', 'TimeOtp-Secret-Base32', 'TimeOtp-Secret', 'TimeOtp-Secret-Hex', 'TimeOtp-Secret-Base64', 'TOTP Seed'].some((k) => strings.get(k));
     if (!totp && hadOtp) badTotp++;
-    const extras = [];
+    // Custom strings become extra fields (an OTP setting that could not be used stays there too).
+    const extra = [];
     for (const [k, v] of strings) {
       if (STANDARD.has(k) || used.includes(k)) continue;
-      extras.push([/^KP2A_URL(_\d+)?$/.test(k) ? 'URL' : k, v]);
+      if (/^KP2A_URL(_\d+)?$/.test(k)) extra.push({ label: L('url', 'URL'), value: v, secret: false });
+      else extra.push({ label: k, value: v, secret: hidden.has(k) || looksSecret(k) });
     }
     const tags = textOf(entry, 'Tags').split(/[;,]/).map((t) => t.trim()).filter(Boolean);
-    if (tags.length) extras.push(['タグ', tags.join(', ')]);
+    if (tags.length) extra.push({ label: L('tags', 'タグ'), value: tags.join(', '), secret: false });
     const url = (strings.get('URL') || '').trim();
     const password = strings.get('Password') || '';
     const times = kid(entry, 'Times');
-    return {
-      type: username || password || url || totp ? 'login' : 'note',
+    const item = {
+      type: 'note',
       title,
-      url,
-      username,
-      password,
-      totp,
-      note: [strings.get('Notes') || '', fieldsToNote(extras)].map((s) => s.trim()).filter(Boolean).join('\n\n'),
+      note: strings.get('Notes') || '',
+      extra,
       fav: false,
       createdAt: keepassTime(textOf(times, 'CreationTime')),
       updatedAt: keepassTime(textOf(times, 'LastModificationTime')),
     };
+    return username || password || url || totp ? { ...item, type: 'login', url, username, password, totp } : item;
   };
 
   const walk = (group) => {
@@ -295,6 +298,6 @@ export async function parse(file) {
 
   const warnings = [];
   if (attachments) warnings.push(`添付ファイル ${attachments} 件は読み込まれません`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はメモに残しました`);
+  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
   return { items, skipped, warnings };
 }

@@ -38,7 +38,7 @@ export function scramble(key, el, target, ms = 520, glyphs = GLYPHS, onDone) {
     let out = '';
     for (let i = 0; i < chars.length; i++) {
       const c = chars[i];
-      out += i < done || c === ' ' ? c : glyphs[(Math.random() * glyphs.length) | 0];
+      out += i < done || c === ' ' || c === '\n' ? c : glyphs[(Math.random() * glyphs.length) | 0];
     }
     el.textContent = out;
   };
@@ -57,7 +57,7 @@ export function scrambleWith(key, target, ms, render, glyphs = GLYPHS) {
     if (t >= 1) { cancelScramble(key); render(target); return; }
     const done = Math.floor(t * chars.length);
     let out = '';
-    for (let i = 0; i < chars.length; i++) out += i < done || chars[i] === ' ' ? chars[i] : glyphs[(Math.random() * glyphs.length) | 0];
+    for (let i = 0; i < chars.length; i++) out += i < done || chars[i] === ' ' || chars[i] === '\n' ? chars[i] : glyphs[(Math.random() * glyphs.length) | 0];
     render(out);
   };
   running.set(key, setInterval(step, 34));

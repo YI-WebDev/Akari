@@ -1,40 +1,51 @@
 // Right pane (design 1a): head, weak-password warning, the field box (user / password with
 // strength bits / TOTP ticks / URL / memo), passkeys, and the 最終自動入力 · 更新 · 作成 grid.
+// Templated types (card, identity, SSH key, …) get their template fields in the same field-box
+// language — secrets masked with reveal + copy — then extra fields, the note and 更新 · 作成.
 
 import { MSG } from '../../shared/messages.js';
+import {
+  typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, maskTail,
+} from '../../shared/item-types.js';
+import { t } from '../../shared/i18n.js';
 import {
   S, emit, call, itemById, vaultById, strengthOf, reuseOf, isWeak, copyText, forSave, replaceItem, mergeSaved, errText,
   liveToken, live,
 } from '../state.js';
 import { h, clear, icon, copyGlyph } from './dom.js';
-import { vaultColor, relTime, formatDate, safeHttpUrl } from './format.js';
-import { scramble, cancelScramble, rise, burst, wait } from './fx.js';
+import {
+  vaultColor, relTime, formatDate, safeHttpUrl, hueOf, formatIsoDate, daysUntil, digitsOnly, groupDigits,
+} from './format.js';
+import { scramble, cancelScramble, rise, burst, wait, DIGITS } from './fx.js';
 import { totpView } from './totp-view.js';
 import { meterEl, setMeter } from './meter.js';
 import { tileEl } from './list.js';
 import { toast, toastError } from './toast.js';
 
-let view = null; // { id, reveal, totp, els, timers }
+// { id, reveal, totp, els, timers, shown: revealed field keys, scr: scramble keys in use }
+let view = null;
 
 export function stopDetail() {
   if (!view) return;
   view.totp?.stop();
   cancelScramble('pass');
+  for (const k of view.scr) cancelScramble(k);
   view.timers.forEach(clearTimeout);
   view = null;
 }
 
 const masked = (pw) => '•'.repeat(Math.min(pw.length, 16));
 
-function copyButton(field, getValue, label) {
-  const btn = h('button', { class: 'ibtn', type: 'button', title: 'コピー', 'aria-label': label + 'をコピー' }, copyGlyph(false));
+function copyButton(field, getValue, label, opts) {
+  const aria = opts ? t('detail.copyField', { label }, '{label}をコピー') : label + 'をコピー';
+  const btn = h('button', { class: 'ibtn', type: 'button', title: t('detail.copy', null, 'コピー'), 'aria-label': aria }, copyGlyph(false));
   btn.addEventListener('click', async () => {
     const v = getValue();
     if (!v) return;
-    if (!(await copyText(field, v))) return;
+    if (!(await copyText(field, v, opts))) return;
     btn.replaceChildren(copyGlyph(true));
-    const t = setTimeout(() => btn.replaceChildren(copyGlyph(false)), 1500);
-    view?.timers.push(t);
+    const tm = setTimeout(() => btn.replaceChildren(copyGlyph(false)), 1500);
+    view?.timers.push(tm);
   });
   return btn;
 }
@@ -51,11 +62,11 @@ function head(it) {
     class: 'ibtn boxed fav', type: 'button', title: 'お気に入り', 'aria-label': 'お気に入り', 'aria-pressed': String(!!it.fav),
   }, icon('star', 14));
   fav.addEventListener('click', () => toggleFav(it.id, fav));
-  const href = it.type === 'note' ? '' : safeHttpUrl(it.url);
+  const href = it.type === 'login' ? safeHttpUrl(it.url) : '';
   const meta = [h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
-    h('span', null, it.type === 'note' ? 'セキュアノート' : 'ログイン')];
-  if (it.totp?.secret && it.type !== 'note') meta.push(h('span', null, '· 2FA 有効'));
-  if (it.passkeys?.length) meta.push(h('span', null, `· パスキー ${it.passkeys.length}`));
+    h('span', null, typeLabel(it.type))];
+  if (it.totp?.secret && it.type === 'login') meta.push(h('span', null, '· 2FA 有効'));
+  if (it.type === 'login' && it.passkeys?.length) meta.push(h('span', null, `· パスキー ${it.passkeys.length}`));
   return h('div', { class: 'd-head', dataset: { f: '' } },
     tileEl(it, 'lg'),
     h('div', { class: 'd-titles' },
@@ -181,6 +192,159 @@ function noteRow(note) {
   return h('div', { class: 'f-row wide top' }, h('span', { class: 'f-label' }, 'メモ'), h('div', { class: 'f-note' }, note));
 }
 
+/* ───────── templated fields ───────── */
+
+const str = (v) => (v == null ? '' : String(v));
+
+/** "期限切れ" / "あと N 日" next to an expiry (date or card month), null when far away. */
+function expiryTag(value) {
+  const days = daysUntil(value);
+  if (days == null || days > 60) return null;
+  if (days < 0) return h('span', { class: 'tag exp-tag over' }, t('detail.expired', null, '期限切れ'));
+  return h('span', { class: 'tag exp-tag soon' }, t('detail.expiresIn', { days }, 'あと {days} 日'));
+}
+
+function labelEl(label, sub) {
+  return h('span', { class: 'f-label', title: label }, sub ? [h('span', { class: 'f-label-t' }, label), h('span', { class: 'f-sub' }, sub)] : label);
+}
+
+/**
+ * A non-secret value with its copy button. `kind` picks the presentation: url → link opened
+ * with chrome.tabs.create (http/https only), multiline → scrollable mono box, else one line.
+ */
+function plainRow({ key, label, kind, display, copyValue, tag = null }) {
+  if (!display) {
+    return h('div', { class: 'f-row' }, labelEl(label), h('span', { class: 'f-value empty-val' }, '—'), h('span'));
+  }
+  const copy = copyButton(key, copyValue, label, { label, secret: false });
+  if (kind === 'multiline' || display.includes('\n')) {
+    return h('div', { class: 'f-row top' }, labelEl(label),
+      h('div', { class: 'ml-box', tabindex: '0', role: 'region', 'aria-label': label }, display), copy);
+  }
+  let value;
+  const href = kind === 'url' ? safeHttpUrl(display) : '';
+  if (href) value = h('a', { class: 'f-link', href, target: '_blank', rel: 'noreferrer noopener', title: href, onclick: (e) => openUrl(e, href) }, display);
+  else value = h('span', { class: 'f-value', title: display }, display);
+  if (tag) value = h('span', { class: 'f-val-line' }, value, tag);
+  return h('div', { class: 'f-row' }, labelEl(label), value, copy);
+}
+
+function maskOf(v, { card, multiline }) {
+  if (card) {
+    const d = digitsOnly(v);
+    return d.length > 4 ? '•••• •••• •••• ' + d.slice(-4) : masked(v);
+  }
+  if (multiline) return '•'.repeat(16);
+  return masked(v);
+}
+
+/**
+ * A secret value: masked until the eye reveals it (scramble), copied with clipboard
+ * auto-clear. Card numbers are grouped in 4s when shown and copied as digits only;
+ * secret-multiline values reveal into the scrollable mono box.
+ */
+function secretRow({ key, label, get, multiline = false, card = false, sub = '' }) {
+  view.scr.add(key);
+  const text = h(multiline ? 'div' : 'span', {
+    class: multiline ? 'ml-box secret' : 'pw-text' + (card ? ' card-num' : ''), 'aria-label': label,
+    ...(multiline ? { tabindex: '0', role: 'region' } : {}),
+  });
+  const hint = multiline ? h('span', { class: 'ml-hint' }, t('detail.secretHidden', null, '秘密の値 · 表示で確認')) : null;
+  const eye = h('button', { class: 'ibtn', type: 'button' });
+  const paint = (on, animate) => {
+    const v = get();
+    eye.classList.toggle('on', on);
+    eye.setAttribute('aria-pressed', String(on));
+    eye.setAttribute('aria-label', on ? t('detail.hideField', { label }, '{label}を隠す') : t('detail.showField', { label }, '{label}を表示'));
+    eye.title = on ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示');
+    eye.replaceChildren(icon(on ? 'eyeOff' : 'eye', 14));
+    text.classList.toggle('revealed', on);
+    if (hint) hint.hidden = on; // a fixed hint: line or word counts would say how long the secret is
+    if (on) {
+      const target = card ? groupDigits(v) : v;
+      if (animate) scramble(key, text, target, multiline ? 420 : 520, card ? DIGITS : undefined);
+      else text.textContent = target;
+    } else {
+      cancelScramble(key);
+      text.textContent = maskOf(v, { card, multiline });
+    }
+  };
+  eye.addEventListener('click', () => {
+    if (!view) return;
+    const on = !view.shown.has(key);
+    if (on) view.shown.add(key);
+    else view.shown.delete(key);
+    paint(on, true);
+  });
+  paint(view.shown.has(key), false);
+  const copy = copyButton(key, () => (card ? digitsOnly(get()) : get()), label, { label, secret: true });
+  const btns = h('div', { class: 'f-btns' }, eye, copy);
+  if (multiline) return h('div', { class: 'f-row top' }, labelEl(label, sub), h('div', { class: 'ml-col' }, text, hint), btns);
+  return h('div', { class: 'f-row' }, labelEl(label, sub), text, btns);
+}
+
+/** Display text of a template field: ISO dates through formatIsoDate, select ids through optionLabel. */
+function displayOf(typeId, fd, v) {
+  if (fd.kind === 'date' || fd.kind === 'month') return formatIsoDate(v, fd.kind);
+  if (fd.kind === 'select') return optionLabel(typeId, fd.key, v);
+  return v;
+}
+
+function fieldRows(it) {
+  const rows = [];
+  for (const fd of typeOf(it.type).fields) {
+    const v = str(it.fields?.[fd.key]);
+    if (!v.trim()) continue;
+    const label = fieldLabel(it.type, fd.key);
+    const get = () => str(itemById(it.id)?.fields?.[fd.key]);
+    if (isSecretKind(fd.kind)) {
+      const card = fd.format === 'card';
+      rows.push(secretRow({ key: 'f:' + fd.key, label, get, multiline: fd.kind === 'secret-multiline', card, sub: card ? cardBrand(v) : '' }));
+      continue;
+    }
+    const display = displayOf(it.type, fd, v);
+    rows.push(plainRow({
+      key: fd.key, label, kind: fd.kind, display, copyValue: () => displayOf(it.type, fd, get()),
+      tag: fd.key === 'expiry' ? expiryTag(v) : null,
+    }));
+  }
+  return rows;
+}
+
+/** User-defined fields, after the template (or login) fields, in the same style. */
+function extraRows(it) {
+  const rows = [];
+  (Array.isArray(it.extra) ? it.extra : []).forEach((x, i) => {
+    const value = str(x?.value);
+    if (!x || (!value && !x.label)) return;
+    const label = str(x.label) || t('detail.extraUntitled', null, '（無題の項目）');
+    const get = () => str(itemById(it.id)?.extra?.[i]?.value);
+    if (x.secret && value) rows.push(secretRow({ key: 'x:' + i, label, get, multiline: value.includes('\n') }));
+    else rows.push(plainRow({ key: 'x:' + i, label, kind: 'text', display: value, copyValue: get }));
+  });
+  return rows;
+}
+
+/** The card's face in one line: brand · •••• 1234 · MM/YY. */
+function cardLine(it) {
+  const x = it.fields || {};
+  const num = digitsOnly(x.number);
+  const exp = str(x.expiry);
+  if (!num && !exp) return null;
+  const days = daysUntil(exp);
+  const brand = cardBrand(num);
+  return h('div', {
+    class: 'cardline' + (days != null && days < 0 ? ' expired' : ''), dataset: { f: '' }, vars: { '--h': String(hueOf(it)) },
+    'aria-hidden': 'true', // the same facts are in the field rows below
+  },
+  h('span', { class: 'cl-chip' }),
+  h('span', { class: 'cl-brand' }, brand || typeLabel('card')),
+  num ? h('span', { class: 'cl-num' }, maskTail(num)) : null,
+  h('span', { class: 'grow' }),
+  exp ? h('span', { class: 'cl-exp' }, h('span', { class: 'cl-k' }, t('detail.cardExp', null, 'EXP')), formatIsoDate(exp, 'month')) : null,
+  exp ? expiryTag(exp) : null);
+}
+
 function passkeysBlock(it) {
   const count = h('span');
   const box = h('div', { class: 'box', role: 'list', 'aria-label': 'パスキー' });
@@ -241,7 +405,7 @@ function passkeyEl(itemId, pk, rerender) {
 
 function stats(it) {
   const cell = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'stat-k' }, k), h('div', { class: 'stat-v' }, v));
-  if (it.type === 'note') {
+  if (it.type !== 'login') {
     return h('div', { class: 'stats two', dataset: { f: '' } }, cell('更新', formatDate(it.updatedAt)), cell('作成', formatDate(it.createdAt)));
   }
   return h('div', { class: 'stats', dataset: { f: '' } },
@@ -266,7 +430,7 @@ function emptyDetail() {
       cmd('key', '新規ログイン', 'L', 'newLogin'),
       cmd('note', 'セキュアノート', 'N', 'newNote'),
       cmd('regen', 'パスワード生成', 'G', 'openGen', {})),
-    h('div', { class: 'hint-line' }, '+ メニューからも追加できます'));
+    h('div', { class: 'hint-line' }, t('detail.welcomeHint', null, 'カードや ID なども ＋ メニューから追加できます')));
 }
 
 export function renderDetail({ animate = false, reveal = false } = {}) {
@@ -282,20 +446,34 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
     return;
   }
   D.classList.remove('is-empty');
-  view = { id: it.id, reveal, totp: null, els: {}, timers: [] };
+  view = { id: it.id, reveal, totp: null, els: {}, timers: [], shown: new Set(), scr: new Set() };
   D.append(head(it));
   const box = h('div', { class: 'box', dataset: { f: '' } });
-  if (it.type === 'note') {
-    box.append(noteRow(it.note || ''));
-  } else {
+  if (it.type === 'login') {
     if (isWeak(it)) D.append(weakBox(it));
     box.append(userRow(it), passwordRow(it, animate));
     if (it.totp?.secret) box.append(totpRow(it));
     if (it.url) box.append(urlRow(it));
+    box.append(...extraRows(it));
     if (it.note) box.append(noteRow(it.note));
+  } else if (hasTemplate(it.type)) {
+    box.classList.add('tpl');
+    if (it.type === 'card') {
+      const line = cardLine(it);
+      if (line) D.append(line);
+    }
+    box.append(...fieldRows(it), ...extraRows(it));
+    if (it.note) box.append(noteRow(it.note));
+    if (!box.children.length) {
+      box.append(h('div', { class: 'f-row wide' }, h('span', { class: 'f-label' }, '—'),
+        h('span', { class: 'f-value empty-val' }, t('detail.noFields', null, 'まだ何も入力されていません'))));
+    }
+  } else {
+    // secure note (and any type this popup does not know yet): title, note, extra
+    box.append(noteRow(it.note || ''), ...extraRows(it));
   }
   D.append(box);
-  if (it.type !== 'note' && it.passkeys?.length) D.append(...passkeysBlock(it));
+  if (it.type === 'login' && it.passkeys?.length) D.append(...passkeysBlock(it));
   D.append(stats(it));
   if (animate) rise(D);
 }

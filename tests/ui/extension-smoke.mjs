@@ -1,5 +1,6 @@
 // Drives the real popup page against the real service worker (unpacked extension in Chrome).
-// setup → add login (generator + TOTP) → weak password → 強化する → lock/unlock (boot log) → settings/export
+// setup → add login (generator + TOTP) → weak password → 強化する → a credit card (＋ menu, reveal / copy,
+// edit + extra field, 種類 filter, delete) → lock/unlock (boot log) → settings/export
 // → import a Chrome CSV (インポート) → export CSV with the master password (エクスポート) → autofill → remote lock.
 // Screenshots go to tests/ui/screenshots/ext-*.png. Usage: node tests/ui/extension-smoke.mjs
 
@@ -94,6 +95,80 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await toastText(), 'パスワードをコピーしました');
   assert.equal(await page.locator('#toastSub').textContent(), '30秒後にクリップボードから自動で消去します');
+
+  step('credit card: create via ＋, reveal + copy the number, edit, filter by 種類, delete');
+  {
+    const items = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items);
+    await page.click('#plusBtn');
+    await page.click('#plusMenu .tp-cell[data-type="card"]');
+    await page.waitForSelector('.ed-form[data-type="card"]');
+    assert.equal(await page.locator('.ed-heading').textContent(), '新規クレジットカード');
+    await page.fill('#edTitle', 'テスト JCB');
+    await page.fill('#edF-cardholder', 'TARO YAMADA');
+    await page.fill('#edF-number', '3530 1113 3330 0000');
+    assert.equal(await page.locator('.ed-brand').textContent(), 'JCB', 'brand while typing');
+    await page.fill('#edF-expiry', '09/29');
+    await page.fill('#edF-cvv', '123');
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+    assert.match(await toastText(), /テスト JCB を追加しました/);
+    let card = (await items()).find((i) => i.type === 'card');
+    assert.ok(card, 'the service worker stored the card');
+    assert.equal(card.title, 'テスト JCB');
+    assert.equal(card.fields.number.replace(/\s/g, ''), '3530111333300000');
+    assert.equal(card.fields.expiry, '2029-09', 'MM/YY stored as YYYY-MM');
+    assert.equal(card.fields.cvv, '123');
+    assert.equal(card.url, undefined, 'no login keys on a card');
+    const sel = page.locator('.row[aria-selected="true"]');
+    assert.equal(await sel.locator('.tag').textContent(), 'CARD');
+    assert.equal(await sel.locator('.row-user').textContent(), 'JCB · •••• 0000 · 09/29');
+    assert.equal(await page.locator('.cardline .cl-brand').textContent(), 'JCB');
+    assert.equal(await page.locator('.card-num').textContent(), '•••• •••• •••• 0000');
+    await page.click('.f-row:has(.card-num) .ibtn[aria-pressed]');
+    await page.waitForFunction(() => document.querySelector('.card-num')?.textContent === '3530 1113 3330 0000');
+    await page.click('.f-row:has(.card-num) .ibtn[title="コピー"]');
+    await page.waitForTimeout(300);
+    assert.equal(await toastText(), 'カード番号をコピーしました');
+    assert.equal(await page.locator('#toastSub').textContent(), '30秒後にクリップボードから自動で消去します');
+    await shot('card');
+
+    // edit: a new expiry and an extra field
+    await page.click('.d-head .ibtn[title="編集"]');
+    assert.equal(await page.inputValue('#edF-expiry'), '09/2029', 'months are edited as MM/YYYY');
+    await page.fill('#edF-expiry', '2030-01');
+    await page.click('.ex-head .btn-line');
+    await page.fill('.ex-row .ex-label', 'カード会社 電話');
+    await page.fill('.ex-row .ex-value', '0120-000-000');
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+    assert.match(await toastText(), /テスト JCB を保存しました/);
+    card = (await items()).find((i) => i.type === 'card');
+    assert.equal(card.fields.expiry, '2030-01');
+    assert.equal(card.fields.number.replace(/\s/g, ''), '3530111333300000', 'number kept');
+    assert.deepEqual(card.extra, [{ label: 'カード会社 電話', value: '0120-000-000', secret: false }]);
+    assert.equal(await page.locator('.f-row:has-text("カード会社 電話") .f-value').textContent(), '0120-000-000');
+
+    // 種類 filter
+    assert.equal(await page.locator('.row').count(), 2);
+    await page.click('#typeBtn');
+    await page.waitForSelector('#typeMenu.open');
+    assert.equal(await page.locator('#typeMenu .tp-cell[data-type="card"] .v-count').textContent(), '1');
+    await page.click('#typeMenu .tp-cell[data-type="card"]');
+    assert.equal(await page.locator('.row').count(), 1, 'only the card');
+    assert.equal(await page.locator('#typeLabel').textContent(), 'クレジットカード');
+    await page.click('#typeClear');
+    assert.equal(await page.locator('.row').count(), 2);
+
+    // delete
+    await page.click(`.row[data-id="${card.id}"]`);
+    await page.click('.d-head .ibtn[title="編集"]');
+    await page.click('.ed-foot .btn-text.danger');
+    await page.click('.ed-confirm .btn-mini.danger');
+    await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+    assert.match(await toastText(), /テスト JCB を削除しました/);
+    assert.equal((await items()).filter((i) => i.type === 'card').length, 0, 'card deleted in the service worker');
+    assert.equal(await page.locator('.row').count(), 1);
+  }
 
   step('lock → wrong password → unlock');
   await page.click('#lockBtn');

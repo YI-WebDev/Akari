@@ -3,14 +3,17 @@
 // WebAssembly for OpenPGP.js's Argon2 S2K, no JS eval).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { launch, extensionMessenger, MASTER } from './helpers.js';
+import path from 'node:path';
+import { launch, extensionMessenger, serveStatic, MASTER, ROOT } from './helpers.js';
 import { csvToObjects } from '../../extension/src/lib/import/csv.js';
+import { parseOtpauthUri } from '../../extension/src/lib/totp.js';
 import { createCredential } from '../../extension/src/lib/webauthn.js';
 import { encryptPgp } from '../../extension/src/lib/pgp.js';
 import * as openpgp from '../../extension/src/third_party/openpgp.js';
 import { toB64url, randomBytes } from '../../extension/src/shared/bytes.js';
+import { TYPE_IDS, typeOf, hasTemplate } from '../../extension/src/shared/item-types.js';
 
-let ext, send, page;
+let ext, send, page, site;
 
 // GnuPG 2.4.7 `gpg --symmetric --cipher-algo AES256 --armor`, passphrase "gnupg-pass".
 const GPG_ARMORED = `-----BEGIN PGP MESSAGE-----
@@ -27,7 +30,11 @@ before(async () => {
   ({ send, page } = await extensionMessenger(ext));
   assert.equal((await send('vault/setup', { masterPassword: MASTER })).ok, true);
 });
-after(async () => ext?.close());
+// The static server closes after the browser: its keep-alive sockets would hold server.close() open.
+after(async () => {
+  await ext?.close();
+  await site?.close();
+});
 
 async function passkey(rpId) {
   const cred = await createCredential({ rpId, userHandle: randomBytes(16), clientDataHash: randomBytes(32) });
@@ -85,10 +92,10 @@ test('vault/exportPlain: wrong master password refused; CSV and Bitwarden JSON p
   assert.match(records.find((x) => x.name === 'TOTP').totp, /^otpauth:\/\/totp\/Ex:t\?secret=JBSWY3DPEHPK3PXP/);
   assert.equal(records.find((x) => x.name === '暗証番号').note, '1234\n5678');
 
-  // Re-importing the CSV rows changes nothing: all duplicates.
+  // Re-importing the CSV rows (TOTP column included) changes nothing: all exact duplicates.
   const back = records.map((x) => ({
     type: x.url || x.username || x.password ? 'login' : 'note', title: x.name, url: x.url, username: x.username,
-    password: x.password, note: x.note, passkeys: [],
+    password: x.password, note: x.note, totp: x.totp ? parseOtpauthUri(x.totp) : null, passkeys: [],
   }));
   r = await send('vault/importItems', { items: back, vault: 'personal' });
   assert.deepEqual(r.data, { added: 0, duplicates: 5, invalid: 0, passkeys: 0 });
@@ -144,4 +151,83 @@ test('vendored OpenPGP.js loads in an extension page and round-trips under the e
   const { data } = await openpgp.decrypt({ message: await openpgp.readMessage({ armoredMessage: out.armored }), passwords: ['page-pass'], format: 'binary' });
   assert.equal(new TextDecoder().decode(data), 'ページ内,テスト\r\n');
   assert.deepEqual(ext.errors, []);
+});
+
+test('every item type through the real service worker: save, import dedupe, backup, exports; autofill offers logins only', async () => {
+  site = await serveStatic(path.join(ROOT, 'tests/fixtures/login'));
+  const pages = [];
+  try {
+    const byKind = {
+      text: (fd) => fd.key + ' 値', secret: (fd) => 'secret ' + fd.key, multiline: () => '一行目\n二行目',
+      'secret-multiline': () => '-----BEGIN KEY-----\nAAAA\n-----END KEY-----', date: () => '2031-03-15', month: () => '2031-03',
+      email: () => 'hina@example.jp', tel: () => '03-1234-5678', url: () => site.origin + '/', number: () => '8080',
+      select: (fd) => fd.options[1].id,
+    };
+    const sample = (type) => Object.fromEntries(typeOf(type).fields.map((fd) => [fd.key, fd.format === 'card' ? '5555 5555 5555 4444' : byKind[fd.kind](fd)]));
+    const extra = [{ label: '合言葉', value: 'やま', secret: true }];
+    const ids = {};
+    for (const type of TYPE_IDS) {
+      const item = { type, title: 'E2E ' + type, vault: 'family', extra };
+      if (type === 'login') Object.assign(item, { url: site.origin + '/', username: 'e2e-user', password: 'e2e-pw' });
+      if (hasTemplate(type)) item.fields = sample(type);
+      const r = await send('vault/saveItem', { item });
+      assert.equal(r.ok, true, type + ' ' + JSON.stringify(r));
+      ids[type] = r.data.item.id;
+    }
+    let r = await send('vault/saveItem', { item: { id: ids.card, fav: true } });
+    assert.deepEqual([r.data.item.fav, r.data.item.fields], [true, sample('card')], 'partial save keeps fields');
+    r = await send('vault/saveItem', { item: { type: 'wifi', title: 'bad', fields: { security: 'WPA2' } } });
+    assert.equal(r.error.code, 'INVALID', 'select values are option ids');
+
+    r = await send('vault/getAll');
+    for (const type of TYPE_IDS) {
+      const it = r.data.items.find((i) => i.id === ids[type]);
+      assert.deepEqual([it.type, it.extra], [type, extra], type);
+      if (hasTemplate(type)) assert.deepEqual(it.fields, sample(type), type);
+    }
+
+    // Import: an identical card (number written without spaces) is a duplicate; a different card is added.
+    r = await send('vault/importItems', {
+      items: [
+        { type: 'card', title: 'E2E card', fields: { ...sample('card'), number: '5555555555554444' }, extra }, // exact duplicate
+        { type: 'card', title: 'E2E card 2', fields: { number: '4111111111111111', expiry: '2031-01' } },
+      ],
+      vault: 'family',
+    });
+    assert.deepEqual(r.data, { added: 1, duplicates: 1, invalid: 0, passkeys: 0 });
+
+    // Autofill: every non-login item has a URL / note pointing at this site, only the login is offered.
+    const sitePage = await ext.context.newPage();
+    pages.push(sitePage);
+    await sitePage.goto(site.origin + '/login.html');
+    const tab = await page.evaluate(async (u) => (await chrome.tabs.query({ url: u + '*' }))[0]?.id, site.origin + '/login.html');
+    r = await send('autofill/matches', { tabId: tab });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.data.items.map((i) => i.id), [ids.login]);
+    for (const type of TYPE_IDS.filter((t) => t !== 'login')) {
+      const denied = await send('autofill/fill', { tabId: tab, itemId: ids[type] });
+      assert.equal(denied.error?.code, 'NOT_FOUND', type);
+    }
+
+    // Plaintext exports.
+    r = await send('vault/exportPlain', { format: 'bitwarden', masterPassword: MASTER });
+    const bw = JSON.parse(r.data.text);
+    const bwType = (id) => bw.items.find((i) => i.id === id).type;
+    assert.deepEqual([bwType(ids.card), bwType(ids.identity), bwType(ids.sshKey), bwType(ids.wifi), bwType(ids.login)], [3, 4, 5, 2, 1]);
+    assert.equal(bw.items.find((i) => i.id === ids.card).card.number, '5555555555554444');
+    r = await send('vault/exportPlain', { format: 'csv', masterPassword: MASTER });
+    const rec = csvToObjects(r.data.text).records.find((x) => x.name === 'E2E wifi');
+    assert.equal(rec.note, `ネットワーク名: ssid 値\nパスワード: secret password\nセキュリティ: WPA2\n合言葉: やま`);
+
+    // Backup: delete a typed item, restore it from the encrypted backup with fields and extra intact.
+    const { data: { json } } = await send('vault/export');
+    const before = (await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey);
+    assert.equal((await send('vault/deleteItem', { id: ids.sshKey })).ok, true);
+    r = await send('vault/import', { json, masterPassword: MASTER });
+    assert.deepEqual(r, { ok: true, data: { count: 1 } });
+    assert.deepEqual((await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey), before);
+    assert.deepEqual(ext.errors, []);
+  } finally {
+    for (const p of pages) await p.close();
+  }
 });
