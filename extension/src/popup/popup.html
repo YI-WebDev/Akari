@@ -33,21 +33,18 @@
 
   <main class="body">
     <section class="col-list" aria-label="アイテム一覧">
+      <!-- one row: what the list shows (a view or a type, with its count), then sort and select -->
       <div class="list-bar">
-        <div id="filters" class="filters" role="radiogroup" aria-label="フィルター">
-          <button type="button" role="radio" data-filter="all" aria-checked="true">すべて<span class="count"></span></button>
-          <button type="button" role="radio" data-filter="recent" aria-checked="false">最近<span class="count"></span></button>
-          <button type="button" role="radio" data-filter="fav" aria-checked="false" title="お気に入り">★<span class="count"></span></button>
-        </div>
-        <span class="grow"></span>
-        <button id="sortBtn" class="sort-btn" type="button" title="並び替え">新着</button>
-      </div>
-      <div class="type-bar">
-        <button id="typeBtn" class="type-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="typeMenu">
-          <span id="typeK" class="type-k"></span><span id="typeTag" class="tag" hidden></span><span id="typeLabel" class="type-v"></span>
+        <button id="typeBtn" class="view-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="typeMenu">
+          <span id="viewIco" class="view-ico" aria-hidden="true"></span>
+          <span id="typeLabel" class="view-v"></span>
+          <span id="viewCount" class="view-n"></span>
           <svg class="chev" width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
-        <button id="typeClear" class="kbd-btn type-clear" type="button" hidden><svg width="9" height="9" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <button id="sortBtn" class="kbd-btn sort-btn" type="button">新着</button>
+        <button id="pickBtn" class="kbd-btn pick-btn" type="button" aria-pressed="false" title="選択して削除（Ctrl+A ですべて選択）" aria-label="選択して削除">
+          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="m8 12.5 3 3 5.5-6"/></svg>
+        </button>
       </div>
       <div id="list" class="list" role="listbox" aria-label="アイテム" tabindex="0"></div>
     </section>
@@ -62,9 +59,12 @@
     <span id="stVault">vault: すべて</span>
     <span id="stCount">0 件</span>
     <span class="grow"></span>
-    <span class="st-key"><kbd>/</kbd>検索</span>
-    <span class="st-key"><kbd>↑↓</kbd>移動</span>
-    <span class="st-key"><kbd>⏎</kbd>コピー</span>
+    <span class="st-key st-main"><kbd>/</kbd>検索</span>
+    <span class="st-key st-main"><kbd>↑↓</kbd>移動</span>
+    <span class="st-key st-main"><kbd>⏎</kbd>コピー</span>
+    <span class="st-key st-pick"><kbd>space</kbd>選択</span>
+    <span class="st-key st-pick"><kbd>del</kbd>削除</span>
+    <span class="st-key st-pick"><kbd>esc</kbd>やめる</span>
   </footer>
 
   <div id="catcher" class="catcher"></div>
@@ -123,7 +123,13 @@
       <button type="button" class="tgl" data-opt="symbols" role="switch" aria-checked="true"><span class="tgl-mark" aria-hidden="true"></span>記号</button>
       <button type="button" class="tgl" data-opt="avoidAmbiguous" role="switch" aria-checked="false"><span class="tgl-mark" aria-hidden="true"></span>紛らわしい文字を除外</button>
     </div>
+    <!-- 強化する: the site keeps the old password until it is changed there too -->
+    <div id="genSite" class="gen-site" role="note" hidden>
+      <span class="gen-site-bang" aria-hidden="true">!</span>
+      <span>Akari で変えてもサイトのパスワードは変わりません。新しいパスワードは保留してコピーするので、サイトで変更してから Akari で「確定」してください。</span>
+    </div>
     <div class="sheet-actions">
+      <button id="genAkariOnly" class="btn-text gen-only" type="button" title="サイトでもう変更したときだけ。前のパスワードは履歴に残ります" hidden>Akari だけ更新</button>
       <button id="genCopyText" class="btn-line" type="button">コピー</button>
       <button id="genApply" class="btn-primary" type="button">コピーして閉じる</button>
     </div>

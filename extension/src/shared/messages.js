@@ -10,7 +10,9 @@ export const MSG = Object.freeze({
   VAULT_GET_ALL: 'vault/getAll',
   VAULT_SAVE_ITEM: 'vault/saveItem',
   VAULT_DELETE_ITEM: 'vault/deleteItem',
+  VAULT_DELETE_ITEMS: 'vault/deleteItems', // the popup's selection, in one write
   VAULT_DELETE_PASSKEY: 'vault/deletePasskey',
+  VAULT_PENDING_PASSWORD: 'vault/pendingPassword', // a new password waiting for the change on the site: set / confirm / discard
   VAULT_CHANGE_PASSWORD: 'vault/changePassword',
   VAULT_EXPORT: 'vault/export',
   VAULT_IMPORT: 'vault/import',

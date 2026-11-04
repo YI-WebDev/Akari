@@ -13,6 +13,7 @@ import {
   createVault, openVaultRecord, readVaultData, sealData, exportBackup, importBackup,
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
   addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
+  setLoginPassword, setPendingPassword,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -389,10 +390,14 @@ export function createVaultService({
       const fields = validateItem(item, target);
       if (target) {
         const { id: _id, ...edit } = fields; // eslint-disable-line no-unused-vars
-        const passwordChanged = 'password' in edit && edit.password !== target.password;
-        // passkeys, createdAt and lastUsedAt always stay as stored: popup copies lack privateKey.
-        Object.assign(target, edit, { updatedAt: t });
-        if (passwordChanged) target.passwordUpdatedAt = t;
+        const { password, ...rest } = edit;
+        // passkeys, the password history, createdAt and lastUsedAt always stay as stored: the
+        // popup never sends them (its passkeys lack privateKey).
+        Object.assign(target, rest, { updatedAt: t });
+        if (password !== undefined) {
+          if (target.type === 'login' || target.type === undefined) setLoginPassword(target, password, t); // keeps the old one
+          else target.password = password;
+        }
         stripLegacyLoginKeys(target);
       } else {
         target = makeItemAt(fields, t);
@@ -412,6 +417,51 @@ export function createVaultService({
       draft.items.splice(idx, 1);
     });
     return {};
+  }
+
+  /**
+   * Several items in one write (the popup's selection). Ids that are already gone (deleted from
+   * another window meanwhile) are skipped; nothing at all to delete is NOT_FOUND.
+   */
+  async function deleteItems(ids) {
+    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IMPORT_ITEMS) {
+      throw fail(ERR.INVALID, `ids must be a non-empty array (max ${MAX_IMPORT_ITEMS})`);
+    }
+    if (!ids.every((id) => typeof id === 'string' && id)) throw fail(ERR.INVALID, 'ids must be non-empty strings');
+    const gone = new Set(ids);
+    return mutateData((draft) => {
+      const before = draft.items.length;
+      draft.items = draft.items.filter((i) => !gone.has(i.id));
+      const deleted = before - draft.items.length;
+      if (!deleted) throw fail(ERR.NOT_FOUND, 'Items not found');
+      return { deleted };
+    });
+  }
+
+  /**
+   * A new password waiting for the change on the site: 'set' holds it, 'confirm' makes it the
+   * login's password (the old one goes to the history), 'discard' drops it.
+   */
+  async function pendingPassword(id, action, password) {
+    if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
+    if (!['set', 'confirm', 'discard'].includes(action)) throw fail(ERR.INVALID, 'action must be set, confirm or discard');
+    return mutateData((draft) => {
+      const t = now();
+      const item = draft.items.find((i) => i.id === id);
+      if (!item) throw fail(ERR.NOT_FOUND, 'Item not found');
+      if ((item.type ?? 'login') !== 'login') throw fail(ERR.INVALID, 'Only logins have passwords');
+      if (action === 'set') {
+        setPendingPassword(item, password, t);
+      } else if (action === 'confirm') {
+        const next = item.pendingPassword?.password;
+        if (!next) throw fail(ERR.NOT_FOUND, 'No pending password');
+        setLoginPassword(item, next, t);
+      } else {
+        setPendingPassword(item, null, t);
+      }
+      item.updatedAt = t;
+      return { item: sanitizeItem(item) };
+    });
   }
 
   async function deletePasskey(itemId, credentialId) {
@@ -512,7 +562,9 @@ export function createVaultService({
     [MSG.VAULT_GET_ALL]: () => getAll(),
     [MSG.VAULT_SAVE_ITEM]: (m) => saveItem(m.item),
     [MSG.VAULT_DELETE_ITEM]: (m) => deleteItem(m.id),
+    [MSG.VAULT_DELETE_ITEMS]: (m) => deleteItems(m.ids),
     [MSG.VAULT_DELETE_PASSKEY]: (m) => deletePasskey(m.itemId, m.credentialId),
+    [MSG.VAULT_PENDING_PASSWORD]: (m) => pendingPassword(m.id, m.action, m.password),
     [MSG.VAULT_CHANGE_PASSWORD]: (m) => changePassword(m.current, m.next),
     [MSG.VAULT_EXPORT]: () => exportVault(),
     [MSG.VAULT_IMPORT]: (m) => importVault(m.json, m.masterPassword),
@@ -527,7 +579,7 @@ export function createVaultService({
   };
   // A successful call of these counts as user activity (re-arms auto-lock).
   const ACTIVE = new Set([
-    MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY,
+    MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
     MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
   ]);

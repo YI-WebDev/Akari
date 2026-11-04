@@ -299,3 +299,15 @@ test('templateEntries: template order, non-empty values, select ids as labels', 
   assert.deepEqual(templateEntries(makeItem({ type: 'note' }, T1)), []);
   assert.deepEqual(templateEntries(makeItem({}, T1)), []);
 });
+
+test('previous passwords: Bitwarden passwordHistory in its own shape, never in the CSV', async () => {
+  const { data } = await sampleData();
+  data.items[0].passwordHistory = [{ password: 'old-one', changedAt: T1 }, { password: 'older', changedAt: T0 }];
+  const bw = JSON.parse(toBitwardenJson(data)).items;
+  assert.deepEqual(bw[0].passwordHistory, [
+    { lastUsedDate: new Date(T1).toISOString(), password: 'old-one' },
+    { lastUsedDate: new Date(T0).toISOString(), password: 'older' },
+  ]);
+  assert.equal(bw[1].passwordHistory, null, 'none for a note');
+  assert.ok(!toCsv(data).includes('old-one'), 'the CSV has only the current password');
+});

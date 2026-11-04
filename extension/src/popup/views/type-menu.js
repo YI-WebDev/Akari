@@ -1,7 +1,8 @@
 // The two type menus (design 1a), each under a `$ akari …` line that follows focus:
 // ＋ 新規作成 lists the 基本 types with icons and opens the other groups in a second panel,
-// and the 種類 filter shows the types present in the vault, with counts, as 3-column grids
-// grouped by GROUPS. Built from static type metadata only; counts are numbers.
+// and the 表示 menu (the list's one filter) offers すべて / 最近 / お気に入り, then the types
+// present in the vault, with counts, as 3-column grids grouped by GROUPS. Built from static
+// type metadata only; counts are numbers.
 
 import { GROUPS, ITEM_TYPES, typeLabel, groupLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
@@ -11,7 +12,7 @@ import { h, clear, icon } from './dom.js';
 const KEYS = { login: 'l', note: 'n', card: 'c', identity: 'i' };
 
 // Icon per type, and tile hues (oklch): one per 基本 type, one per group in the その他 panel.
-const TYPE_ICONS = {
+export const TYPE_ICONS = {
   login: 'login', note: 'note', card: 'card', identity: 'idCard',
   apiCredential: 'code', database: 'database', server: 'server', softwareLicense: 'badge', sshKey: 'terminal', wifi: 'wifi',
   bankAccount: 'bank', cryptoWallet: 'wallet',
@@ -43,12 +44,6 @@ function followCmd(menu, cmd, fallback) {
     const b = menu.contains(document.activeElement) ? document.activeElement.closest('[data-cmd]') : null;
     cmd.set(b ? b.dataset.cmd : fallback());
   });
-}
-
-/** The mono tag next to a type's name, unless the name already says it (ID, API認証情報, SSHキー, WiFi…). */
-export function tagShown(id) {
-  const tag = ITEM_TYPES.find((x) => x.id === id)?.tag;
-  return !!tag && !typeLabel(id).toLowerCase().includes(tag.toLowerCase());
 }
 
 function groupHead(groupId, count) {
@@ -135,34 +130,46 @@ export function resetPlusMenu(menu) {
   menu.querySelector('#newOther')?.setAttribute('aria-expanded', 'false');
 }
 
+/** The list's views besides the types: id → [i18n key, name, icon, `akari ls` flag]. */
+const VIEWS = {
+  all: ['list.viewAll', 'すべて', 'rows', ''],
+  recent: ['list.viewRecent', '最近', 'clock', ' --recent'],
+  fav: ['list.viewFav', 'お気に入り', 'star', ' --fav'],
+};
+export const isView = (id) => Object.hasOwn(VIEWS, id);
+export const viewName = (id) => (isView(id) ? t(VIEWS[id][0], null, VIEWS[id][1]) : typeLabel(id));
+export const viewIcon = (id) => (isView(id) ? VIEWS[id][2] : TYPE_ICONS[id] || 'note');
+
 /**
- * 種類 filter menu: すべての種類, then the types that have items in the current vault
- * (and the chosen one), grouped, each with its count.
+ * 表示 menu: one choice for what the list shows. すべて / 最近 / お気に入り first, then the
+ * types that have items in the current vault (and the chosen one), grouped, each with its
+ * count. `counts` = { all, recent, fav, types: Map }.
  */
-export function renderTypeMenu(menu, { counts, total, current, onPick }) {
+export function renderViewMenu(menu, { counts, current, onPick }) {
   clear(menu);
-  const lsOf = (id) => (id === 'all' ? 'ls' : `ls --type ${id}`);
+  const lsOf = (id) => (isView(id) ? 'ls' + VIEWS[id][3] : `ls --type ${id}`);
   const cmd = cmdLine(lsOf(current));
   const mark = (on) => h('span', { class: 'v-mark', 'aria-hidden': 'true' }, on ? '✓' : '');
-  const cell = (id, name, count, extraClass = '') => h('button', {
+  const cell = (id, count, extraClass = '') => h('button', {
     class: ('tp-cell ' + extraClass).trim(), type: 'button', role: 'menuitemradio', 'aria-checked': String(current === id),
     dataset: { type: id, cmd: lsOf(id) },
-    'aria-label': t('menu.typeCount', { type: name, count }, '{type} {count} 件'),
+    'aria-label': t('menu.typeCount', { type: viewName(id), count }, '{type} {count} 件'),
     onclick: () => onPick(id),
-  }, h('span', { class: 'tp-name' }, name), h('span', { class: 'v-count' }, String(count)), mark(current === id));
+  }, h('span', { class: 'tp-ico', 'aria-hidden': 'true' }, icon(viewIcon(id), 12)),
+  h('span', { class: 'tp-name' }, viewName(id)), h('span', { class: 'v-count' }, String(count)), mark(current === id));
 
-  const head = h('div', { class: 'tp-top' }, cmd.el,
-    cell('all', t('list.allTypes', null, 'すべての種類'), total, 'tp-all'));
-  menu.append(head);
+  menu.append(h('div', { class: 'tp-top' }, cmd.el),
+    h('div', { class: 'tp-grid tp-views', role: 'group', 'aria-label': t('list.views', null, '表示') },
+      ...Object.keys(VIEWS).map((id) => cell(id, counts[id], counts[id] || id === 'all' ? '' : 'zero'))));
   for (const g of GROUPS) {
-    const types = ITEM_TYPES.filter((x) => x.group === g.id && ((counts.get(x.id) || 0) > 0 || x.id === current));
+    const types = ITEM_TYPES.filter((x) => x.group === g.id && ((counts.types.get(x.id) || 0) > 0 || x.id === current));
     if (!types.length) continue;
     const grid = h('div', { class: 'tp-grid', role: 'group', 'aria-label': groupLabel(g.id) });
     let sum = 0;
     for (const ty of types) {
-      const n = counts.get(ty.id) || 0;
+      const n = counts.types.get(ty.id) || 0;
       sum += n;
-      grid.append(cell(ty.id, typeLabel(ty.id), n, n ? '' : 'zero'));
+      grid.append(cell(ty.id, n, n ? '' : 'zero'));
     }
     menu.append(groupHead(g.id, sum), grid);
   }

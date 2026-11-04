@@ -3,11 +3,11 @@
 
 import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
-import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, inType, vaultById } from '../state.js';
+import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, vaultById } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
 import { stagger } from './fx.js';
-import { tagShown } from './type-menu.js';
+import { isView, viewName, viewIcon } from './type-menu.js';
 
 const $ = (id) => document.getElementById(id);
 const $list = () => $('list');
@@ -32,18 +32,33 @@ export function tileEl(it, size = '') {
   return h('span', { class: ('tile ' + size).trim(), vars: { '--h': String(hueOf(it)) }, 'aria-hidden': 'true' }, letterOf(it.title));
 }
 
+/**
+ * A plain click opens the item. In selection mode a click checks it; Ctrl/⌘+click and
+ * Shift+click (a range from the last checked row) start selection mode from anywhere.
+ */
+function onRowClick(e, id) {
+  if (S.picking || e.ctrlKey || e.metaKey || e.shiftKey) {
+    if (e.shiftKey) window.getSelection()?.removeAllRanges(); // Shift+click also selects text
+    emit('pick', id, { range: e.shiftKey });
+  } else {
+    emit('select', id);
+  }
+}
+
 function rowEl(it, q) {
   const weak = isWeak(it);
   const totp = it.type === 'login' && !!it.totp?.secret;
   const tag = typeOf(it.type)?.tag || null;
   const sub = subtitle(it);
   return h('div', {
-    class: 'row', role: 'option', id: 'row-' + it.id, 'aria-selected': String(it.id === S.sel),
+    class: 'row' + (S.picking && it.id === S.sel ? ' cur' : ''), role: 'option', id: 'row-' + it.id,
+    'aria-selected': String(S.picking ? S.picked.has(it.id) : it.id === S.sel),
     dataset: { row: '', id: it.id },
-    onclick: () => emit('select', it.id),
+    onclick: (e) => onRowClick(e, it.id),
   },
   h('span', { class: 'row-sel' }),
   h('span', { class: 'row-caret', 'aria-hidden': 'true' }, '›'),
+  S.picking ? h('span', { class: 'row-check', 'aria-hidden': 'true' }, icon('check', 10, 3.4)) : null,
   tileEl(it),
   h('span', { class: 'row-text' },
     h('span', { class: 'row-title' }, highlight(it.title || '(無題)', q)),
@@ -131,48 +146,42 @@ function groupEl(label, count) {
     h('span', null, label), h('span', { class: 'group-line' }), h('span', null, String(count)));
 }
 
-/** Per-type counts in the current vault (for the 種類 menu). */
-export function typeCounts() {
-  const counts = new Map();
-  for (const it of S.items) if (inVault(it)) counts.set(it.type, (counts.get(it.type) || 0) + 1);
-  return counts;
-}
-
-/** The 種類 button under the filter chips: "種類  すべて ▾", or the chosen type in accent. */
-export function renderTypeButton() {
-  const on = S.type !== 'all' && !!typeOf(S.type);
-  const name = on ? typeLabel(S.type) : t('list.typeAll', null, 'すべて');
-  const btn = $('typeBtn');
-  btn.classList.toggle('on', on);
-  $('typeK').textContent = t('list.type', null, '種類');
-  $('typeLabel').textContent = name;
-  const tag = on && tagShown(S.type) ? typeOf(S.type).tag : null;
-  $('typeTag').textContent = tag || '';
-  $('typeTag').hidden = !tag;
-  const label = t('list.typeFilter', { type: name }, '種類で絞り込む: {type}');
-  btn.title = label;
-  btn.setAttribute('aria-label', label);
-  const clr = $('typeClear');
-  clr.hidden = !on;
-  clr.title = t('list.typeClear', null, '種類の絞り込みを解除');
-  clr.setAttribute('aria-label', clr.title);
-}
-
-/** Filter counts (vault- and type-scoped, ignoring the query, as in the design), vault label and status bar. */
-export function renderCounts(visibleCount, now = Date.now()) {
-  renderTypeButton();
-  const inV = S.items.filter((i) => inVault(i) && inType(i));
-  const counts = {
+/** Items per view in the current vault, ignoring the search: { all, recent, fav, types: Map }. */
+export function viewCounts(now = Date.now()) {
+  const inV = S.items.filter(inVault);
+  const types = new Map();
+  for (const it of inV) types.set(it.type, (types.get(it.type) || 0) + 1);
+  return {
     all: inV.length,
     recent: inV.filter((i) => groupIndex(i.lastUsedAt, now) <= 1).length,
     fav: inV.filter((i) => i.fav).length,
+    types,
   };
-  const names = { all: 'すべて', recent: '最近', fav: 'お気に入り' };
-  for (const b of $('filters').querySelectorAll('button[data-filter]')) {
-    const n = counts[b.dataset.filter];
-    b.querySelector('.count').textContent = S.phase === 'main' ? String(n) : '';
-    b.setAttribute('aria-label', `${names[b.dataset.filter]} ${n} 件`);
-  }
+}
+
+/** What the list shows: 'all' | 'recent' | 'fav', or a type id (one at a time). */
+export const currentView = () => (S.type !== 'all' && typeOf(S.type) ? S.type : S.filter);
+
+/** The 表示 chip: icon, name and count of the current view; accented unless it is すべて. */
+export function renderViewButton(counts = viewCounts()) {
+  const id = currentView();
+  const n = isView(id) ? counts[id] : counts.types.get(id) || 0;
+  const name = viewName(id);
+  const btn = $('typeBtn');
+  btn.classList.toggle('on', id !== 'all');
+  const ico = $('viewIco');
+  clear(ico);
+  ico.append(icon(viewIcon(id), 12));
+  $('typeLabel').textContent = name;
+  $('viewCount').textContent = S.phase === 'main' ? String(n) : '';
+  const label = t('list.viewButton', { view: name, count: n }, '表示: {view}（{count} 件）');
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+/** The 表示 chip, vault label and status bar. */
+export function renderCounts(visibleCount, now = Date.now()) {
+  renderViewButton(viewCounts(now));
   const v = vaultById(S.vault);
   $('stVault').textContent = `vault: ${S.vault === 'all' || !v ? 'すべて' : v.name}`;
   $('stCount').textContent = `${visibleCount} 件`;
@@ -186,13 +195,21 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   const q = searchQuery();
   const now = Date.now();
 
-  const af = afCandidate();
+  const af = S.picking ? null : afCandidate();
   // the tab's own site in the search box (put there on open) keeps the autofill card
   const siteOnly = !q || q === normQuery(S.siteQuery);
   if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
   renderCounts(vis.length, now);
+  L.toggleAttribute('aria-multiselectable', S.picking);
+  if (S.picking) {
+    // Only what is on screen can be deleted: a filter or search change unchecks the rest.
+    const shown = new Set(vis.map((i) => i.id));
+    const before = S.picked.size;
+    for (const id of S.picked) if (!shown.has(id)) S.picked.delete(id);
+    if (S.picked.size !== before) emit('picked');
+  }
   if (!S.items.length) {
     L.append(emptyHero());
     if (animate) stagger(L, '.empty-hero > *');
@@ -224,10 +241,13 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   if (animate) stagger(L);
 }
 
-/** Move the selection without rebuilding rows, so the caret and highlight transitions play. */
+/** Move the selection (or, in selection mode, the checks and the keyboard row) without rebuilding rows. */
 export function markSelected() {
   const L = $list();
-  L.querySelectorAll('.row').forEach((r) => r.setAttribute('aria-selected', String(r.dataset.id === S.sel)));
+  L.querySelectorAll('.row').forEach((r) => {
+    r.setAttribute('aria-selected', String(S.picking ? S.picked.has(r.dataset.id) : r.dataset.id === S.sel));
+    r.classList.toggle('cur', S.picking && r.dataset.id === S.sel);
+  });
   L.setAttribute('aria-activedescendant', S.sel ? 'row-' + S.sel : '');
 }
 
