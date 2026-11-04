@@ -36,6 +36,9 @@ async function openSheetPage(page, opener) {
   await page.click(opener);
 }
 const OUT = join(HERE, 'screenshots');
+// The mock's tab is github.com/login, so the popup opens searching for "github.com".
+// Scenarios that need the whole list open it on a new tab instead.
+const NEW_TAB = 'chrome://newtab/';
 const MOCK = join(HERE, 'mock-chrome.js');
 const only = process.argv[2] || '';
 
@@ -85,7 +88,7 @@ const scenarios = {
     await ctx.close();
   },
   async weak() {
-    const { page, ctx } = await open({ name: 'weak' });
+    const { page, ctx } = await open({ name: 'weak', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await page.click('[data-id="amazon"]');
     await settle(page, 900);
@@ -148,7 +151,7 @@ const scenarios = {
     await ctx.close();
   },
   async 'detail-extra'() {
-    const { page, ctx } = await open({ name: 'detail-extra' });
+    const { page, ctx } = await open({ name: 'detail-extra', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await page.click('[data-id="google"]');
     await settle(page, 900);
@@ -168,6 +171,7 @@ const scenarios = {
     // An imported login keeps its 2nd, 3rd… URL as extra fields labelled "URL" (Proton Pass, Bitwarden…).
     const { page, ctx } = await open({
       name: 'websites',
+      tabUrl: NEW_TAB,
       seedPatch: {
         google: {
           url: 'https://myaccount.google.com/u/0/security',
@@ -241,7 +245,7 @@ const scenarios = {
     await ctx.close();
   },
   async 'editor-note-delete'() {
-    const { page, ctx } = await open({ name: 'editor-note-delete' });
+    const { page, ctx } = await open({ name: 'editor-note-delete', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await page.evaluate(() => { document.getElementById('list').scrollTop = 1000; });
     await page.click('[data-id="wifi"]');
@@ -360,7 +364,7 @@ const scenarios = {
     await ctx.close();
   },
   async import() {
-    const { page, ctx } = await open({ name: 'import' });
+    const { page, ctx } = await open({ name: 'import', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await openSheetPage(page, '#importOpen');
     await page.waitForSelector('.src');
@@ -582,6 +586,38 @@ const scenarios = {
     await shot(page, 'autofill');
     await ctx.close();
   },
+  async 'site-search'() {
+    // Opens searching for the tab's site, autofill card included; Esc shows everything.
+    const { page, ctx } = await open({ name: 'site-search' });
+    await page.waitForSelector('.row');
+    await settle(page);
+    await shot(page, 'site-search');
+    expect(await page.inputValue('#search') === 'github.com', 'search starts with the tab site');
+    expect(await page.locator('.af-btn').count() === 1, 'autofill card kept with the site query');
+    expect(await page.locator('.row').count() === 1, 'only the github login listed');
+    expect(!(await page.locator('#searchClear').isHidden()), 'clear button shown');
+    expect(await page.locator('#stCount').textContent() === '1 件', 'status count follows the query');
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    expect(await page.inputValue('#search') === '', 'Esc clears the site query');
+    expect(await page.locator('.row').count() > 1, 'whole list after Esc');
+    await ctx.close();
+
+    // A subdomain searches for its registrable domain: mail.google.com finds the accounts.google.com login.
+    const sub = await open({ name: 'site-search-sub', tabUrl: 'https://mail.google.com/mail/u/0/' });
+    await sub.page.waitForSelector('.row');
+    expect(await sub.page.inputValue('#search') === 'google.com', 'registrable domain: ' + await sub.page.inputValue('#search'));
+    expect(await sub.page.locator('.row[data-id="google"]').count() === 1, 'google login listed');
+    await sub.ctx.close();
+
+    // Nothing saved for the site: the search stays empty and the whole list shows.
+    const none = await open({ name: 'site-search-none', tabUrl: 'https://kotatsu-mikan.example/' });
+    await none.page.waitForSelector('.row');
+    await settle(none.page, 300);
+    expect(await none.page.inputValue('#search') === '', 'no prefill without a match');
+    expect(await none.page.locator('.row').count() > 1, 'whole list without a match');
+    await none.ctx.close();
+  },
   async 'keys-ime-search'() {
     const { page, ctx } = await open({ name: 'keys-ime-search' });
     await page.waitForSelector('.row');
@@ -610,7 +646,7 @@ const scenarios = {
     await ctx.close();
   },
   async 'types-list'() {
-    const { page, ctx } = await open({ name: 'types-list' });
+    const { page, ctx } = await open({ name: 'types-list', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await page.evaluate(() => { document.getElementById('list').scrollTop = 170; });
     await settle(page, 600);
@@ -726,7 +762,7 @@ const scenarios = {
     await ctx.close();
   },
   async 'detail-types'() {
-    const { page, ctx } = await open({ name: 'detail-types' });
+    const { page, ctx } = await open({ name: 'detail-types', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     const pick = async (id) => { await page.click(`.row[data-id="${id}"]`); await settle(page, 900); };
     const reveal = (sel) => page.click(`${sel} .ibtn[aria-pressed]`);
@@ -801,7 +837,7 @@ const scenarios = {
     await ctx.close();
   },
   async 'editor-types'() {
-    const { page, ctx } = await open({ name: 'editor-types' });
+    const { page, ctx } = await open({ name: 'editor-types', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     const dbItem = (id) => page.evaluate((i) => window.__AKARI_DB__.items.find((x) => x.id === i), id);
     await page.click('.row[data-id="card-jcb"]');
@@ -884,6 +920,7 @@ const scenarios = {
     const OLD_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbg==\n-----END OPENSSH PRIVATE KEY-----\n';
     const { page, ctx } = await open({
       name: 'editor-roundtrip',
+      tabUrl: NEW_TAB,
       seedPatch: {
         'card-visa-old': {
           fields: { expiry: '1999-05', cvv: '12345', number: '4980-1234-5678-9011' },
