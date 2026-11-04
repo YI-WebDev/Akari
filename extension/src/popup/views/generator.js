@@ -6,7 +6,8 @@ import { generatePassword } from '../../lib/generator.js';
 import {
   emit, call, itemById, copyText, forSave, replaceItem, mergeSaved, errText, liveToken, live,
 } from '../state.js';
-import { h, clear, copyGlyph, syncInert, keepFocus } from './dom.js';
+import { h, clear, icon, copyGlyph, syncInert, keepFocus } from './dom.js';
+import { safeHttpUrl } from './format.js';
 import { scrambleWith, cancelScramble, spin } from './fx.js';
 import { setMeter } from './meter.js';
 import { toastError } from './toast.js';
@@ -138,9 +139,12 @@ function setValue(v, animate) {
   else renderChars(pw);
 }
 
+/** The login's site, when the generator was opened for one (強化する). */
+const siteOf = (item) => (item?.type === 'login' ? safeHttpUrl(item.url) : '');
+
 function applyLabel() {
   if (ctx.source === 'editor') return 'パスワードに使う';
-  if (ctx.target) return 'このパスワードに更新';
+  if (ctx.target) return siteOf(itemById(ctx.target)) ? 'サイトで変更する' : '保留してコピー';
   return 'コピーして閉じる';
 }
 
@@ -153,7 +157,11 @@ export function openGenerator({ target = null, source = null, onUse = null, titl
   chip.textContent = chipText;
   chip.hidden = !chipText;
   $('genApply').textContent = applyLabel();
+  if (ctx.target && siteOf(item)) $('genApply').append(icon('external', 11, 2.6));
   $('genApply').disabled = false;
+  $('genSite').hidden = !ctx.target;
+  $('genAkariOnly').hidden = !ctx.target;
+  $('genAkariOnly').disabled = false;
   $('genCopy').replaceChildren(copyGlyph(false));
   renderControls();
   restoreFocus = keepFocus();
@@ -185,6 +193,12 @@ export function closeGenerator() {
   emit('sheetClosed');
 }
 
+function setBusy(on) {
+  busy = on;
+  $('genApply').disabled = on;
+  $('genAkariOnly').disabled = on;
+}
+
 async function apply() {
   if (busy || !pw) return;
   const password = pw;
@@ -201,10 +215,44 @@ async function apply() {
     if (live(token)) closeGenerator();
     return;
   }
+  await holdForSite(password);
+}
+
+/**
+ * 強化する: the site still has the old password, so the new one is held (pendingPassword) and
+ * copied, and the login's saved URL opens (to sign in and change it there). The login keeps working with the current
+ * password until the user confirms the change in the detail pane (or the save prompt sees it).
+ */
+async function holdForSite(password) {
   const item = itemById(ctx.target);
   if (!item) { closeGenerator(); return; }
-  busy = true;
-  $('genApply').disabled = true;
+  setBusy(true);
+  const token = liveToken();
+  try {
+    const res = await call(MSG.VAULT_PENDING_PASSWORD, { id: item.id, action: 'set', password });
+    if (!live(token)) return;
+    replaceItem(mergeSaved(res?.item, { ...item, pendingPassword: { password, createdAt: Date.now() } }));
+    await copyText('gen', password);
+    const site = siteOf(item);
+    closeGenerator();
+    emit('passwordPending', item.id);
+    if (site) chrome.tabs.create({ url: site }); // the saved URL; the popup closes here
+  } catch (e) {
+    if (live(token)) toastError('保留できませんでした', errText(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+/** Akari だけ更新: the site was already changed by hand. The replaced password stays in the history. */
+async function updateNow() {
+  if (busy || !pw || !ctx.target) return;
+  const password = pw;
+  const genBits = bits;
+  const lv = levelFromBits(genBits);
+  const item = itemById(ctx.target);
+  if (!item) { closeGenerator(); return; }
+  setBusy(true);
   const token = liveToken();
   try {
     const res = await call(MSG.VAULT_SAVE_ITEM, { item: forSave({ ...item, password }) });
@@ -215,8 +263,7 @@ async function apply() {
   } catch (e) {
     if (live(token)) toastError('パスワードを更新できませんでした', errText(e));
   } finally {
-    busy = false;
-    $('genApply').disabled = false;
+    setBusy(false);
   }
 }
 
@@ -232,6 +279,7 @@ export function initGenerator() {
   $('genCopy').addEventListener('click', copyGenerated);
   $('genCopyText').addEventListener('click', copyGenerated);
   $('genApply').addEventListener('click', apply);
+  $('genAkariOnly').addEventListener('click', updateNow);
   $('genSheet').querySelector('[data-close]').addEventListener('click', closeGenerator);
   $('modeRandom').addEventListener('click', () => { if (opts.mode !== 'random') { opts.mode = 'random'; saveOpts(); renderControls(); regen(); } });
   $('modePhrase').addEventListener('click', () => { if (opts.mode !== 'phrase') { opts.mode = 'phrase'; saveOpts(); renderControls(); regen(); } });

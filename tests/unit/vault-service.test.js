@@ -86,7 +86,7 @@ test('every §3.1 API function and handler exists', () => {
   }
   for (const type of [
     MSG.VAULT_STATUS, MSG.VAULT_SETUP, MSG.VAULT_UNLOCK, MSG.VAULT_LOCK, MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM,
-    MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT,
+    MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT,
     MSG.SETTINGS_GET, MSG.SETTINGS_SET, MSG.ACTIVITY_PING, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
   ]) assert.equal(typeof svc.handlers[type], 'function', type);
 });
@@ -251,6 +251,30 @@ test('deletePasskey and deleteItem', async () => {
   await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
   assert.deepEqual((await svc.readData()).items, []);
   await assert.rejects(call(MSG.VAULT_DELETE_ITEM, { id: item.id }), { code: 'NOT_FOUND' });
+});
+
+test('deleteItems: the selection goes in one write; ids already gone are skipped; bad payloads write nothing', async () => {
+  const { call, svc, chrome } = await setupUnlocked();
+  const ids = [];
+  for (const title of ['A', 'B', 'C', 'D']) ids.push((await call(MSG.VAULT_SAVE_ITEM, { item: { title } })).item.id);
+  const writes = [];
+  const set = chrome.storage.local.set.bind(chrome.storage.local);
+  chrome.storage.local.set = async (obj) => { writes.push(Object.keys(obj)); return set(obj); };
+
+  // 'gone' was deleted from another window meanwhile: skipped, the rest is deleted.
+  assert.deepEqual(await call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[0], ids[2], 'gone'] }), { deleted: 2 });
+  assert.deepEqual(writes, [['akari.vault']], 'one encrypted write for the whole selection');
+  assert.deepEqual((await svc.readData()).items.map((i) => i.title), ['B', 'D']);
+
+  for (const bad of [undefined, [], 'id', [ids[1], 7], [''], new Array(20001).fill(ids[1])]) {
+    await assert.rejects(call(MSG.VAULT_DELETE_ITEMS, { ids: bad }), { code: 'INVALID' }, JSON.stringify(bad)?.slice(0, 30));
+  }
+  await assert.rejects(call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[0], 'gone'] }), { code: 'NOT_FOUND' });
+  assert.equal(writes.length, 1, 'nothing written for refused requests');
+  assert.equal((await svc.readData()).items.length, 2);
+
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[1]] }), { code: 'LOCKED' });
 });
 
 test('mutateData is serialized and persisted encrypted; readData returns a deep copy', async () => {
@@ -808,4 +832,40 @@ test('vaults: delete moves the items to another vault, or deletes them with it; 
   assert.equal((await svc.readData()).items.length, 3);
   // a new item can only go into a vault that exists
   await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { title: 'x', vault: 'work' } }), { code: 'INVALID' });
+});
+
+test('saveItem keeps the replaced password; vault/pendingPassword holds, confirms and discards', async () => {
+  const { call, svc, clock } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Site', password: 'one' } });
+  clock.t += 1000;
+  await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, password: 'two' } });
+  // A full save from the popup carries its copy of the history: it is ignored, the stored one stays.
+  await call(MSG.VAULT_SAVE_ITEM, { item: { ...item, password: 'two', passwordHistory: [{ password: 'forged', changedAt: 1 }] } });
+  let stored = (await svc.readData()).items[0];
+  assert.deepEqual(stored.passwordHistory, [{ password: 'one', changedAt: clock.t }]);
+
+  const pend = (action, password) => call(MSG.VAULT_PENDING_PASSWORD, { id: item.id, action, password });
+  const res = await pend('set', 'three');
+  assert.deepEqual(res.item.pendingPassword, { password: 'three', createdAt: clock.t });
+  stored = (await svc.readData()).items[0];
+  assert.equal(stored.password, 'two', 'autofill keeps the current password while the change is pending');
+  clock.t += 1000;
+  await pend('confirm');
+  stored = (await svc.readData()).items[0];
+  assert.equal(stored.password, 'three');
+  assert.equal(stored.pendingPassword, undefined);
+  assert.deepEqual(stored.passwordHistory.map((h) => h.password), ['two', 'one']);
+  await assert.rejects(pend('confirm'), { code: 'NOT_FOUND' }, 'nothing pending');
+  await pend('set', 'four');
+  await pend('discard');
+  stored = (await svc.readData()).items[0];
+  assert.equal(stored.password, 'three');
+  assert.equal(stored.pendingPassword, undefined);
+
+  await assert.rejects(pend('set', 'three'), { code: 'INVALID' }, 'already current');
+  await assert.rejects(pend('set', ''), { code: 'INVALID' });
+  await assert.rejects(pend('replace', 'x'), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_PENDING_PASSWORD, { id: 'nope', action: 'discard' }), { code: 'NOT_FOUND' });
+  const note = (await call(MSG.VAULT_SAVE_ITEM, { item: { type: 'note', title: 'N', note: 'n' } })).item;
+  await assert.rejects(call(MSG.VAULT_PENDING_PASSWORD, { id: note.id, action: 'set', password: 'x' }), { code: 'INVALID' });
 });

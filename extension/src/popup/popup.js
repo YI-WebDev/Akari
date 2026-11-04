@@ -1,13 +1,13 @@
 // Akari popup controller (design 1a "Akari Terminal"): boot, header/menus, status bar,
 // keyboard, autofill, wiring between views.
 
-import { MSG, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
+import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { send } from '../shared/api.js';
 import { hostnameOf, registrableDomain } from '../shared/domain.js';
 import { typeOf, hasTemplate, fieldLabel } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
 import {
-  S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets,
+  S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItem, removeItems, clearSecrets,
   itemById, visibleItems, ensureSel, copyText, liveToken, live,
 } from './state.js';
 import { h, clear } from './views/dom.js';
@@ -15,10 +15,11 @@ import { siteOf, vaultColor } from './views/format.js';
 import { burst, wait } from './views/fx.js';
 import { toast, toastError, hideToast } from './views/toast.js';
 import {
-  renderList, renderCounts, markSelected, scrollToRow, setAfState, afButtonEl, afCandidate, typeCounts, renderTypeButton,
+  renderList, renderCounts, markSelected, scrollToRow, setAfState, afButtonEl, afCandidate, viewCounts, currentView, renderViewButton,
 } from './views/list.js';
-import { buildPlusMenu, resetPlusMenu, renderTypeMenu, moveMenuFocus } from './views/type-menu.js';
+import { buildPlusMenu, resetPlusMenu, renderViewMenu, moveMenuFocus } from './views/type-menu.js';
 import { renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
+import { renderPicker, resetPicker, askDelete, pickerConfirming, setPickerBusy } from './views/picker.js';
 import { openEditor, closeEditor, editorOpen, requestClose } from './views/editor.js';
 import { initGenerator, openGenerator, closeGenerator, resetGenerator, isGenOpen } from './views/generator.js';
 import { initGate, showGate, gateOpen, setGateStatus } from './views/lock.js';
@@ -130,10 +131,12 @@ function renderVaultLabel() {
   $('vaultDot').style.background = all ? 'var(--accent)' : vaultColor(v.hue);
 }
 
+/** The list bar: the 表示 chip and the sort toggle. */
 function renderFilters() {
-  for (const b of $('filters').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.filter === S.filter));
-  $('sortBtn').textContent = S.sort === 'az' ? 'A-Z' : '新着';
-  $('sortBtn').setAttribute('aria-label', `並び替え: ${S.sort === 'az' ? 'A-Z' : '新着'}`);
+  renderViewButton();
+  const sort = S.sort === 'az' ? 'A-Z' : '新着';
+  $('sortBtn').textContent = sort;
+  $('sortBtn').title = $('sortBtn').ariaLabel = `並び替え: ${sort}（クリックで切り替え）`;
 }
 
 /** Status bar dot: 保存中… while a change is on its way to the encrypted store. */
@@ -178,6 +181,123 @@ function refreshList({ animate = false } = {}) {
   const moved = ensureSel();
   renderList({ animate, keepScroll: !animate });
   if (moved && !editorOpen()) renderDetail({ animate: true });
+  else if (S.picking) renderPicker(); // the count of rows to "select all" may have changed
+}
+
+/* ───────── selection (delete several) ───────── */
+
+let pickAnchor = null; // the row last checked or unchecked: Shift+click spans from here
+
+function renderPickMode() {
+  app.toggleAttribute('data-picking', S.picking);
+  $('pickBtn').setAttribute('aria-pressed', String(S.picking));
+}
+
+function enterPicking() {
+  closeMenus();
+  S.picking = true;
+  S.picked = new Set();
+  pickAnchor = null;
+  resetPicker();
+  renderPickMode();
+}
+
+/** The 選択 button, Esc: switch selection mode on or off. */
+function setPicking(on) {
+  if (on === S.picking) return;
+  if (on && editorOpen()) {
+    requestClose(() => setPicking(true));
+    return;
+  }
+  if (on) {
+    enterPicking();
+  } else {
+    S.picking = false;
+    S.picked = new Set();
+    pickAnchor = null;
+    resetPicker();
+    renderPickMode();
+  }
+  renderList({ keepScroll: true });
+  renderDetail({ animate: true });
+}
+
+/** Check or uncheck a row; `range` (Shift) checks every row from the last one clicked. */
+function pick(id, { range = false } = {}) {
+  const entering = !S.picking;
+  if (entering) {
+    if (editorOpen()) {
+      requestClose(() => pick(id, { range }));
+      return;
+    }
+    const from = range ? S.sel : null; // Shift+click from the normal view spans from the open item
+    enterPicking();
+    pickAnchor = from;
+  }
+  const vis = visibleItems();
+  const at = vis.findIndex((i) => i.id === id);
+  if (at < 0) return;
+  const from = range && pickAnchor ? vis.findIndex((i) => i.id === pickAnchor) : -1;
+  if (from >= 0) {
+    const [a, b] = from < at ? [from, at] : [at, from];
+    for (let i = a; i <= b; i++) S.picked.add(vis[i].id);
+  } else if (S.picked.has(id)) {
+    S.picked.delete(id);
+  } else {
+    S.picked.add(id);
+  }
+  pickAnchor = id;
+  S.sel = id;
+  resetPicker();
+  if (entering) {
+    renderList({ keepScroll: true });
+    renderDetail({ animate: true });
+  } else {
+    markSelected();
+    renderPicker();
+  }
+}
+
+/** Check every visible row (Ctrl+A, すべて選択), or none. */
+function pickAll(all) {
+  if (!S.picking) {
+    if (editorOpen()) return;
+    enterPicking();
+    renderList({ keepScroll: true });
+  }
+  S.picked = new Set(all ? visibleItems().map((i) => i.id) : []);
+  resetPicker();
+  markSelected();
+  renderDetail();
+}
+
+async function deletePicked() {
+  const ids = visibleItems().filter((i) => S.picked.has(i.id)).map((i) => i.id);
+  if (!ids.length) return;
+  const token = liveToken();
+  setPickerBusy(true);
+  try {
+    const res = await call(MSG.VAULT_DELETE_ITEMS, { ids });
+    if (!live(token)) return;
+    const first = visibleItems().findIndex((i) => S.picked.has(i.id));
+    removeItems(ids);
+    S.picking = false;
+    S.picked = new Set();
+    pickAnchor = null;
+    resetPicker();
+    renderPickMode();
+    const rest = visibleItems();
+    S.sel = rest[Math.min(Math.max(first, 0), rest.length - 1)]?.id || S.items[0]?.id || null;
+    renderList({ animate: true });
+    renderDetail({ animate: true });
+    toast(`${Number(res?.deleted) || ids.length} 件を削除しました`);
+  } catch (e) {
+    if (!live(token)) return;
+    resetPicker();
+    renderPicker();
+    toastError('削除できませんでした', errText(e));
+    if (e?.code === ERR.NOT_FOUND) emit('reload'); // deleted elsewhere meanwhile: show what is left
+  }
 }
 
 function select(id, { scroll = false } = {}) {
@@ -193,7 +313,7 @@ function doSelect(id, scroll, force) {
   if (id === S.sel && !force) return;
   S.sel = id;
   markSelected();
-  renderDetail({ animate: true });
+  if (!S.picking) renderDetail({ animate: true }); // in selection mode ↑↓ only move the keyboard row
   if (scroll) setTimeout(() => scrollToRow(id), 0);
 }
 
@@ -232,6 +352,9 @@ function wipeView() {
   $('search').value = '';
   $('searchClear').hidden = true;
   $('searchKey').hidden = false;
+  pickAnchor = null;
+  resetPicker();
+  renderPickMode(); // clearSecrets left selection mode
   renderCounts(0);
 }
 
@@ -333,23 +456,22 @@ function setVault(id) {
   refreshList({ animate: true });
 }
 
-/* 種類 filter */
+/* 表示: one filter for the list, a view (すべて / 最近 / お気に入り) or a type */
 
 function renderTypeFilterMenu() {
-  const counts = typeCounts();
-  let total = 0;
-  for (const n of counts.values()) total += n;
-  renderTypeMenu($('typeMenu'), { counts, total, current: S.type, onPick: setType });
+  renderViewMenu($('typeMenu'), { counts: viewCounts(), current: currentView(), onPick: setView });
 }
 
-function setType(id) {
+function setView(id) {
   closeMenus();
   $('typeBtn').focus({ preventScroll: true });
-  const next = id !== 'all' && typeOf(id) ? id : 'all';
-  if (S.type === next) return;
-  S.type = next;
+  const filter = id === 'recent' || id === 'fav' ? id : 'all';
+  const type = filter === 'all' && id !== 'all' && typeOf(id) ? id : 'all';
+  if (S.filter === filter && S.type === type) return;
+  S.filter = filter;
+  S.type = type;
   saveUi();
-  renderTypeButton();
+  renderFilters();
   refreshList({ animate: true });
 }
 
@@ -373,6 +495,7 @@ function menuKeys(e) {
 
 async function newLogin() {
   closeMenus();
+  setPicking(false);
   const token = liveToken();
   const tab = await activeTab();
   if (!live(token)) return;
@@ -398,6 +521,7 @@ function newItem(type) {
   if (type === 'login') { newLogin(); return; }
   closeMenus();
   if (!typeOf(type)) return;
+  setPicking(false);
   const go = () => openEditor({ type });
   if (editorOpen()) requestClose(go);
   else go();
@@ -469,6 +593,9 @@ function onKey(e) {
       return;
     }
     if (editorOpen()) { requestClose(); e.preventDefault(); return; }
+    if (S.picking && pickerConfirming()) { resetPicker(); renderPicker(); e.preventDefault(); return; }
+    // In the search box Esc clears the query first; otherwise it leaves selection mode.
+    if (S.picking && !(ae === search && S.query)) { setPicking(false); e.preventDefault(); return; }
     if (S.query) { setQuery(''); e.preventDefault(); return; }
     if (typing) ae.blur();
     return;
@@ -481,6 +608,23 @@ function onKey(e) {
     return;
   }
   if (editorOpen()) return;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'a' && !typing) {
+    e.preventDefault();
+    pickAll(true);
+    return;
+  }
+  if (S.picking && !typing) {
+    if (e.key === ' ' && !(ae && ae.tagName === 'BUTTON')) {
+      e.preventDefault();
+      if (S.sel) pick(S.sel);
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      askDelete();
+      return;
+    }
+  }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     if (typing && ae !== search) return;
     const v = visibleItems();
@@ -494,6 +638,7 @@ function onKey(e) {
   if (e.key === 'Enter') {
     if (typing && ae !== search) return;
     if (ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A')) return;
+    if (S.picking) return; // no password copy while choosing what to delete
     const target = primarySecret(itemById(S.sel));
     if (!target) return;
     e.preventDefault();
@@ -533,7 +678,7 @@ function wire() {
   $('vaultBtn').addEventListener('click', () => openMenu('vault'));
   $('plusBtn').addEventListener('click', () => openMenu('plus'));
   $('typeBtn').addEventListener('click', () => openMenu('type'));
-  $('typeClear').addEventListener('click', () => setType('all'));
+  $('pickBtn').addEventListener('click', () => setPicking(!S.picking));
   $('catcher').addEventListener('click', closeMenus);
   $('vaultMenu').addEventListener('keydown', menuKeys);
   $('plusMenu').addEventListener('keydown', menuKeys);
@@ -542,8 +687,8 @@ function wire() {
   $('manageVaults').addEventListener('click', () => { closeMenus(); openSettings({ page: 'vaults' }); });
   buildPlusMenu($('plusMenu'), { onNew: newItem, onGen: () => { closeMenus(); openGenerator({}); } });
   $('plusMenu').setAttribute('aria-label', t('menu.new', null, '新規作成'));
-  $('typeMenu').setAttribute('aria-label', t('list.typeFilterMenu', null, '種類で絞り込む'));
-  renderTypeButton();
+  $('typeMenu').setAttribute('aria-label', t('list.viewMenu', null, '表示するアイテム'));
+  renderViewButton();
   $('lockBtn').addEventListener('click', () => lockNow());
   $('scrim').addEventListener('click', () => { closeGenerator(); closeSettings(); });
 
@@ -555,14 +700,6 @@ function wire() {
     search.focus();
   });
 
-  $('filters').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-filter]');
-    if (!b || b.dataset.filter === S.filter) return;
-    S.filter = b.dataset.filter;
-    saveUi();
-    renderFilters();
-    refreshList({ animate: true });
-  });
   $('sortBtn').addEventListener('click', () => {
     S.sort = S.sort === 'az' ? 'recent' : 'az';
     saveUi();
@@ -577,6 +714,12 @@ function wire() {
 
   on('locked', () => lockNow({ remote: true }));
   on('select', (id) => select(id));
+  on('pick', (id, opts) => pick(id, opts));
+  on('picked', () => { if (S.picking) { resetPicker(); renderPicker(); } }); // the list unchecked rows that left the view
+  on('pickAll', () => pickAll(true));
+  on('pickNone', () => pickAll(false));
+  on('pickExit', () => setPicking(false));
+  on('pickDelete', deletePicked);
   on('autofill', doAutofill);
   on('newLogin', newLogin);
   on('newNote', newNote);
@@ -584,6 +727,13 @@ function wire() {
   on('edit', (id) => openEditor({ id }));
   on('openGen', (opts) => openGenerator(opts || {}));
   on('listChanged', () => { if (S.phase === 'main') refreshList(); });
+  on('passwordPending', (id) => {
+    if (S.phase !== 'main') return;
+    S.sel = id;
+    renderList();
+    renderDetail({ animate: true });
+    toast('新しいパスワードを保留してコピーしました', 'サイトで変更してから「確定」を押してください');
+  });
   on('passwordUpdated', (id, info) => {
     if (S.phase !== 'main') return;
     S.sel = id;

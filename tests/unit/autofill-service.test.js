@@ -299,6 +299,20 @@ test('pending candidate is tied to the origin it was captured on', async () => {
   // not consumed by the mismatches: back on the original origin it is still there
   assert.ok((await svc.pageMatches({}, sender('https://github.com/home'))).pendingSave);
   assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://github.com/home')), { saved: true, action: 'update' });
+  const updated = vault.state.data.items[0];
+  assert.equal(updated.password, 'changed');
+  assert.deepEqual(updated.passwordHistory.map((h) => h.password), ['pw-alice'], 'the replaced password is kept');
+});
+
+test('a change on the site that matches the pending password settles it through the save prompt', async () => {
+  const { svc, vault } = setup();
+  vault.state.data.items[0].pendingPassword = { password: 'new-from-akari', createdAt: 1 };
+  await svc.offerSave({ username: 'alice', password: 'new-from-akari' }, sender('https://github.com/settings'));
+  assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://github.com/settings')), { saved: true, action: 'update' });
+  const it = vault.state.data.items[0];
+  assert.equal(it.password, 'new-from-akari');
+  assert.equal(it.pendingPassword, undefined);
+  assert.equal(it.passwordHistory[0].password, 'pw-alice');
 });
 
 test('pending candidate is dropped when the vault locks (seen on access) or unlocks', async () => {

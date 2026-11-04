@@ -70,7 +70,7 @@ try {
   const fav = await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items[0].fav);
   assert.equal(fav, true);
 
-  step('weak password → 強化する');
+  step('weak password → 強化する: held until the site is changed, then confirmed; the old one is kept');
   await page.click('.d-head .ibtn[title="編集"]');
   await page.fill('#edPw', 'abc12345');
   await page.click('.ed-foot .btn-primary');
@@ -79,13 +79,37 @@ try {
   assert.equal(await page.locator('.weak-text').textContent(), '短く推測されやすいパスワードです。');
   await page.click('.weak .btn-fix');
   await page.waitForSelector('#genSheet.open');
-  assert.equal(await page.locator('#genApply').textContent(), 'このパスワードに更新');
+  assert.equal(await page.locator('#genApply').textContent(), 'サイトで変更する');
+  assert.ok(await page.locator('#genSite').isVisible(), 'the sheet says the site is not changed by Akari');
   assert.match(await page.locator('#genCmd').textContent(), /^akari gen (--length \d+|--words \d+ --dict ja-romaji)/);
   await page.waitForTimeout(600);
-  await page.click('#genApply');
-  await page.waitForTimeout(900);
-  assert.match(await toastText(), /example\.com のパスワードを更新しました/);
-  assert.match(await page.locator('#toastSub').textContent(), /^強度: .+ · \d+ bit$/);
+  {
+    // The login's saved URL opens in a new tab (answered locally: no network in tests).
+    await ext.context.route('https://example.com/login', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<title>login</title>' }));
+    const opened = ext.context.waitForEvent('page');
+    await page.click('#genApply');
+    const sitePage = await opened;
+    await sitePage.waitForLoadState('domcontentloaded');
+    assert.equal(sitePage.url(), 'https://example.com/login', 'the saved URL opens');
+    await sitePage.close();
+    await page.bringToFront();
+    await page.waitForSelector('.pend');
+    let it = (await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items))
+      .find((i) => i.password === 'abc12345');
+    assert.ok(it, 'the current password stays until the change is confirmed');
+    const next = it.pendingPassword?.password;
+    assert.ok(next && next !== 'abc12345', 'the new password is held');
+    await page.click('.pend .btn-mini.primary'); // 確定する
+    await page.waitForSelector('.pend', { state: 'detached' });
+    await page.waitForTimeout(900);
+    assert.match(await toastText(), /example\.com のパスワードを更新しました/);
+    assert.match(await page.locator('#toastSub').textContent(), /^強度: .+ · \d+ bit$/);
+    it = (await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items)).find((i) => i.id === it.id);
+    assert.equal(it.password, next);
+    assert.equal(it.pendingPassword, undefined);
+    assert.equal(it.passwordHistory[0].password, 'abc12345', 'the replaced password is in the history');
+    assert.equal(await page.locator('.sect-btn:has-text("以前のパスワード")').count(), 1);
+  }
   await page.waitForTimeout(500);
   await shot('updated');
   assert.equal(await page.locator('.weak').count(), 0);
@@ -156,7 +180,8 @@ try {
     await page.click('#typeMenu .tp-cell[data-type="card"]');
     assert.equal(await page.locator('.row').count(), 1, 'only the card');
     assert.equal(await page.locator('#typeLabel').textContent(), 'クレジットカード');
-    await page.click('#typeClear');
+    await page.click('#typeBtn');
+    await page.click('#typeMenu .tp-cell[data-type="all"]');
     assert.equal(await page.locator('.row').count(), 2);
 
     // delete
@@ -343,6 +368,30 @@ try {
     await shot('vaults');
     await page.keyboard.press('Escape');
     await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+  }
+
+  step('select several items and delete them in one go (選択 → Ctrl+A → del)');
+  {
+    for (const n of [1, 2, 3]) {
+      assert.equal((await sendMsg('vault/saveItem', { item: { type: 'note', title: `まとめて削除 ${n}`, note: 'x' } })).ok, true);
+    }
+    const keep = (await getAll()).length - 3;
+    await page.reload(); // the popup reads the vault again, the three notes included
+    await page.waitForSelector('#app[data-phase="main"] .row');
+    await page.fill('#search', 'まとめて削除');
+    await page.waitForFunction(() => document.querySelectorAll('.row').length === 3);
+    await page.locator('#list').focus();
+    await page.keyboard.press('Control+a');
+    await page.waitForSelector('#app[data-picking]');
+    assert.equal(await page.locator('.pick-n').textContent(), '3');
+    await page.keyboard.press('Delete');
+    await page.click('.pick-confirm .btn-mini.danger');
+    await page.waitForFunction(() => !document.getElementById('app').hasAttribute('data-picking'));
+    const left = await getAll();
+    assert.equal(left.length, keep, 'exactly the three are gone from the vault');
+    assert.ok(!left.some((i) => i.title.startsWith('まとめて削除')));
+    await shot('pick-deleted');
+    await page.fill('#search', '');
   }
 
   step('autofill fills exactly the account the card shows (vault filter 個人)');

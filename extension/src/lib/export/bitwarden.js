@@ -121,8 +121,10 @@ export function toBitwardenJson(data) {
   const items = data.items.map((it) => {
     const login = (it.type ?? 'login') === 'login';
     const native = login ? null : nativePart(it);
+    const history = login && Array.isArray(it.passwordHistory) ? it.passwordHistory : [];
     const out = {
-      passwordHistory: null,
+      // Bitwarden's own shape: the password and when it stopped being used.
+      passwordHistory: history.length ? history.map((h) => ({ lastUsedDate: iso(h.changedAt), password: h.password })) : null,
       revisionDate: iso(it.updatedAt),
       creationDate: iso(it.createdAt),
       deletedDate: null,

@@ -21,7 +21,9 @@ export const S = {
   sort: 'recent', // recent | az
   query: '',
   siteQuery: '', // the active tab's site, put in the search box on open when it finds something
-  sel: null,
+  sel: null, // the item shown in the detail pane; in selection mode, the row the keyboard is on
+  picking: false, // selection mode: clicking a row checks it (for deleting several) instead of opening it
+  picked: new Set(), // ids checked in selection mode, always among the visible rows
   af: null, // { tabId, url, site, items, state }
 };
 
@@ -32,6 +34,7 @@ try {
   if (['recent', 'az'].includes(saved.sort)) S.sort = saved.sort;
   if (typeof saved.vault === 'string') S.vault = saved.vault;
   if (typeof saved.type === 'string' && typeOf(saved.type)) S.type = saved.type;
+  if (S.type !== 'all') S.filter = 'all'; // one view at a time (older versions combined ★ and a type)
 } catch { /* ignore */ }
 
 export function saveUi() {
@@ -56,7 +59,7 @@ export const live = (token) => S.phase === 'main' && S.epoch === token;
 
 // Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
 const WRITES = new Set([
-  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
   MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
 ]);
 let writing = 0;
@@ -134,7 +137,17 @@ export function replaceItem(item) {
 }
 
 export function removeItem(id) {
-  S.items = S.items.filter((i) => i.id !== id);
+  removeItems([id]);
+}
+
+export function removeItems(ids) {
+  const gone = new Set(ids);
+  S.items = S.items.filter((i) => !gone.has(i.id));
+  for (const id of gone) S.picked.delete(id);
+  if (S.af) {
+    S.af.items = S.af.items.filter((m) => !gone.has(m.id));
+    if (!S.af.items.length) S.af = null;
+  }
   recomputeReuse();
 }
 
@@ -144,6 +157,8 @@ export function clearSecrets() {
   S.sel = null;
   S.query = '';
   S.siteQuery = '';
+  S.picking = false;
+  S.picked = new Set();
   strengthCache.clear();
   normCache.clear();
   reuse = new Map();

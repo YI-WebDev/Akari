@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createVault, createVaultRecord, openVaultRecord, sealData, exportBackup, importBackup, normalizeData,
   mergeData, makeItem, validateItem, sanitizeItem, defaultData, normalizeUrl, checkRecord,
-  addImportedItems, passkeyFromImport, MAX_IMPORT_ITEMS,
+  addImportedItems, passkeyFromImport, MAX_IMPORT_ITEMS, setLoginPassword, setPendingPassword, PASSWORD_HISTORY_MAX,
 } from '../../extension/src/lib/vault.js';
 import { createCredential, getAssertion } from '../../extension/src/lib/webauthn.js';
 import { exportDek } from '../../extension/src/lib/crypto.js';
@@ -645,4 +645,76 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   assert.deepEqual([noteFields.fields, noteFields.extra], [undefined, [{ label: 'x', value: '1', secret: false }]]);
   assert.ok(!('passkeys' in added.find((i) => i.title === 'srv')));
   assert.ok(!added.some((i) => ['with url', 'bad extra'].includes(i.title)));
+});
+
+// ---- password history and the pending new password ---------------------------------
+
+test('setLoginPassword keeps what it replaces: newest first, no duplicates, capped; a pending one settles', () => {
+  const it = makeItem({ type: 'login', title: 'x', password: 'p0' }, 1);
+  assert.equal(setLoginPassword(it, 'p0', 2), false, 'same password: nothing to do');
+  assert.equal(it.passwordHistory, undefined);
+  setLoginPassword(it, 'p1', 10);
+  setLoginPassword(it, 'p2', 20);
+  assert.deepEqual(it.passwordHistory, [{ password: 'p1', changedAt: 20 }, { password: 'p0', changedAt: 10 }]);
+  assert.equal(it.passwordUpdatedAt, 20);
+  // Taking an old one back moves it out of the history and the current one in.
+  setLoginPassword(it, 'p0', 30);
+  assert.equal(it.password, 'p0');
+  assert.deepEqual(it.passwordHistory.map((h) => h.password), ['p2', 'p1']);
+  for (let i = 3; i < 20; i++) setLoginPassword(it, 'p' + i, 30 + i);
+  assert.equal(it.passwordHistory.length, PASSWORD_HISTORY_MAX);
+  assert.equal(it.passwordHistory[0].password, 'p18');
+  // A held password that becomes current is no longer pending.
+  setPendingPassword(it, 'next', 99);
+  assert.deepEqual(it.pendingPassword, { password: 'next', createdAt: 99 });
+  setLoginPassword(it, 'next', 100);
+  assert.equal(it.pendingPassword, undefined);
+  // An empty start keeps no empty entry.
+  const fresh = makeItem({ type: 'login', title: 'y' }, 1);
+  setLoginPassword(fresh, 'first', 5);
+  assert.equal(fresh.passwordHistory, undefined);
+});
+
+test('setPendingPassword checks the value and clears with null', () => {
+  const it = makeItem({ type: 'login', title: 'x', password: 'cur' }, 1);
+  assert.throws(() => setPendingPassword(it, '', 2), { code: 'INVALID' });
+  assert.throws(() => setPendingPassword(it, 'x'.repeat(1025), 2), { code: 'INVALID' });
+  assert.throws(() => setPendingPassword(it, 'cur', 2), { code: 'INVALID' }, 'already current');
+  assert.throws(() => setPendingPassword(it, 42, 2), { code: 'INVALID' });
+  setPendingPassword(it, 'a', 2);
+  setPendingPassword(it, 'b', 3); // replaces
+  assert.deepEqual(it.pendingPassword, { password: 'b', createdAt: 3 });
+  setPendingPassword(it, null, 4);
+  assert.equal('pendingPassword' in it, false);
+});
+
+test('backups keep the history and the pending password, cleaned; a merge loses no password', () => {
+  const now = 5000;
+  const item = (over) => ({
+    id: 'L1', type: 'login', vault: 'personal', title: 'x', url: '', username: 'u', password: 'cur', note: '', fav: false,
+    hue: 1, extra: [], totp: null, passkeys: [], createdAt: 1, updatedAt: 100, lastUsedAt: null, passwordUpdatedAt: 100, ...over,
+  });
+  const data = normalizeData({
+    vaults: [{ id: 'personal', name: '個人', hue: 1 }],
+    items: [
+      item({
+        passwordHistory: [{ password: 'old1', changedAt: 90 }, { password: 'old1', changedAt: 80 }, { password: 'cur', changedAt: 70 },
+          { password: '', changedAt: 60 }, 'junk', { password: 'future', changedAt: 9e15 }],
+        pendingPassword: { password: 'next', createdAt: 95 },
+      }),
+      { id: 'N1', type: 'note', vault: 'personal', title: 'n', note: 'n', fav: false, hue: 1, extra: [], createdAt: 1, updatedAt: 1,
+        lastUsedAt: null, passwordHistory: [{ password: 'x', changedAt: 1 }] },
+    ],
+  }, now);
+  const l = data.items.find((i) => i.id === 'L1');
+  assert.deepEqual(l.passwordHistory, [{ password: 'old1', changedAt: 90 }, { password: 'future', changedAt: now }]);
+  assert.deepEqual(l.pendingPassword, { password: 'next', createdAt: 95 });
+  assert.equal('passwordHistory' in data.items.find((i) => i.id === 'N1'), false, 'notes carry no history');
+
+  // The backup's copy is newer: its password wins, and both histories plus the replaced password stay.
+  const current = { vaults: data.vaults, items: [item({ password: 'mine', updatedAt: 50, passwordHistory: [{ password: 'older', changedAt: 40 }] })] };
+  const incoming = { vaults: data.vaults, items: [item({ password: 'cur', updatedAt: 200, passwordUpdatedAt: 150, passwordHistory: [{ password: 'old1', changedAt: 90 }] })] };
+  const { data: merged } = mergeData(current, incoming);
+  assert.equal(merged.items[0].password, 'cur');
+  assert.deepEqual(merged.items[0].passwordHistory.map((h) => h.password), ['mine', 'old1', 'older']);
 });

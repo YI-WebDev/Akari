@@ -20,6 +20,7 @@ import { scramble, cancelScramble, rise, burst, wait, DIGITS } from './fx.js';
 import { totpView } from './totp-view.js';
 import { meterEl, setMeter } from './meter.js';
 import { tileEl } from './list.js';
+import { renderPicker } from './picker.js';
 import { toast, toastError } from './toast.js';
 
 // { id, reveal, totp, els, timers, shown: revealed field keys, scr: scramble keys in use }
@@ -56,28 +57,42 @@ function openUrl(e, href) {
   chrome.tabs.create({ url: href });
 }
 
+/** Text with soft breaks after . - _ / @, so a long host wraps at its dots rather than mid-word. */
+function breakable(text) {
+  return String(text).split(/(?<=[.\-_/@])/).flatMap((part, i) => (i ? [h('wbr'), part] : [part]));
+}
+
+/**
+ * Title block: the tile, the title (up to two lines, so long hosts are not cut), the actions as
+ * one compact group beside it, and under both a meta line that may wrap: [vault] type, then
+ * badges for what the item carries (2FA, passkeys).
+ */
 function head(it) {
   const v = vaultById(it.vault);
   const fav = h('button', {
-    class: 'ibtn boxed fav', type: 'button', title: 'お気に入り', 'aria-label': 'お気に入り', 'aria-pressed': String(!!it.fav),
+    class: 'ibtn fav', type: 'button', title: 'お気に入り', 'aria-label': 'お気に入り', 'aria-pressed': String(!!it.fav),
   }, icon('star', 14));
   fav.addEventListener('click', () => toggleFav(it.id, fav));
   const href = it.type === 'login' ? safeHttpUrl(it.url) : '';
-  const meta = [h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
-    h('span', null, typeLabel(it.type))];
-  if (it.totp?.secret && it.type === 'login') meta.push(h('span', null, '· 2FA 有効'));
-  if (it.type === 'login' && it.passkeys?.length) meta.push(h('span', null, `· パスキー ${it.passkeys.length}`));
+  const login = it.type === 'login';
+  const badge = (text, title) => h('span', { class: 'd-badge', title }, text);
+  const meta = [
+    h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
+    h('span', { class: 'd-type' }, typeLabel(it.type)),
+    login && it.totp?.secret ? badge('2FA', '認証コード（2FA）あり') : null,
+    login && it.passkeys?.length ? badge(`パスキー ${it.passkeys.length}`, 'このサイトのパスキー') : null,
+  ];
   return h('div', { class: 'd-head', dataset: { f: '' } },
     tileEl(it, 'lg'),
-    h('div', { class: 'd-titles' },
-      h('div', { class: 'd-title', title: it.title || '' }, it.title || '(無題)'),
-      h('div', { class: 'd-meta' }, meta)),
-    h('button', { class: 'ibtn boxed', type: 'button', title: '編集', 'aria-label': '編集', onclick: () => emit('edit', it.id) }, icon('pencil', 13)),
-    fav,
-    href ? h('a', {
-      class: 'ibtn boxed', href, target: '_blank', rel: 'noreferrer noopener', title: 'サイトを開く', 'aria-label': 'サイトを開く',
-      onclick: (e) => openUrl(e, href),
-    }, icon('external', 13)) : null);
+    h('div', { class: 'd-title', title: it.title || '' }, breakable(it.title || '(無題)')),
+    h('div', { class: 'd-acts', role: 'group', 'aria-label': '操作' },
+      h('button', { class: 'ibtn', type: 'button', title: '編集', 'aria-label': '編集', onclick: () => emit('edit', it.id) }, icon('pencil', 13)),
+      fav,
+      href ? h('a', {
+        class: 'ibtn', href, target: '_blank', rel: 'noreferrer noopener', title: 'サイトを開く', 'aria-label': 'サイトを開く',
+        onclick: (e) => openUrl(e, href),
+      }, icon('external', 13)) : null),
+    h('div', { class: 'd-meta' }, meta));
 }
 
 async function toggleFav(id, btn) {
@@ -119,6 +134,122 @@ function weakBox(it) {
     h('span', { class: 'weak-bang', 'aria-hidden': 'true' }, '!'),
     h('span', { class: 'weak-text' }, warnText(it)),
     h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, '強化する →'));
+}
+
+// ---- a password change on the site ----------------------------------------------------
+//
+// 強化する holds the new password as pendingPassword (views/generator.js) instead of replacing
+// the current one, which the site still wants (its "current password" field, and autofill on
+// the login form). The banner keeps it at hand until the user confirms the change or drops it;
+// every replaced password stays in the history below the fields.
+
+async function settlePending(id, action, btns) {
+  const cur = itemById(id);
+  const next = cur?.pendingPassword?.password;
+  if (!cur || !next) return;
+  btns.forEach((b) => { b.disabled = true; });
+  const token = liveToken();
+  try {
+    const res = await call(MSG.VAULT_PENDING_PASSWORD, { id, action });
+    if (!live(token)) return;
+    replaceItem(mergeSaved(res?.item, cur));
+    if (action === 'confirm') {
+      emit('passwordUpdated', id, { password: next, ...strengthOf(next) });
+    } else {
+      renderDetail({ animate: true });
+      toast('保留中のパスワードを破棄しました', '今のパスワードはそのままです');
+    }
+  } catch (e) {
+    if (!live(token)) return;
+    btns.forEach((b) => { b.disabled = false; });
+    toastError(action === 'confirm' ? '確定できませんでした' : '破棄できませんでした', errText(e));
+  }
+}
+
+function pendingBox(it) {
+  const site = it.type === 'login' ? safeHttpUrl(it.url) : '';
+  const acts = h('div', { class: 'pend-acts' });
+  const idle = () => {
+    const confirm = h('button', { class: 'btn-mini primary', type: 'button' }, icon('check', 11, 3), '確定する');
+    const drop = h('button', { class: 'btn-mini', type: 'button', onclick: askDrop }, '取り消す');
+    confirm.addEventListener('click', () => settlePending(it.id, 'confirm', [confirm, drop]));
+    clear(acts);
+    acts.append(
+      copyButton('pending', () => itemById(it.id)?.pendingPassword?.password, '新しいパスワード', { label: '新しいパスワード', secret: true }),
+      site ? h('button', {
+        class: 'btn-mini', type: 'button', title: site,
+        onclick: () => chrome.tabs.create({ url: site }),
+      }, 'サイトで変更', icon('external', 10)) : null,
+      h('span', { class: 'grow' }), drop, confirm);
+  };
+  // Dropping it after the site took it would lock the user out: ask first.
+  function askDrop() {
+    const yes = h('button', { class: 'btn-mini danger', type: 'button' }, '破棄する');
+    yes.addEventListener('click', () => settlePending(it.id, 'discard', [yes]));
+    clear(acts);
+    acts.append(h('span', { class: 'pend-q grow' }, 'サイトで変更済みなら「確定」を。破棄しますか？'), yes,
+      h('button', { class: 'btn-mini', type: 'button', onclick: idle }, '戻る'));
+    yes.focus();
+  }
+  idle();
+  return h('div', { class: 'pend', dataset: { f: '' }, role: 'status' },
+    h('div', { class: 'pend-head' }, icon('clock', 13), h('span', { class: 'grow' }, '新しいパスワードを保留中'),
+      h('span', { class: 'pend-date' }, relTime(it.pendingPassword.createdAt))),
+    h('div', { class: 'pend-text' }, 'サイトでパスワードを変更できたら「確定」を押してください。それまで自動入力は今のパスワードを使います。'),
+    acts);
+}
+
+/** Earlier passwords of a login (newest first), folded; each can be shown, copied or put back. */
+function historyBlock(it) {
+  const list = it.passwordHistory || [];
+  if (!list.length) return [];
+  const box = h('div', { class: 'box hist', role: 'list', 'aria-label': '以前のパスワード', hidden: true });
+  const head = h('button', { class: 'sect sect-btn', type: 'button', 'aria-expanded': 'false', dataset: { f: '' } },
+    icon('chevRight', 11), h('span', null, '以前のパスワード'), h('span', { class: 'sect-line' }), h('span', null, String(list.length)));
+  head.addEventListener('click', () => {
+    const open = head.getAttribute('aria-expanded') !== 'true';
+    head.setAttribute('aria-expanded', String(open));
+    box.hidden = !open;
+  });
+  for (const entry of list) box.append(historyRow(it, entry));
+  return [head, h('div', { dataset: { f: '' } }, box)];
+}
+
+function historyRow(it, entry) {
+  const text = h('span', { class: 'hist-pw' }, masked(entry.password));
+  let shown = false;
+  const eye = h('button', { class: 'ibtn', type: 'button', title: '表示', 'aria-label': '以前のパスワードを表示', 'aria-pressed': 'false' }, icon('eye', 13));
+  eye.addEventListener('click', () => {
+    shown = !shown;
+    text.textContent = shown ? entry.password : masked(entry.password);
+    text.classList.toggle('revealed', shown);
+    eye.setAttribute('aria-pressed', String(shown));
+    eye.replaceChildren(icon(shown ? 'eyeOff' : 'eye', 13));
+  });
+  const back = h('button', { class: 'btn-mini', type: 'button', title: 'このパスワードに戻す（今のパスワードは履歴に残ります）' }, '戻す');
+  back.addEventListener('click', () => restorePassword(it.id, entry.password, back));
+  return h('div', { class: 'hist-row', role: 'listitem' },
+    h('div', { class: 'hist-text' }, text, h('span', { class: 'hist-date' }, `${formatDate(entry.changedAt)} まで使用`)),
+    h('span', { class: 'f-btns' }, eye, copyButton('history', () => entry.password, '以前のパスワード', { label: '以前のパスワード', secret: true }), back));
+}
+
+async function restorePassword(id, password, btn) {
+  const cur = itemById(id);
+  if (!cur) return;
+  btn.disabled = true;
+  const token = liveToken();
+  try {
+    const res = await call(MSG.VAULT_SAVE_ITEM, { item: { id, password } });
+    if (!live(token)) return;
+    replaceItem(mergeSaved(res?.item, cur));
+    emit('listChanged');
+    renderDetail({ animate: true });
+    toast('以前のパスワードに戻しました', '戻す前のパスワードは履歴に残しました');
+  } catch (e) {
+    if (!live(token)) return;
+    btn.disabled = false;
+    toastError('戻せませんでした', errText(e));
+  }
 }
 
 function userRow(it) {
@@ -462,6 +593,10 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   const D = document.getElementById('detail');
   clear(D);
   document.getElementById('cardScroll').scrollTop = 0;
+  if (S.picking) {
+    renderPicker({ animate });
+    return;
+  }
   const it = itemById(S.sel);
   if (!it) {
     D.classList.add('is-empty');
@@ -474,7 +609,8 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   D.append(head(it));
   const box = h('div', { class: 'box', dataset: { f: '' } });
   if (it.type === 'login') {
-    if (isWeak(it)) D.append(weakBox(it));
+    if (it.pendingPassword?.password) D.append(pendingBox(it)); // the change in progress, rather than the warning
+    else if (isWeak(it)) D.append(weakBox(it));
     box.append(userRow(it), passwordRow(it, animate));
     if (it.totp?.secret) box.append(totpRow(it));
     const sites = websitesRow(it);
@@ -499,6 +635,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   }
   D.append(box);
   if (it.type === 'login' && it.passkeys?.length) D.append(...passkeysBlock(it));
+  if (it.type === 'login') D.append(...historyBlock(it));
   D.append(stats(it));
   if (animate) rise(D);
 }

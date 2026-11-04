@@ -5,6 +5,7 @@
 import { register, AkariError } from './router.js';
 import { ERR, MSG } from '../shared/messages.js';
 import { sameSite, hostnameOf } from '../shared/domain.js';
+import { setLoginPassword } from '../lib/vault.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
@@ -290,8 +291,8 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       await vault.mutateData((draft) => {
         const existing = p.action === 'update' ? draft.items.find((i) => i.id === p.itemId && i.type === 'login') : null;
         if (existing) {
-          existing.password = p.password;
-          existing.passwordUpdatedAt = now();
+          // The old password goes to the history; a pending one the site has now taken is settled.
+          setLoginPassword(existing, p.password, now());
           existing.updatedAt = now();
           return;
         }

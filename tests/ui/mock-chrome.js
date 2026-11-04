@@ -67,7 +67,8 @@
       L('claude', 'personal', 'claude.ai', 'haruka.sato@example.com', 'c1aude!Notes#88wq', 45, { lastUsedAt: now - DAY, note: 'API キーは「開発メモ」ノートに保存', createdAt: date('2024/08/19'), updatedAt: date('2025/08/19') }),
       L('figma', 'work', 'figma.com', 'haruka@studio-mori.jp', 'Fr4m3s&Vect0rs!', 20, { lastUsedAt: now - 3 * DAY }),
       L('notion', 'work', 'notion.so', 'haruka@studio-mori.jp', 'n0tion-Desk-Lamp-7', 95, { totp: T('KRSXG5CTMVRXEZLU', 'Notion', 'haruka@studio-mori.jp'), lastUsedAt: now - 4 * DAY }),
-      L('amazon', 'personal', 'amazon.co.jp', 'haruka.sato@example.com', 'amz2024', 70, { lastUsedAt: now - 8 * DAY, createdAt: date('2016/02/14'), updatedAt: date('2018/07/01') }),
+      L('amazon', 'personal', 'amazon.co.jp', 'haruka.sato@example.com', 'amz2024', 70, { lastUsedAt: now - 8 * DAY, createdAt: date('2016/02/14'), updatedAt: date('2018/07/01'),
+        passwordHistory: [{ password: 'amazon2016', changedAt: date('2018/07/01') }, { password: 'Hanako-0214', changedAt: date('2017/03/09') }] }),
       L('mercari', 'personal', 'jp.mercari.com', '080-1234-5678', 'mercari1234', 25, { lastUsedAt: now - 9 * DAY, createdAt: date('2020/01/09'), updatedAt: date('2020/01/09') }),
       L('netflix', 'family', 'netflix.com', 'family@sato-home.jp', 'Popcorn&Kotatsu_31', 15, { lastUsedAt: now - 9 * DAY - 6 * HOUR }),
       L('rakuten', 'personal', 'rakuten.co.jp', 'haruka.sato@example.com', 'R@kuten!Ichiba2025', 5, { lastUsedAt: now - 15 * DAY }),
@@ -203,10 +204,13 @@
       var cur = it.id && db.items.find(function (x) { return x.id === it.id; });
       if (it.id && !cur) throw AkErr('NOT_FOUND');
       if (cur) {
-        var pwChanged = 'password' in it && it.password !== cur.password;
-        var keep = { passkeys: cur.passkeys, createdAt: cur.createdAt, lastUsedAt: cur.lastUsedAt };
+        var prevPw = cur.password;
+        var keep = {
+          passkeys: cur.passkeys, createdAt: cur.createdAt, lastUsedAt: cur.lastUsedAt,
+          passwordHistory: cur.passwordHistory, pendingPassword: cur.pendingPassword,
+        };
         Object.assign(cur, it, keep, { updatedAt: t });
-        if (pwChanged) cur.passwordUpdatedAt = t;
+        if ('password' in it && it.password !== prevPw) { cur.password = prevPw; setPassword(cur, it.password, t); }
         return { item: clone(cur) };
       }
       if (it.type && TYPE_IDS.indexOf(it.type) < 0) throw AkErr('INVALID', 'unknown type');
@@ -220,12 +224,41 @@
       db.items.push(created);
       return { item: clone(created) };
     },
+    'vault/pendingPassword': async function (m) {
+      needUnlocked(); await sleep(200);
+      var cur = db.items.find(function (x) { return x.id === m.id; });
+      if (!cur) throw AkErr('NOT_FOUND');
+      var t = Date.now();
+      if (m.action === 'set') {
+        if (!m.password || m.password === cur.password) throw AkErr('INVALID');
+        cur.pendingPassword = { password: m.password, createdAt: t };
+      } else if (m.action === 'confirm') {
+        if (!cur.pendingPassword) throw AkErr('NOT_FOUND');
+        setPassword(cur, cur.pendingPassword.password, t);
+      } else if (m.action === 'discard') {
+        delete cur.pendingPassword;
+      } else {
+        throw AkErr('INVALID');
+      }
+      cur.updatedAt = t;
+      return { item: clone(cur) };
+    },
     'vault/deleteItem': async function (m) {
       needUnlocked(); await sleep(200);
       var n = db.items.length;
       db.items = db.items.filter(function (x) { return x.id !== m.id; });
       if (db.items.length === n) throw AkErr('NOT_FOUND');
       return {};
+    },
+    'vault/deleteItems': async function (m) {
+      needUnlocked(); await sleep(300);
+      if (!Array.isArray(m.ids) || !m.ids.length) throw AkErr('INVALID');
+      var gone = {};
+      m.ids.forEach(function (id) { gone[id] = true; });
+      var n = db.items.length;
+      db.items = db.items.filter(function (x) { return !gone[x.id]; });
+      if (db.items.length === n) throw AkErr('NOT_FOUND');
+      return { deleted: n - db.items.length };
     },
     'vault/deletePasskey': async function (m) {
       needUnlocked(); await sleep(200);
@@ -355,6 +388,18 @@
       return { filled: true };
     },
   };
+
+  /** lib/vault.js setLoginPassword: the replaced password goes to the history (newest first, max 10). */
+  function setPassword(item, next, t) {
+    var prev = item.password || '';
+    if (item.pendingPassword && item.pendingPassword.password === next) delete item.pendingPassword;
+    if (next === prev) return;
+    var rest = (item.passwordHistory || []).filter(function (h) { return h.password !== prev && h.password !== next; });
+    var hist = prev ? [{ password: prev, changedAt: t }].concat(rest) : rest;
+    if (hist.length) item.passwordHistory = hist.slice(0, 10); else delete item.passwordHistory;
+    item.password = next;
+    item.passwordUpdatedAt = t;
+  }
 
   async function sendMessage(msg) {
     var h = handlers[msg && msg.type];
