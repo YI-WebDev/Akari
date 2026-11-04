@@ -478,13 +478,15 @@ function importFields(raw, vaultId) {
  * validateItem are counted as invalid (template values that fail their kind's check
  * are kept in `extra` first, see salvageFields), duplicates of existing (or earlier)
  * items are skipped, and passkeys (logins only) are kept only when valid and not
- * already present (credentialId or rpId + userHandle).
+ * already present (credentialId or rpId + userHandle). A duplicate login still gets
+ * the passkeys it lacks, so importing again after an import that dropped them (or
+ * from a manager whose passkeys Akari could not read before) brings them in.
  * @returns {Promise<{ added: number, duplicates: number, invalid: number, passkeys: number }>}
  */
 export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) {
   if (!Array.isArray(list) || list.length > MAX_IMPORT_ITEMS) throw invalid('Too many items');
   if (!data.vaults.some((v) => v.id === vaultId)) throw invalid('Unknown vault');
-  const seen = new Set(data.items.map(duplicateKey));
+  const seen = new Map(data.items.map((it) => [duplicateKey(it), it]));
   const credIds = new Set();
   const accounts = new Set();
   const accountKey = (pk) => pk.rpId + '\n' + pk.userHandle;
@@ -493,6 +495,19 @@ export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) 
       credIds.add(pk.credentialId);
       accounts.add(accountKey(pk));
     }
+  }
+  /** Valid passkeys of `raw` not yet anywhere in the vault, appended to `into`; returns how many. */
+  async function takePasskeys(raw, into) {
+    let n = 0;
+    for (const p of Array.isArray(raw.passkeys) ? raw.passkeys : []) {
+      const pk = await passkeyFromImport(p, nowMs);
+      if (!pk || credIds.has(pk.credentialId) || accounts.has(accountKey(pk))) continue;
+      credIds.add(pk.credentialId);
+      accounts.add(accountKey(pk));
+      into.push(pk);
+      n++;
+    }
+    return n;
   }
   const out = { added: 0, duplicates: 0, invalid: 0, passkeys: 0 };
   for (const raw of list) {
@@ -512,21 +527,21 @@ export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) 
       ...(login && { passkeys: [], passwordUpdatedAt: fields.password ? updatedAt : null }),
     }, nowMs);
     const key = duplicateKey(item);
-    if (seen.has(key)) {
+    const same = seen.get(key);
+    if (same) {
       out.duplicates++;
+      if (login && (same.type ?? 'login') === 'login') {
+        if (!Array.isArray(same.passkeys)) same.passkeys = [];
+        const n = await takePasskeys(raw, same.passkeys);
+        if (n) {
+          out.passkeys += n;
+          same.updatedAt = Math.max(same.updatedAt || 0, nowMs);
+        }
+      }
       continue;
     }
-    seen.add(key);
-    if (login) {
-      for (const p of Array.isArray(raw.passkeys) ? raw.passkeys : []) {
-        const pk = await passkeyFromImport(p, nowMs);
-        if (!pk || credIds.has(pk.credentialId) || accounts.has(accountKey(pk))) continue;
-        credIds.add(pk.credentialId);
-        accounts.add(accountKey(pk));
-        item.passkeys.push(pk);
-      }
-      out.passkeys += item.passkeys.length;
-    }
+    seen.set(key, item);
+    if (login) out.passkeys += await takePasskeys(raw, item.passkeys);
     data.items.push(item);
     out.added++;
   }

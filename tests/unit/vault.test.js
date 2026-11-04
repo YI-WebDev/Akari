@@ -379,14 +379,17 @@ test('addImportedItems: passkeys pass the strict checks and never duplicate cred
   const sameCred = { ...(await importedPasskey()).pk, credentialId: existing.pk.credentialId };
   const sameAccount = { ...(await importedPasskey()).pk, userHandle: existing.pk.userHandle };
   const broken = { ...(await importedPasskey()).pk, privateKey: toB64url(randomBytes(138)) };
+  const forMine = (await importedPasskey()).pk;
   const res = await addImportedItems(data, [
     { type: 'login', title: 'A', url: 'https://github.com', username: 'b', password: '2', passkeys: [fresh, sameCred, sameAccount, broken, { ...fresh }] },
     { type: 'login', title: 'B', url: 'https://example.com', username: 'c', password: '3', passkeys: [fresh2, { ...fresh, userHandle: toB64url(randomBytes(8)) }] },
-    { type: 'login', title: 'dup of Mine', url: 'https://github.com', username: 'a', password: '1', passkeys: [(await importedPasskey()).pk] },
+    { type: 'login', title: 'dup of Mine', url: 'https://github.com', username: 'a', password: '1', passkeys: [forMine, { ...existing.pk }] },
     { type: 'login', title: 'bad list', username: 'd', passkeys: 'nope' },
   ], 'personal', 9000);
-  assert.deepEqual(res, { added: 3, duplicates: 1, invalid: 0, passkeys: 2 });
-  assert.deepEqual(mine.passkeys.map((p) => p.credentialId), [existing.pk.credentialId], 'existing passkeys untouched');
+  assert.deepEqual(res, { added: 3, duplicates: 1, invalid: 0, passkeys: 3 });
+  // The duplicate login is not added again, but the existing one gets the passkey it lacked (kept ones stay first).
+  assert.deepEqual(mine.passkeys.map((p) => p.credentialId), [existing.pk.credentialId, forMine.credentialId]);
+  assert.equal(mine.updatedAt, 9000);
   const [a, b] = data.items.slice(1);
   assert.deepEqual(a.passkeys.map((p) => p.credentialId), [fresh.credentialId]);
   assert.deepEqual(b.passkeys.map((p) => p.credentialId), [fresh2.credentialId], 'same credentialId later in the batch is dropped');
