@@ -20,6 +20,7 @@ export const S = {
   type: 'all', // all | an item type id (shared/item-types.js)
   sort: 'recent', // recent | az
   query: '',
+  siteQuery: '', // the active tab's site, put in the search box on open when it finds something
   sel: null,
   af: null, // { tabId, url, site, items, state }
 };
@@ -142,6 +143,7 @@ export function clearSecrets() {
   S.af = null;
   S.sel = null;
   S.query = '';
+  S.siteQuery = '';
   strengthCache.clear();
   normCache.clear();
   reuse = new Map();

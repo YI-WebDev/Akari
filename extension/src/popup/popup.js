@@ -3,6 +3,7 @@
 
 import { MSG, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { send } from '../shared/api.js';
+import { hostnameOf, registrableDomain } from '../shared/domain.js';
 import { typeOf, hasTemplate, fieldLabel } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
 import {
@@ -66,10 +67,19 @@ async function activeTab() {
   }
 }
 
-/** Autofill matches for the active tab, or null. Does not touch state. */
-async function fetchAutofill() {
-  const tab = await activeTab();
-  if (!tab?.id || !/^https?:\/\//i.test(tab.url || '')) return null;
+const isWebTab = (tab) => /^https?:\/\//i.test(tab?.url || '');
+
+/** The tab's site as a search: its registrable domain, so "accounts.google.com" also finds google.com logins. */
+function siteQueryOf(tab) {
+  if (!isWebTab(tab)) return '';
+  const host = hostnameOf(tab.url);
+  return host ? registrableDomain(host) || host.replace(/^www\./, '') : '';
+}
+
+/** Autofill matches for the tab, or null. Does not touch state. */
+async function fetchAutofill(tabP) {
+  const tab = await tabP;
+  if (!tab?.id || !isWebTab(tab)) return null;
   try {
     const res = await call(MSG.AUTOFILL_MATCHES, { tabId: tab.id });
     if (!res?.items?.length) return null;
@@ -88,13 +98,16 @@ async function loadAll({ onDecrypted } = {}) {
   const token = S.epoch;
   let rendered = false;
   S.af = null;
+  S.siteQuery = '';
+  const tab = activeTab();
+  const site = tab.then((t) => { if (S.epoch === token) S.siteQuery = siteQueryOf(t); });
   // matches that arrive after the first render are added to the list then
-  const af = fetchAutofill().then((res) => {
+  const af = fetchAutofill(tab).then((res) => {
     if (S.epoch !== token) return;
     S.af = res;
     if (rendered && res && S.phase === 'main') renderList();
   });
-  const [count] = await Promise.all([loadData(onDecrypted), withTimeout(af, 800)]);
+  const [count] = await Promise.all([loadData(onDecrypted), withTimeout(af, 800), site]);
   rendered = true;
   return count;
 }
@@ -102,7 +115,7 @@ async function loadAll({ onDecrypted } = {}) {
 /** Re-query matches after an edit (a saved URL may now match the tab, or no longer). */
 async function refreshAutofill() {
   const token = liveToken();
-  const res = await fetchAutofill();
+  const res = await fetchAutofill(activeTab());
   if (!live(token) || (S.af && S.af.state !== 'idle')) return;
   S.af = res;
   renderList();
@@ -130,9 +143,28 @@ function renderSaving(saving) {
   $('stSaveText').textContent = saving ? '保存中…' : '保存済み';
 }
 
+/**
+ * Open on the tab's site as if the user had typed it, but only when that finds something
+ * (an empty list on every other site would be in the way). Esc or the clear button undoes it.
+ */
+function prefillSiteQuery() {
+  const q = S.siteQuery;
+  if (!q || S.query) return;
+  S.query = q;
+  if (!visibleItems().length) {
+    S.query = '';
+    return;
+  }
+  $('search').value = q;
+  $('searchClear').hidden = false;
+  $('searchKey').hidden = true;
+  ensureSel();
+}
+
 function enterMain({ animate = true } = {}) {
   S.phase = 'main';
   app.dataset.phase = 'main';
+  prefillSiteQuery();
   renderVaultLabel();
   renderFilters();
   renderList({ animate });
@@ -345,7 +377,7 @@ async function newLogin() {
   const tab = await activeTab();
   if (!live(token)) return;
   const prefill = {};
-  if (tab && /^https?:\/\//i.test(tab.url || '')) {
+  if (isWebTab(tab)) {
     try {
       const u = new URL(tab.url);
       prefill.url = u.origin;

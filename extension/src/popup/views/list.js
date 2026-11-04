@@ -5,7 +5,7 @@ import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, inType, vaultById } from '../state.js';
 import { h, clear, icon } from './dom.js';
-import { GROUPS, groupIndex, letterOf, hueOf, matchRange } from './format.js';
+import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
 import { stagger } from './fx.js';
 import { tagShown } from './type-menu.js';
 
@@ -187,7 +187,9 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   const now = Date.now();
 
   const af = afCandidate();
-  if (af && !q && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
+  // the tab's own site in the search box (put there on open) keeps the autofill card
+  const siteOnly = !q || q === normQuery(S.siteQuery);
+  if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
   renderCounts(vis.length, now);
