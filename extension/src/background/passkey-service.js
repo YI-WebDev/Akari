@@ -1,13 +1,14 @@
 // Passkey service: Akari answers navigator.credentials.create/get for https (and
-// localhost) top frames. Every request is checked against the sender's origin,
-// then the user approves it in the consent window (src/passkey/passkey.html).
+// localhost) top frames. Every request is checked against the sender's origin.
 //
-// Sign-in (get) while Akari is unlocked is answered with the site's passkeys instead
-// of a window: webauthn-bridge.js shows them on a card in the page, and a trusted
-// click there asks for the assertion ('passkey/assert'). That is also how passkey
-// autofill (mediation 'conditional') is offered. Locked: a modal request opens the
-// consent window to unlock, a conditional one is left to the browser. Registration
-// (create) always uses the window. The master password is never asked for in a page.
+// While Akari is unlocked both are answered on a card in the page (webauthn-bridge.js),
+// not in a window: get returns the site's passkeys and a trusted click on one asks for
+// the assertion ('passkey/assert'); create returns what the card shows (account, vaults,
+// whether the site already has this passkey) and a trusted click on save asks for the
+// credential ('passkey/save'). Passkey autofill (mediation 'conditional') is the same get
+// card. Locked: a modal request opens the consent window (src/passkey/passkey.html) to
+// unlock, a conditional one is left to the browser. The master password is never asked
+// for in a page.
 //
 // User verification: in the consent window the UV flag is set only when the user
 // proved the master password there ('passkey/verify', which the window also calls
@@ -27,8 +28,9 @@ import { createCredential, getAssertion, buildClientDataJSON, COSE_ALG_ES256 } f
 // and by the consent window to prove the master password for this request.
 export const PASSKEY_CANCEL = 'passkey/cancel';
 export const PASSKEY_VERIFY = 'passkey/verify';
-// Sent by webauthn-bridge.js when the user picks a passkey on the page card.
+// Sent by webauthn-bridge.js when the user picks a passkey / saves one on the page card.
 export const PASSKEY_ASSERT = 'passkey/assert';
+export const PASSKEY_SAVE = 'passkey/save';
 export const PORT_PREFIX = 'akari-passkey:';
 const WINDOW_PATH = 'src/passkey/passkey.html';
 
@@ -243,8 +245,13 @@ export function createPasskeyService({ chrome, vault }) {
     const req = { ...parseCreate(msg.options, origin), origin };
     // Conditional create (silent passkey upgrade after a password sign-in) is left to the browser.
     if (msg.mediation === 'conditional') throw fail('FALLBACK', 'mediation not supported');
-    // An excluded credential is reported only after the user acts in the window, so
-    // pages cannot probe silently which credentials Akari holds.
+    // An excluded credential is reported only after the user acts on the card or in the
+    // window, so pages cannot probe silently which credentials Akari holds.
+    const data = await readIfUnlocked();
+    if (data) {
+      touch();
+      return { inline: createInfo(data, req) };
+    }
     return { credential: await startRequest('create', sender, msg, req) };
   }
 
@@ -262,6 +269,17 @@ export function createPasskeyService({ chrome, vault }) {
     // Locked: whether Akari holds a passkey for this site is unknown until it is unlocked.
     if (msg.mediation === 'conditional') throw fail('FALLBACK', 'locked');
     return { credential: await startRequest('get', sender, msg, req) };
+  }
+
+  /** The user pressed save on the page card: create the passkey the page asked for. */
+  async function handleSave(msg, sender) {
+    const origin = callerOrigin(sender);
+    const req = { ...parseCreate(msg.options, origin), origin };
+    if (await vault.isLocked()) throw fail('LOCKED', 'unlock first');
+    const data = await vault.readData();
+    if (req.exclude.length && passkeysFor(data, req.rpId, req.exclude).length) throw fail('INVALID_STATE', 'already saved');
+    touch();
+    return { credential: await approveCreate({ req, verifiedAt: Date.now() }, msg.vault) };
   }
 
   /** The user picked a passkey on the page card: sign the request the page made. */
@@ -299,21 +317,29 @@ export function createPasskeyService({ chrome, vault }) {
     if (!data) return { ...base, locked: true, candidates: [], vaults: [], excluded: false, defaultVault: null };
     touch();
 
-    const vaults = (data.vaults || []).map((v) => ({ id: v.id, name: v.name, hue: v.hue }));
     if (entry.kind === 'create') {
-      const existing = (data.items || []).find((it) => it.type === 'login'
-        && sameSite(it.url, req.origin) && (it.username || '') === req.user.name);
-      return {
-        ...base,
-        locked: false,
-        candidates: [],
-        vaults,
-        excluded: req.exclude.length > 0 && passkeysFor(data, req.rpId, req.exclude).length > 0,
-        defaultVault: existing?.vault || vaults[0]?.id || null,
-      };
+      const { vaults, excluded, defaultVault } = createInfo(data, req);
+      return { ...base, locked: false, candidates: [], vaults, excluded, defaultVault };
     }
     const candidates = candidatesOf(data, passkeysFor(data, req.rpId, req.allow));
-    return { ...base, locked: false, candidates, vaults, excluded: false, defaultVault: null };
+    return { ...base, locked: false, candidates, vaults: vaultsOf(data), excluded: false, defaultVault: null };
+  }
+
+  const vaultsOf = (data) => (data.vaults || []).map((v) => ({ id: v.id, name: v.name, hue: v.hue }));
+
+  /** What the page card and the consent window show for a registration. */
+  function createInfo(data, req) {
+    const vaults = vaultsOf(data);
+    const existing = (data.items || []).find((it) => it.type === 'login'
+      && sameSite(it.url, req.origin) && (it.username || '') === req.user.name);
+    return {
+      rpId: req.rpId,
+      rpName: req.rpName || req.rpId,
+      user: { name: req.user.name, displayName: req.user.displayName },
+      vaults,
+      excluded: req.exclude.length > 0 && passkeysFor(data, req.rpId, req.exclude).length > 0,
+      defaultVault: existing?.vault || vaults[0]?.id || null,
+    };
   }
 
   /** What the consent window and the page card show for each passkey, most recently used first. */
@@ -497,7 +523,7 @@ export function createPasskeyService({ chrome, vault }) {
     }
   });
 
-  return { handleCreate, handleGet, handleAssert, handleCancel, handleRequest, handleVerify, handleRespond, pending };
+  return { handleCreate, handleGet, handleAssert, handleSave, handleCancel, handleRequest, handleVerify, handleRespond, pending };
 }
 
 const service = globalThis.chrome?.runtime?.id
@@ -508,6 +534,7 @@ if (service) {
   register(MSG.PASSKEY_CREATE, service.handleCreate, { from: 'content' });
   register(MSG.PASSKEY_GET, service.handleGet, { from: 'content' });
   register(PASSKEY_ASSERT, service.handleAssert, { from: 'content' });
+  register(PASSKEY_SAVE, service.handleSave, { from: 'content' });
   register(PASSKEY_CANCEL, service.handleCancel, { from: 'content' });
   register(MSG.PASSKEY_REQUEST, service.handleRequest, { from: 'extension' });
   register(PASSKEY_VERIFY, service.handleVerify, { from: 'extension' });

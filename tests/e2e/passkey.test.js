@@ -1,7 +1,6 @@
 // Passkey registration and sign-in against a real relying party (verified by
-// @simplewebauthn/server). Registration goes through the consent window, which asks
-// for the master password (userVerification 'required'). Sign-in while unlocked goes
-// through Akari's card in the page; while locked, the window unlocks first.
+// @simplewebauthn/server). While Akari is unlocked both happen on Akari's card in the
+// page (no window); while locked, the consent window unlocks first.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { launch, extensionMessenger, MASTER, sleep } from './helpers.js';
@@ -37,21 +36,6 @@ async function viaConsent(button, act, expected, on = page) {
 
 const screen = (name) => `[data-screen="${name}"]:not([hidden])`;
 
-test('register a passkey (master password re-prompt for UV)', async () => {
-  const status = await viaConsent('#register', async (win) => {
-    await win.locator(`${screen('create')} .uv-pw`).fill(MASTER);
-    await win.locator(`${screen('create')} #createPrimary`).click(); // auto-waits for the arming delay
-  }, 'registered');
-  assert.equal(status, 'registered');
-  assert.match(await page.textContent('#log'), /"userVerified": true/);
-
-  const all = await send('vault/getAll');
-  const withKey = all.data.items.filter((i) => i.passkeys?.length);
-  assert.equal(withKey.length, 1);
-  assert.equal(withKey[0].passkeys[0].rpId, 'localhost');
-  assert.ok(!('privateKey' in withKey[0].passkeys[0]), 'private key must not reach extension pages');
-});
-
 // Akari's card is a closed shadow root at the top right of the page (shadow-ui.js `.bar`):
 // rows and × are clicked by position. Rows count only after the card has been visible ~500 ms.
 const cardRow = (p, i = 0) => [p.viewportSize().width - 16 - 170, 114 + i * 44];
@@ -68,26 +52,65 @@ async function pickFirst(p, settled) {
   return settled;
 }
 
-/** Click a button on the RP page and pick the first passkey on Akari's card; no window may open. */
-async function viaCard(button, expected, on = page) {
+/** Focus inside Akari's closed shadow root shows on the page as its host, a div right under <html>. */
+const cardFocused = (p) => p.waitForFunction(() => {
+  const a = document.activeElement;
+  return !!a && a.tagName === 'DIV' && a.parentNode === document.documentElement;
+}, null, { timeout: 10000 });
+
+/** Press Enter on the card's focused button (save / OK) until `settled` settles; presses before it is armed do nothing. */
+async function enterOnCard(p, settled) {
+  let done = false;
+  settled.then(() => { done = true; }, () => { done = true; });
+  await cardFocused(p); // never press Enter on the page's own buttons
+  for (let i = 0; i < 40 && !done; i++) {
+    await p.keyboard.press('Enter');
+    await sleep(200);
+  }
+  return settled;
+}
+
+const statusIs = (on, expected) => on.waitForFunction((s) => document.getElementById('status').dataset.state !== 'pending'
+  && document.getElementById('status').textContent.startsWith(s), expected, { timeout: 15000 });
+
+/**
+ * Click a button on the RP page and answer on Akari's card: pick the first passkey (sign-in)
+ * or press Enter on the focused save / OK button. No window may open.
+ */
+async function viaCard(button, expected, on = page, { keyboard = false } = {}) {
   let opened = false;
   const onPage = (p) => { if (p.url().includes('/src/passkey/passkey.html')) opened = true; };
   ext.context.on('page', onPage);
   try {
     await on.bringToFront();
     await on.click(button);
-    await sleep(150);
-    await on.mouse.click(...cardRow(on)); // straight away: refused
+    if (keyboard) {
+      await cardFocused(on);
+      await on.keyboard.press('Enter'); // straight away: refused
+    } else {
+      await sleep(150);
+      await on.mouse.click(...cardRow(on));
+    }
     await sleep(200);
-    assert.match(await on.textContent('#status'), /…$/, 'a click before the card has been visible for a moment does nothing');
-    await pickFirst(on, on.waitForFunction((s) => document.getElementById('status').dataset.state !== 'pending'
-      && document.getElementById('status').textContent.startsWith(s), expected, { timeout: 15000 }));
+    assert.match(await on.textContent('#status'), /…$/, 'acting before the card has been visible for a moment does nothing');
+    await (keyboard ? enterOnCard : pickFirst)(on, statusIs(on, expected));
   } finally {
     ext.context.off('page', onPage);
   }
   assert.equal(opened, false, 'no window while Akari is unlocked');
   return on.textContent('#status');
 }
+
+test('save a passkey on the card in the page (unlocked: no window, verified)', async () => {
+  assert.equal(await viaCard('#register', 'registered', page, { keyboard: true }), 'registered');
+  assert.match(await page.textContent('#log'), /"userVerified": true/);
+
+  const all = await send('vault/getAll');
+  const withKey = all.data.items.filter((i) => i.passkeys?.length);
+  assert.equal(withKey.length, 1);
+  assert.equal(withKey[0].passkeys[0].rpId, 'localhost');
+  assert.ok(!('privateKey' in withKey[0].passkeys[0]), 'private key must not reach extension pages');
+});
 
 test('sign in on the card in the page (unlocked: no window, verified)', async () => {
   assert.equal(await viaCard('#login', 'signed-in'), 'signed-in');
@@ -165,13 +188,13 @@ test('cancel in the window → NotAllowedError', async () => {
   assert.match(status, /NotAllowedError/);
 });
 
-test('registering again for the same account → InvalidStateError after the user confirms', async () => {
-  const status = await viaConsent('#register', async (win) => {
-    await win.locator(`${screen('create')} #excludedNotice`).waitFor();
-    assert.equal(await page.textContent('#status'), 'registering…', 'no answer before the user acts');
-    await win.locator(`${screen('create')} #createPrimary`).click();
-  }, 'error');
-  assert.match(status, /InvalidStateError/);
+test('registering again for the same account → InvalidStateError after the user confirms on the card', async () => {
+  await page.bringToFront();
+  await page.click('#register');
+  await sleep(1000);
+  assert.equal(await page.textContent('#status'), 'registering…', 'no answer before the user acts');
+  await enterOnCard(page, statusIs(page, 'error'));
+  assert.match(await page.textContent('#status'), /InvalidStateError/);
 });
 
 test('the credential object looks native to the page', async () => {
@@ -240,10 +263,9 @@ test('with another passkey manager on the page, Akari is asked first and passes 
   }
 });
 
-/** A create() made by the page itself, approved in the window; resolves to the UV bit of the new credential. */
-async function uvFlagForCreate(userVerification, act) {
-  const popup = ext.context.waitForEvent('page', { predicate: (p) => p.url().includes('/src/passkey/passkey.html'), timeout: 10000 });
-  const flags = page.evaluate(async (uv) => {
+/** A create() made by the page itself; resolves to the UV bit of the new credential. */
+function createFlags(userVerification) {
+  return page.evaluate(async (uv) => {
     const cred = await navigator.credentials.create({
       publicKey: {
         rp: { id: location.hostname, name: 'Test RP' },
@@ -253,29 +275,29 @@ async function uvFlagForCreate(userVerification, act) {
         authenticatorSelection: { residentKey: 'required', userVerification: uv },
       },
     });
-    return new Uint8Array(cred.response.getAuthenticatorData())[32];
+    return new Uint8Array(cred.response.getAuthenticatorData())[32] & 0x04;
   }, userVerification);
-  const win = await popup;
-  await win.waitForLoadState('domcontentloaded');
-  await win.locator(screen('create')).waitFor();
-  await act(win);
-  return (await flags) & 0x04;
 }
 
 // Last: these add passkeys the RP server does not know.
-test('creating with userVerification "preferred" (the default) asks for the master password and sets UV', async () => {
-  const uv = await uvFlagForCreate('preferred', async (win) => {
-    assert.equal(await win.locator(`${screen('create')} .uv`).isVisible(), true, 'master password asked');
-    await win.locator(`${screen('create')} .uv-pw`).fill(MASTER);
-    await win.locator(`${screen('create')} #createPrimary`).click();
-  });
-  assert.equal(uv, 0x04);
+test('saving on the card sets UV whether the site prefers or discourages it', async () => {
+  await page.bringToFront();
+  for (const uv of ['preferred', 'discouraged']) {
+    assert.equal(await enterOnCard(page, createFlags(uv)), 0x04, uv);
+    await sleep(1400); // the "saved" card closes
+  }
 });
 
-test('creating with userVerification "discouraged" asks nothing and leaves UV unset', async () => {
-  const uv = await uvFlagForCreate('discouraged', async (win) => {
-    assert.equal(await win.locator(`${screen('create')} .uv`).isVisible(), false, 'no master password prompt');
-    await win.locator(`${screen('create')} #createPrimary`).click();
-  });
-  assert.equal(uv, 0);
+test('locked: saving opens the window, and unlocking there counts as user verification', async () => {
+  assert.equal((await send('vault/lock')).ok, true);
+  const popup = ext.context.waitForEvent('page', { predicate: (p) => p.url().includes('/src/passkey/passkey.html'), timeout: 10000 });
+  const flags = createFlags('required');
+  const win = await popup;
+  await win.waitForLoadState('domcontentloaded');
+  await win.locator(`${screen('locked')} #pw`).fill(MASTER);
+  await win.locator(`${screen('locked')} #pw`).press('Enter');
+  await win.locator(screen('create')).waitFor();
+  assert.equal(await win.locator(`${screen('create')} .uv`).isVisible(), false, 'no second prompt after unlocking here');
+  await win.locator(`${screen('create')} #createPrimary`).click(); // auto-waits for the arming delay
+  assert.equal(await flags, 0x04);
 });
