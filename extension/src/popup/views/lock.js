@@ -2,7 +2,7 @@
 // lines appear as the real steps finish — key derivation (vault/unlock or vault/setup),
 // decryption (vault/getAll) and loading the items.
 
-import { MSG, ERR } from '../../shared/messages.js';
+import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
 import { S, strengthOf } from '../state.js';
 import { h, clear, syncInert } from './dom.js';
@@ -18,6 +18,7 @@ let bootGen = 0;
 
 function idleHint() {
   const m = Number(S.settings.autoLockMinutes);
+  if (m === NEVER_LOCK) return 'ひらいたあとは自動ではロックしません（鍵のボタンでロック）';
   return m > 0 ? `${m} 分操作しないと自動でロックします` : 'ブラウザを閉じるとロックします';
 }
 

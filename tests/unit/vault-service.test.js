@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createVaultService, VAULT_KEY, SETTINGS_KEY, SESSION_KEY, AUTOLOCK_ALARM,
+  createVaultService, VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, AUTOLOCK_ALARM,
 } from '../../extension/src/background/vault-service.js';
 import { createClipboardService, CLIPBOARD_ALARM } from '../../extension/src/background/clipboard.js';
 import { AkariError } from '../../extension/src/background/router.js';
-import { MSG } from '../../extension/src/shared/messages.js';
+import { MSG, NEVER_LOCK } from '../../extension/src/shared/messages.js';
 import { importDek, exportDek, decryptJson } from '../../extension/src/lib/crypto.js';
 import { fromB64, toB64, toB64url, randomBytes } from '../../extension/src/shared/bytes.js';
 import { createCredential } from '../../extension/src/lib/webauthn.js';
@@ -99,9 +99,59 @@ test('module exports the live API names', async () => {
   assert.equal(typeof mod.makeItem({ title: 'x' }).id, 'string');
 });
 
-test('install restricts storage.session to trusted contexts', () => {
+test('install restricts storage.session and storage.local to trusted contexts (no content scripts)', () => {
   const { chrome } = makeService();
   assert.equal(chrome.storage.session.accessLevel, 'TRUSTED_CONTEXTS');
+  assert.equal(chrome.storage.local.accessLevel, 'TRUSTED_CONTEXTS');
+});
+
+test('settings: "ロックしない" needs the master password, opens again after a restart, and any lock drops the key', async () => {
+  const { call, chrome } = await setupUnlocked();
+  const restart = () => { chrome.storage.session.map.clear(); return makeService({ chrome }); };
+
+  await assert.rejects(call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK } }), { code: 'BAD_PASSWORD' });
+  await assert.rejects(call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: 'wrong' }), { code: 'BAD_PASSWORD' });
+  assert.equal((await call(MSG.SETTINGS_GET)).autoLockMinutes, 15, 'unchanged without the password');
+  assert.equal(chrome.storage.local.map.has(KEEP_KEY), false);
+
+  const s = await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: PW });
+  assert.equal(s.autoLockMinutes, NEVER_LOCK);
+  assert.equal(chrome.alarms.map.has(AUTOLOCK_ALARM), false, 'no auto-lock alarm');
+  assert.equal(typeof chrome.storage.local.map.get(KEEP_KEY)?.dek, 'string', 'key kept on this device');
+  await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'kept' } });
+
+  // Browser restart: storage.session is empty and the service worker starts fresh.
+  const after = restart();
+  assert.equal(await after.svc.isLocked(), false, 'opens without the master password');
+  assert.equal((await after.call(MSG.VAULT_GET_ALL)).items[0].title, 'kept');
+  assert.ok(chrome.storage.session.map.has(SESSION_KEY), 'session restored from the kept key');
+  assert.equal(await after.call(MSG.VAULT_UNLOCK, { masterPassword: 'wrong' }).catch((e) => e.code), 'BAD_PASSWORD');
+
+  // A new master password rotates the DEK; the kept key follows it.
+  const before = chrome.storage.local.map.get(KEEP_KEY).dek;
+  await after.call(MSG.VAULT_CHANGE_PASSWORD, { current: PW, next: 'another-master-password' });
+  assert.notEqual(chrome.storage.local.map.get(KEEP_KEY).dek, before);
+  assert.equal(await restart().svc.isLocked(), false, 'still opens after the change');
+
+  // Locking by hand drops the kept key: locked, also after a restart. Unlocking keeps it again.
+  await after.call(MSG.VAULT_LOCK);
+  assert.equal(chrome.storage.local.map.has(KEEP_KEY), false);
+  assert.equal(await restart().svc.isLocked(), true);
+  await after.call(MSG.VAULT_UNLOCK, { masterPassword: 'another-master-password' });
+  assert.equal(chrome.storage.local.map.has(KEEP_KEY), true);
+
+  // Already "ロックしない": setting it again needs no password. Any other choice drops the key.
+  await after.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK } });
+  await after.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: 0 } });
+  assert.equal(chrome.storage.local.map.has(KEEP_KEY), false);
+  assert.equal(await restart().svc.isLocked(), true, 'locked after a restart again');
+
+  // A key left behind from before (setting no longer "ロックしない") is ignored.
+  await chrome.storage.local.set({ [KEEP_KEY]: { dek: before } });
+  assert.equal(await restart().svc.isLocked(), true);
+
+  await after.call(MSG.VAULT_LOCK);
+  await assert.rejects(after.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: 'another-master-password' }), { code: 'LOCKED' });
 });
 
 test('setup → unlocked; storage holds only ciphertext; session holds the DEK', async () => {

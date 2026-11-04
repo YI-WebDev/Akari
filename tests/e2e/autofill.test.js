@@ -70,6 +70,40 @@ test('submitting a new password offers an update and saves it', async () => {
   await page.close();
 });
 
+test('two-step login with a saved account (password on a new page) does not offer to save it again', async () => {
+  // Two accounts on this site, so the password page alone cannot tell which one is meant.
+  await send('vault/saveItem', {
+    item: { type: 'login', title: 'localhost', url: site.origin + '/', username: 'mori@example.jp', password: 'Mori-Pass-55', vault: 'personal' },
+  });
+  const count = async () => (await send('vault/getAll')).data.items.length;
+  const before = await count();
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  const signIn = async (password) => {
+    await page.goto(site.origin + '/two-step.html');
+    await page.fill('#identifier', 'mori@example.jp');
+    await Promise.all([page.waitForURL(/two-step-password\.html/), page.click('#next')]);
+    await page.fill('#password', password);
+    await page.click('#signin');
+    await page.waitForSelector('#status[data-state="submitted"]');
+    // Where the save bar's 保存 button would be, once armed (closed shadow root: by position).
+    await page.waitForTimeout(1300);
+    await page.mouse.click(1000 - 62, 116);
+    await page.waitForTimeout(500);
+  };
+
+  await signIn('Mori-Pass-55');
+  assert.equal(await count(), before, 'no "Akari に保存しますか？" for a saved account');
+
+  // A new password on the password page updates that account (the username came from step 1).
+  await signIn('Mori-Pass-56');
+  const items = (await send('vault/getAll')).data.items;
+  assert.equal(items.length, before, 'updated, not added');
+  assert.equal(items.find((i) => i.username === 'mori@example.jp').password, 'Mori-Pass-56');
+  assert.equal(items.find((i) => i.username === 'haruka@example.jp').password, 'Brand-New-Pass-77', 'the other account untouched');
+  await page.close();
+});
+
 // The inline menu lives in a closed shadow root: orb and first row are clicked by position.
 async function openMenu(page) {
   await page.goto(site.origin + '/login.html');

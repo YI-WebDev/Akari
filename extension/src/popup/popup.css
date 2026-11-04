@@ -703,6 +703,11 @@ svg { display: block; }
 .set-nav .nav-arrow { color: var(--text-soft); margin-left: 2px; transition: transform .25s var(--spring), color .15s; }
 .set-nav:hover .nav-arrow, .set-nav:focus-visible .nav-arrow { color: var(--accent); transform: translateX(2px); }
 
+/* 自動ロック「しない」: warning + master password */
+.set-warn { margin: 0; padding: 8px 10px; border: 1px solid var(--danger-border); border-radius: 5px; background: var(--danger-soft);
+  font-size: 10.5px; line-height: 1.65; color: var(--danger-text); }
+.set-warn::before { content: '! '; color: var(--danger); font-weight: 700; }
+
 /* ───────── settings page: 保管庫 ───────── */
 .vm-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .vm-list > * + * { border-top: 1px solid var(--line); }

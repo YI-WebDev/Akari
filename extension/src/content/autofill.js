@@ -35,6 +35,7 @@
     REQUEST_FILL: 'autofill/requestFill',
     OFFER_SAVE: 'autofill/offerSave',
     CONFIRM_SAVE: 'autofill/confirmSave',
+    NOTE_USERNAME: 'autofill/noteUsername',
     DO_FILL: 'autofill/doFill',
   };
   const LOCKED_TEXT = 'Akari はロックされています — ツールバーのアイコンから解除してください';
@@ -568,6 +569,16 @@
     return n.getAttribute('role') === 'button' && SUBMIT_TEXT.test(label);
   }
 
+  /**
+   * A form that is only a username step (two-step logins: the password comes on the next page,
+   * which this content script will not remember): the service worker keeps the username for it.
+   */
+  function noteUsername(scope) {
+    if (!scope || passwordsIn(scope).some((p) => p.value)) return;
+    const user = deepInputs(scope).find((el) => el.value && el.value.trim() && looksLikeUsername(el) && isVisible(el));
+    if (user) send(M.NOTE_USERNAME, { username: user.value.trim() });
+  }
+
   async function offerSave(creds) {
     if (!isTop || !creds || !creds.password || Date.now() < offerCooldownUntil) return;
     offerCooldownUntil = Date.now() + 1500; // click + submit + Enter all fire for one login
@@ -621,17 +632,24 @@
     if (e.key === 'Enter' && !e.isComposing) {
       const t = e.composedPath()[0];
       if (t && t.tagName === 'INPUT' && isPasswordish(t)) offerSave(credentialsFrom(scopeOf(t)));
+      else if (t && t.tagName === 'INPUT' && looksLikeUsername(t)) noteUsername(scopeOf(t));
     }
   }, LISTEN);
 
   document.addEventListener('submit', (e) => {
-    if (e.isTrusted && e.target && e.target.tagName === 'FORM') offerSave(credentialsFrom(e.target));
+    if (!e.isTrusted || !e.target || e.target.tagName !== 'FORM') return;
+    const creds = credentialsFrom(e.target);
+    if (creds) offerSave(creds);
+    else noteUsername(e.target);
   }, LISTEN_PASSIVE);
 
   document.addEventListener('click', (e) => {
     if (!e.isTrusted) return;
     const btn = e.composedPath().find((n) => isSubmitLike(n));
-    if (btn) offerSave(credentialsFromButton(btn));
+    if (!btn) return;
+    const creds = credentialsFromButton(btn);
+    if (creds) offerSave(creds);
+    else noteUsername(btn.form || btn.closest('form') || btn.parentElement);
   }, LISTEN_PASSIVE);
 
   document.addEventListener('change', (e) => {

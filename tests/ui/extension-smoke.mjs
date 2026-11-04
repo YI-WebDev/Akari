@@ -19,7 +19,7 @@ const steps = [];
 const step = (name) => { steps.push(name); console.log('…', name); };
 
 try {
-  const page = await ext.context.newPage();
+  let page = await ext.context.newPage(); // replaced by a fresh popup in the 「しない」 restart step
   await page.setViewportSize({ width: 600, height: 430 });
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -399,6 +399,45 @@ try {
   assert.equal(await page.locator('#genChars span').count(), 0, 'generator wiped');
   assert.equal(await page.locator('#toastMsg').textContent(), '', 'toast text wiped');
   console.log(`   (lock noticed after ${latency} ms)`);
+
+  step('自動ロック「しない」: opens again after a (simulated) browser restart; a lock by hand drops the kept key');
+  {
+    await page.fill('#lockInput', MASTER);
+    await page.press('#lockInput', 'Enter');
+    await page.waitForSelector('#app[data-phase="main"]', { timeout: 30000 });
+    await page.waitForSelector('#gate:not(.on)', { state: 'attached' });
+    await page.click('#vaultBtn');
+    await page.click('#openSettings');
+    await page.waitForSelector('#setSheet.open');
+    await page.click('[data-setting="autoLockMinutes"] [data-value="-1"]');
+    await page.fill('#neverPw', MASTER);
+    await page.click('#neverSubmit');
+    await page.waitForSelector('#neverForm[hidden]', { state: 'attached' });
+    await shot('settings-never');
+    // A browser restart in miniature: storage.session emptied, the service worker stopped (its
+    // memory goes with it), then a fresh popup. (chrome.runtime.reload would unload a CDP-loaded extension.)
+    const cdp = await ext.context.newCDPSession(other);
+    const restart = async () => {
+      await page.close();
+      await other.evaluate(() => chrome.storage.session.clear());
+      await cdp.send('ServiceWorker.enable');
+      await cdp.send('ServiceWorker.stopAllWorkers');
+      await new Promise((r) => setTimeout(r, 500));
+      page = await ext.context.newPage();
+      page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+      await page.setViewportSize({ width: 600, height: 430 });
+      await page.goto(ext.url('src/popup/popup.html'));
+    };
+    await restart();
+    await page.waitForSelector('#app[data-phase="main"]', { timeout: 15000 });
+    assert.equal(await page.locator('#gate.on').count(), 0, 'no master password after the restart');
+    await page.waitForSelector('.row');
+    await page.click('#lockBtn');
+    await page.waitForSelector('#gate.on[data-mode="lock"]');
+    await restart();
+    await page.waitForSelector('#gate.on[data-mode="lock"]', { timeout: 15000 });
+    assert.match(await page.locator('#lockStatus').textContent(), /自動ではロックしません/, 'the lock screen says so');
+  }
 
   console.log('\nall steps passed:', steps.length);
 } catch (e) {

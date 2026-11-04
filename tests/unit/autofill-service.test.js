@@ -432,3 +432,72 @@ test('shortcut: nothing to fill on non-matching or non-web tabs', async () => {
   await b.svc.onCommand('autofill');
   assert.equal(b.chrome.calls.sendMessage.length, 0);
 });
+
+// Signing in with a login Akari already has must not end in "Akari に保存しますか？".
+const twoLogins = () => setup({ items: [login(), login({ id: 'i2', username: 'bob', password: 'pw-bob' })] });
+
+test('autofill/offerSave: two-step login — the username step is remembered for the password page', async () => {
+  const { svc, clock } = twoLogins();
+  // page 1 (username only), page 2 (password only, a new document on the same site)
+  assert.deepEqual(svc.noteUsername({ username: ' bob ' }, sender('https://github.com/login')), {});
+  assert.deepEqual(await svc.offerSave({ username: '', password: 'pw-bob' }, sender('https://github.com/session')), { action: 'none' });
+  const upd = await svc.offerSave({ username: '', password: 'new-bob' }, sender('https://github.com/session'));
+  assert.deepEqual([upd.action, upd.itemId, upd.username], ['update', 'i2', 'bob']);
+  // another site, another tab, or ten minutes later: not used
+  const elsewhere = await svc.offerSave({ username: '', password: 'pw-x' }, sender('https://example.org/'));
+  assert.deepEqual([elsewhere.action, elsewhere.username], ['new', '']);
+  const tab2 = await svc.offerSave({ username: '', password: 'new-bob' },
+    sender('https://github.com/', 'https://github.com/', { tab: { id: 2, url: 'https://github.com/' } }));
+  assert.equal(tab2.action, 'new');
+  clock.t += 10 * 60 * 1000 + 1;
+  assert.equal((await svc.offerSave({ username: '', password: 'new-bob' }, sender('https://github.com/session'))).action, 'new');
+});
+
+test('autofill/offerSave: a login Akari filled into the tab is not offered again', async () => {
+  // inline menu (requestFill)
+  const a = twoLogins();
+  await a.svc.requestFill({ itemId: 'i2' }, sender('https://github.com/login'));
+  assert.deepEqual(await a.svc.offerSave({ username: '', password: 'pw-bob' }, sender('https://github.com/session')), { action: 'none' });
+  const changed = await a.svc.offerSave({ username: '', password: 'edited-after-fill' }, sender('https://github.com/session'));
+  assert.deepEqual([changed.action, changed.itemId], ['update', 'i2'], 'a changed password updates the login that was filled');
+  // popup / shortcut (fill)
+  const b = twoLogins();
+  assert.deepEqual(await b.svc.fill({ tabId: 1, itemId: 'i2' }), { filled: true });
+  assert.deepEqual(await b.svc.offerSave({ username: 'bob', password: 'pw-bob' }, sender('https://github.com/login')), { action: 'none' });
+  // a different account typed by hand after the fill is still offered
+  const other = await b.svc.offerSave({ username: 'carol', password: 'pw-carol' }, sender('https://github.com/login'));
+  assert.deepEqual([other.action, other.username], ['new', 'carol']);
+});
+
+test('autofill/offerSave: a password-only form with a saved password of this site counts as saved', async () => {
+  const { svc } = twoLogins();
+  assert.deepEqual(await svc.offerSave({ username: '', password: 'pw-bob' }, sender('https://github.com/')), { action: 'none' });
+  assert.equal((await svc.offerSave({ username: '', password: 'nobody-has-this' }, sender('https://github.com/'))).action, 'new');
+});
+
+test('autofill/offerSave: an email and its local part are the same account', async () => {
+  const { svc } = setup({ items: [login({ username: 'Yi@Example.com', password: 'pw-yi' })] });
+  assert.deepEqual(await svc.offerSave({ username: 'yi', password: 'pw-yi' }, sender('https://github.com/login')), { action: 'none' });
+  const upd = await svc.offerSave({ username: 'yi', password: 'pw-yi-2' }, sender('https://github.com/login'));
+  assert.deepEqual([upd.action, upd.username], ['update', 'Yi@Example.com']);
+  const other = await svc.offerSave({ username: 'yi@other.example', password: 'pw-yi' }, sender('https://github.com/login'));
+  assert.equal(other.action, 'new', 'two different emails are two accounts');
+});
+
+test('autofill/noteUsername: validation, web pages only, same-site frames only', async () => {
+  const { svc } = twoLogins();
+  assert.throws(() => svc.noteUsername({ username: '  ' }, sender('https://github.com/')), (e) => e.code === 'INVALID');
+  assert.throws(() => svc.noteUsername({ username: 'x'.repeat(5000) }, sender('https://github.com/')), (e) => e.code === 'INVALID');
+  assert.throws(() => svc.noteUsername({ username: 'bob' }, { id: 'ext', url: 'chrome://settings', tab: { id: 1, url: 'chrome://settings' } }),
+    (e) => e.code === 'FORBIDDEN');
+  svc.noteUsername({ username: 'bob' }, sender('https://evil.example/f', 'https://github.com/', { frameId: 3 }));
+  assert.equal((await svc.offerSave({ username: '', password: 'new-bob' }, sender('https://github.com/'))).action, 'new', 'a framed other site is not kept');
+});
+
+test('autofill/confirmSave: a new login goes to the first vault when 個人 is gone', async () => {
+  const { svc, vault } = setup();
+  vault.state.data.vaults = [{ id: 'v-hobby', name: '趣味', hue: 300 }];
+  await svc.offerSave({ username: 'mallory', password: 's3cret' }, sender('https://example.org/login'));
+  assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://example.org/')), { saved: true, action: 'new' });
+  assert.equal(vault.state.data.items.at(-1).vault, 'v-hobby');
+});

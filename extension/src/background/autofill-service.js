@@ -8,6 +8,8 @@ import { sameSite, hostnameOf } from '../shared/domain.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
+// How long a fill by Akari, or the username of a two-step login, is remembered for the save prompt.
+const MEMORY_TTL_MS = 10 * 60 * 1000;
 const MAX_FIELD_LEN = 4096;
 
 const isWebUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
@@ -34,6 +36,10 @@ const byRecent = (a, b) =>
   (b.lastUsedAt || 0) - (a.lastUsedAt || 0) || (b.updatedAt || 0) - (a.updatedAt || 0);
 
 const sameUser = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+const localPart = (s) => String(s || '').trim().toLowerCase().split('@')[0];
+/** Same user, or an email and its local part ("yi" for "yi@example.com"), which many sites accept. */
+const likelySameUser = (a, b) => sameUser(a, b)
+  || (String(a || '').includes('@') !== String(b || '').includes('@') && !!localPart(a) && localPart(a) === localPart(b));
 
 /**
  * @param {{ chrome: typeof globalThis.chrome, vault: object, now?: () => number }} deps
@@ -42,6 +48,22 @@ const sameUser = (a, b) => String(a || '').trim().toLowerCase() === String(b || 
 export function createAutofillService({ chrome, vault, now = Date.now }) {
   /** tabId -> { action, itemId, username, password, host, origin, expiresAt } (SW memory only) */
   const pending = new Map();
+  /** tabId -> { itemId, url, expiresAt }: the login Akari last filled into the tab */
+  const filledIn = new Map();
+  /** tabId -> { username, url, expiresAt }: a username step whose password comes on a later page */
+  const steppedUser = new Map();
+
+  /** A remembered entry for this tab, while fresh and still on the same site. */
+  function recall(map, tabId, tabUrl) {
+    const e = map.get(tabId);
+    if (!e) return null;
+    if (e.expiresAt <= now() || !sameSite(e.url, tabUrl)) {
+      map.delete(tabId);
+      return null;
+    }
+    return e;
+  }
+  const rememberFill = (tabId, itemId, url) => filledIn.set(tabId, { itemId, url, expiresAt: now() + MEMORY_TTL_MS });
 
   async function requireUnlocked() {
     if (await vault.isLocked()) throw new AkariError(ERR.LOCKED, 'Vault is locked');
@@ -165,7 +187,10 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     }
     await vault.touchActivity();
     const filled = await deliver(tab, item);
-    if (filled) await markUsed(item.id);
+    if (filled) {
+      rememberFill(tab.id, item.id, tab.url);
+      await markUsed(item.id);
+    }
     return { filled };
   }
 
@@ -189,8 +214,18 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       throw new AkariError(ERR.DOMAIN_MISMATCH, 'This login belongs to a different site');
     }
     await vault.touchActivity();
+    rememberFill(sender.tab.id, item.id, tabUrl);
     await markUsed(item.id);
     return { username: item.username || '', password: item.password || '' };
+  }
+
+  /** The username step of a two-step login: kept for the password page that follows. */
+  function noteUsername(msg, sender) {
+    const { tabId, tabUrl, frameUrl } = senderPage(sender);
+    const username = typeof msg.username === 'string' ? msg.username.trim() : '';
+    if (!username || username.length > MAX_FIELD_LEN) throw new AkariError(ERR.INVALID, 'Invalid username');
+    if (sameSite(frameUrl, tabUrl)) steppedUser.set(tabId, { username, url: tabUrl, expiresAt: now() + MEMORY_TTL_MS });
+    return {};
   }
 
   async function offerSave(msg, sender) {
@@ -205,26 +240,34 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     if (await dropPendingIfLocked()) throw new AkariError(ERR.LOCKED, 'Vault is locked');
 
     const logins = await loginsFor(tabUrl);
-    // Password-only forms (e.g. "change password") are matched to the site's only login.
-    const candidates = username ? logins.filter((it) => sameUser(it.username, username)) : logins.length === 1 ? logins : [];
+    // The password page of a two-step login shows no username: use the one from the step before.
+    const user = username || recall(steppedUser, tabId, tabUrl)?.username || '';
+    const filledId = recall(filledIn, tabId, tabUrl)?.itemId;
+    const filled = (filledId && logins.find((it) => it.id === filledId)) || null;
+    const sameAccount = (it) => !user || likelySameUser(it.username, user);
 
-    if (candidates.some((it) => it.password === password)) {
+    // Already saved: the login Akari filled here, or a login of this site for this account
+    // (any of them when no username is known) with this password.
+    if ((filled && filled.password === password) || logins.some((it) => it.password === password && sameAccount(it))) {
       pending.delete(tabId);
       return { action: 'none' };
     }
-    const target = candidates[0] || null;
+    // A new password for a saved account: the one Akari filled, the same user, or the site's only login.
+    const target = (filled && sameAccount(filled) ? filled : null)
+      || (user && (logins.find((it) => sameUser(it.username, user)) || logins.find((it) => likelySameUser(it.username, user))))
+      || (!user && logins.length === 1 ? logins[0] : null);
     const action = target ? 'update' : 'new';
     const host = hostnameOf(tabUrl);
     pending.set(tabId, {
       action,
       itemId: target ? target.id : undefined,
-      username: target ? target.username : username,
+      username: target ? target.username : user,
       password,
       host,
       origin: originOf(tabUrl),
       expiresAt: now() + PENDING_TTL_MS,
     });
-    const out = { action, username: target ? target.username : username, host };
+    const out = { action, username: target ? target.username : user, host };
     if (target) out.itemId = target.id;
     return out;
   }
@@ -259,7 +302,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
             url: p.origin,
             username: p.username,
             password: p.password,
-            vault: 'personal',
+            vault: draft.vaults?.[0]?.id ?? 'personal', // 個人 may have been deleted or renamed
           }),
         );
       });
@@ -291,9 +334,13 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     if (best) await fill({ tabId: tab.id, itemId: best.id });
   }
 
-  const forgetTab = (tabId) => pending.delete(tabId);
+  const forgetTab = (tabId) => {
+    pending.delete(tabId);
+    filledIn.delete(tabId);
+    steppedUser.delete(tabId);
+  };
 
-  return { matches, fill, pageMatches, requestFill, offerSave, confirmSave, onCommand, forgetTab };
+  return { matches, fill, pageMatches, requestFill, noteUsername, offerSave, confirmSave, onCommand, forgetTab };
 }
 
 // Real instance. Skipped outside an extension context so the module can be imported by unit tests.
@@ -304,6 +351,7 @@ if (globalThis.chrome?.runtime?.id) {
   register(MSG.AUTOFILL_FILL, svc.fill, { from: 'extension' });
   register(MSG.AUTOFILL_PAGE_MATCHES, svc.pageMatches, { from: 'content' });
   register(MSG.AUTOFILL_REQUEST_FILL, svc.requestFill, { from: 'content' });
+  register(MSG.AUTOFILL_NOTE_USERNAME, svc.noteUsername, { from: 'content' });
   register(MSG.AUTOFILL_OFFER_SAVE, svc.offerSave, { from: 'content' });
   register(MSG.AUTOFILL_CONFIRM_SAVE, svc.confirmSave, { from: 'content' });
 
