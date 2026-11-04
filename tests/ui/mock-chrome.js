@@ -168,6 +168,13 @@
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms * cfg.delay); }); };
   function needUnlocked() { if (db.locked) throw AkErr('LOCKED', 'Vault is locked'); }
+  function vaultName(name, exceptId) {
+    var v = typeof name === 'string' ? name.trim() : '';
+    var key = function (s) { return s.normalize('NFKC').toLowerCase(); };
+    if (!v || Array.from(v).length > 40) throw AkErr('INVALID', 'Invalid vault name');
+    if (db.vaults.some(function (x) { return x.id !== exceptId && key(x.name) === key(v); })) throw AkErr('INVALID', 'Duplicate vault name');
+    return v;
+  }
   function hostOf(u) { try { return new URL(/^[a-z]+:\/\//i.test(u) ? u : 'https://' + u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
   function site(host) { var p = host.split('.'); var n = /\.(co|ne|or|ac)\.jp$/.test(host) ? 3 : 2; return p.slice(-n).join('.'); }
 
@@ -287,6 +294,38 @@
         return { text: JSON.stringify({ encrypted: false, folders: db.vaults.map(function (v) { return { id: v.id, name: v.name }; }), items: db.items.map(function (x) { return { name: x.title, login: { username: x.username, password: x.password } }; }) }, null, 2), filename: 'akari-export-' + stamp + '.json', count: db.items.length };
       }
       throw AkErr('INVALID');
+    },
+    // Vaults: the same rules as lib/vault.js (createVaultIn / updateVaultIn / deleteVaultIn).
+    'vault/createVault': async function (m) {
+      needUnlocked(); await sleep(200);
+      var name = vaultName(m.name, null);
+      if (db.vaults.length >= 20) throw AkErr('INVALID', 'Too many vaults');
+      if (!Number.isInteger(m.hue) || m.hue < 0 || m.hue > 359) throw AkErr('INVALID', 'Invalid hue');
+      var v = { id: 'v-' + Math.random().toString(36).slice(2, 10), name: name, hue: m.hue };
+      db.vaults.push(v);
+      return { vault: clone(v), vaults: clone(db.vaults) };
+    },
+    'vault/updateVault': async function (m) {
+      needUnlocked(); await sleep(200);
+      var v = db.vaults.find(function (x) { return x.id === m.id; });
+      if (!v) throw AkErr('NOT_FOUND');
+      if (m.name !== undefined) v.name = vaultName(m.name, v.id);
+      if (m.hue !== undefined) v.hue = m.hue;
+      return { vault: clone(v), vaults: clone(db.vaults) };
+    },
+    'vault/deleteVault': async function (m) {
+      needUnlocked(); await sleep(250);
+      var i = db.vaults.findIndex(function (x) { return x.id === m.id; });
+      if (i < 0) throw AkErr('NOT_FOUND');
+      if (db.vaults.length <= 1) throw AkErr('INVALID', 'The last vault cannot be deleted');
+      var to = m.moveTo == null ? null : m.moveTo;
+      if (to !== null && (to === m.id || !db.vaults.some(function (x) { return x.id === to; }))) throw AkErr('INVALID');
+      if (to === null && m.deleteItems !== true && db.items.some(function (x) { return x.vault === m.id; })) throw AkErr('NOT_EMPTY', 'Vault is not empty');
+      var moved = 0; var before = db.items.length;
+      if (to !== null) db.items.forEach(function (x) { if (x.vault === m.id) { x.vault = to; x.updatedAt = Date.now(); moved++; } });
+      else db.items = db.items.filter(function (x) { return x.vault !== m.id; });
+      db.vaults.splice(i, 1);
+      return { moved: moved, deleted: before - db.items.length, vaults: clone(db.vaults) };
     },
     'settings/get': function () { return clone(db.settings); },
     'settings/set': function (m) { Object.assign(db.settings, m.patch || {}); return clone(db.settings); },

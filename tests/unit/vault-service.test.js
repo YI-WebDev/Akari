@@ -668,3 +668,94 @@ test('vault/importItems and exportPlain with typed items', async () => {
   const csv = csvToObjects((await call(MSG.VAULT_EXPORT_PLAIN, { format: 'csv', masterPassword: PW })).text).records;
   assert.equal(csv.find((r) => r.name === 'Home').note, 'ネットワーク名: Home\nパスワード: wifi-pw\nセキュリティ: WPA3');
 });
+
+test('vaults: create / rename / recolor, with names validated and nothing written on errors', async () => {
+  const { call, svc, chrome } = await setupUnlocked();
+  assert.deepEqual((await call(MSG.VAULT_GET_ALL)).vaults.map((v) => v.id), ['personal', 'work', 'family']);
+
+  const made = await call(MSG.VAULT_CREATE_VAULT, { name: '  趣味  ', hue: 300 });
+  assert.equal(made.vault.name, '趣味');
+  assert.equal(made.vault.hue, 300);
+  assert.match(made.vault.id, /^v-[A-Za-z0-9_-]{8}$/);
+  assert.deepEqual(made.vaults.map((v) => v.name), ['個人', '仕事', '家族', '趣味']);
+  await call(MSG.VAULT_CREATE_VAULT, { name: 'Side Project', hue: 0 });
+
+  const before = structuredClone(chrome.storage.local.map.get(VAULT_KEY));
+  for (const [payload, why] of [
+    [{ name: '', hue: 10 }, 'empty'],
+    [{ name: '   ', hue: 10 }, 'blank'],
+    [{ name: 'あ'.repeat(41), hue: 10 }, 'too long'],
+    [{ name: 'a\nb', hue: 10 }, 'control character'],
+    [{ name: '趣味', hue: 10 }, 'duplicate'],
+    [{ name: 'ｓｉｄｅ project', hue: 10 }, 'duplicate after NFKC + case folding'],
+    [{ name: 'x', hue: 360 }, 'hue out of range'],
+    [{ name: 'x', hue: '10' }, 'hue not a number'],
+    [{ name: 42, hue: 10 }, 'name not a string'],
+  ]) await assert.rejects(call(MSG.VAULT_CREATE_VAULT, payload), { code: 'INVALID' }, why);
+  assert.deepEqual(chrome.storage.local.map.get(VAULT_KEY), before, 'refused calls write nothing');
+  await call(MSG.VAULT_CREATE_VAULT, { name: 'あ'.repeat(40), hue: 10 }); // exactly the limit is fine
+  await call(MSG.VAULT_DELETE_VAULT, { id: (await svc.readData()).vaults.at(-1).id, moveTo: null });
+
+  const id = made.vault.id;
+  assert.equal((await call(MSG.VAULT_UPDATE_VAULT, { id, name: 'ホビー' })).vault.name, 'ホビー');
+  assert.equal((await call(MSG.VAULT_UPDATE_VAULT, { id, hue: 200 })).vault.hue, 200);
+  assert.equal((await call(MSG.VAULT_UPDATE_VAULT, { id, name: 'ホビー', hue: 200 })).vault.name, 'ホビー', 'its own name is not a duplicate');
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { id, name: '仕事' }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { id }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { id, hue: -1 }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { id: 'nope', name: 'x' }), { code: 'NOT_FOUND' });
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { name: 'x' }), { code: 'INVALID' });
+  const stored = (await svc.readData()).vaults.find((v) => v.id === id);
+  assert.deepEqual(stored, { id, name: 'ホビー', hue: 200 });
+
+  // at most VAULT_LIMITS.count vaults
+  while ((await svc.readData()).vaults.length < 20) await call(MSG.VAULT_CREATE_VAULT, { name: 'v' + (await svc.readData()).vaults.length, hue: 1 });
+  await assert.rejects(call(MSG.VAULT_CREATE_VAULT, { name: 'one too many', hue: 1 }), { code: 'INVALID' });
+
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(call(MSG.VAULT_CREATE_VAULT, { name: 'x', hue: 1 }), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_UPDATE_VAULT, { id, name: 'x' }), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id, moveTo: null }), { code: 'LOCKED' });
+});
+
+test('vaults: delete moves the items to another vault, or deletes them with it; the last vault stays', async () => {
+  const { call, svc, clock } = await setupUnlocked();
+  const save = async (title, vault) => (await call(MSG.VAULT_SAVE_ITEM, { item: { title, vault } })).item;
+  const a = await save('a', 'work');
+  const b = await save('b', 'work');
+  await save('c', 'family');
+  await save('d', 'personal');
+
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 'work' }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 'nope' }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 7 }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 'personal', deleteItems: true }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', deleteItems: 'yes' }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'nope', moveTo: null }), { code: 'NOT_FOUND' });
+  // Items go with a vault only when the request says so: a popup that thought it empty is refused.
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work' }), { code: 'NOT_EMPTY' });
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: null, deleteItems: false }), { code: 'NOT_EMPTY' });
+  assert.equal((await svc.readData()).vaults.length, 3, 'nothing removed by the refused calls');
+
+  clock.t += 5000;
+  const moved = await call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 'personal' });
+  assert.deepEqual([moved.moved, moved.deleted], [2, 0]);
+  assert.deepEqual(moved.vaults.map((v) => v.id), ['personal', 'family']);
+  let data = await svc.readData();
+  for (const id of [a.id, b.id]) {
+    const it = data.items.find((x) => x.id === id);
+    assert.equal(it.vault, 'personal');
+    assert.equal(it.updatedAt, clock.t, 'a moved item counts as changed');
+  }
+
+  const gone = await call(MSG.VAULT_DELETE_VAULT, { id: 'family', deleteItems: true });
+  assert.deepEqual([gone.moved, gone.deleted], [0, 1]);
+  data = await svc.readData();
+  assert.deepEqual(data.items.map((i) => i.title).sort(), ['a', 'b', 'd']);
+  assert.deepEqual(data.vaults.map((v) => v.id), ['personal']);
+
+  await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'personal', moveTo: null }), { code: 'INVALID' });
+  assert.equal((await svc.readData()).items.length, 3);
+  // a new item can only go into a vault that exists
+  await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { title: 'x', vault: 'work' } }), { code: 'INVALID' });
+});

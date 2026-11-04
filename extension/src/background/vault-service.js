@@ -12,7 +12,7 @@ import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
 import {
   createVault, openVaultRecord, readVaultData, sealData, exportBackup, importBackup,
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
-  addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS,
+  addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -394,6 +394,34 @@ export function createVaultService({
     return {};
   }
 
+  // ---- vaults (保管庫) ----------------------------------------------------
+  // Each answers with the whole vault list, so the popup can redraw from it.
+
+  async function addVault(name, hue) {
+    return mutateData((draft) => {
+      const vault = createVaultIn(draft, { name, hue });
+      return { vault, vaults: structuredClone(draft.vaults) };
+    });
+  }
+
+  async function updateVault(id, name, hue) {
+    if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
+    return mutateData((draft) => {
+      const vault = updateVaultIn(draft, id, { name, hue });
+      return { vault, vaults: structuredClone(draft.vaults) };
+    });
+  }
+
+  async function deleteVault(id, moveTo, deleteItems) {
+    if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
+    if (moveTo !== null && (typeof moveTo !== 'string' || !moveTo)) throw fail(ERR.INVALID, 'moveTo must be a vault id or null');
+    if (typeof deleteItems !== 'boolean') throw fail(ERR.INVALID, 'deleteItems must be a boolean');
+    return mutateData((draft) => ({
+      ...deleteVaultIn(draft, id, { moveTo, deleteItems }, now()),
+      vaults: structuredClone(draft.vaults),
+    }));
+  }
+
   async function exportVault() {
     await ensureUnlocked();
     const record = await runWrite(loadRecord);
@@ -457,6 +485,9 @@ export function createVaultService({
     [MSG.VAULT_IMPORT]: (m) => importVault(m.json, m.masterPassword),
     [MSG.VAULT_IMPORT_ITEMS]: (m) => importItems(m.items, m.vault),
     [MSG.VAULT_EXPORT_PLAIN]: (m) => exportPlain(m.format, m.masterPassword),
+    [MSG.VAULT_CREATE_VAULT]: (m) => addVault(m.name, m.hue),
+    [MSG.VAULT_UPDATE_VAULT]: (m) => updateVault(m.id, m.name, m.hue),
+    [MSG.VAULT_DELETE_VAULT]: (m) => deleteVault(m.id, m.moveTo ?? null, m.deleteItems ?? false),
     [MSG.SETTINGS_GET]: () => getSettings(),
     [MSG.SETTINGS_SET]: (m) => setSettings(m.patch),
     [MSG.ACTIVITY_PING]: () => ({}),
@@ -465,7 +496,7 @@ export function createVaultService({
   const ACTIVE = new Set([
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
-    MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
+    MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
   ]);
   const handlers = {};
   for (const [type, fn] of Object.entries(table)) {

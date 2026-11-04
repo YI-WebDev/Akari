@@ -16,6 +16,9 @@ export const MSG = Object.freeze({
   VAULT_IMPORT: 'vault/import',
   VAULT_IMPORT_ITEMS: 'vault/importItems', // items parsed from another manager's export
   VAULT_EXPORT_PLAIN: 'vault/exportPlain', // CSV / Bitwarden JSON, master password required
+  VAULT_CREATE_VAULT: 'vault/createVault',
+  VAULT_UPDATE_VAULT: 'vault/updateVault', // name and/or hue
+  VAULT_DELETE_VAULT: 'vault/deleteVault', // its items move to `moveTo`, or go with it only when `deleteItems` is true
 
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',
@@ -52,6 +55,7 @@ export const ERR = Object.freeze({
   FORBIDDEN: 'FORBIDDEN',
   NOT_ALLOWED: 'NOT_ALLOWED', // WebAuthn NotAllowedError (user cancelled / timed out)
   FALLBACK: 'FALLBACK', // let the browser's own WebAuthn handle the request
+  NOT_EMPTY: 'NOT_EMPTY', // a vault still holds items and the request said neither where to move them nor to delete them
   INTERNAL: 'INTERNAL',
 });
 
@@ -59,6 +63,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,
 });
+
+// Vaults (保管庫) the user can make: name length in characters, how many in all.
+export const VAULT_LIMITS = Object.freeze({ name: 40, count: 20 });
 
 export const DEFAULT_VAULTS = Object.freeze([
   { id: 'personal', name: '個人', hue: 55 },

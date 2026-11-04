@@ -6,7 +6,7 @@ import { send } from '../shared/api.js';
 import { typeOf, hasTemplate, fieldLabel } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
 import {
-  S, on, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets,
+  S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets,
   itemById, visibleItems, ensureSel, copyText, liveToken, live,
 } from './state.js';
 import { h, clear } from './views/dom.js';
@@ -507,6 +507,7 @@ function wire() {
   $('plusMenu').addEventListener('keydown', menuKeys);
   $('typeMenu').addEventListener('keydown', menuKeys);
   $('openSettings').addEventListener('click', () => { closeMenus(); openSettings(); });
+  $('manageVaults').addEventListener('click', () => { closeMenus(); openSettings({ page: 'vaults' }); });
   buildPlusMenu($('plusMenu'), { onNew: newItem, onGen: () => { closeMenus(); openGenerator({}); } });
   $('plusMenu').setAttribute('aria-label', t('menu.new', null, '新規作成'));
   $('typeMenu').setAttribute('aria-label', t('list.typeFilterMenu', null, '種類で絞り込む'));
@@ -602,11 +603,22 @@ function wire() {
       const data = await call(MSG.VAULT_GET_ALL);
       if (!live(token)) return;
       applyData(data);
+      saveUi();
+      renderVaultLabel();
       renderList({ animate: true });
       renderDetail({ animate: true });
+      emit('reloaded');
     } catch (e) {
       if (live(token)) toastError('保管庫を読み込めませんでした', errText(e));
     }
+  });
+  // A vault was added, renamed or recolored (views/vaults.js): items are unchanged.
+  on('vaultsChanged', () => {
+    if (S.vault !== 'all' && !S.vaults.some((v) => v.id === S.vault)) S.vault = 'all';
+    saveUi();
+    renderVaultLabel();
+    refreshList();
+    renderDetail();
   });
   on('settingsChanged', (key) => {
     if (key === 'autoLockMinutes') ping(true);
