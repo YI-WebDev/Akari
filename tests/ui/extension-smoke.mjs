@@ -20,7 +20,7 @@ const step = (name) => { steps.push(name); console.log('…', name); };
 
 try {
   let page = await ext.context.newPage(); // replaced by a fresh popup in the 「しない」 restart step
-  await page.setViewportSize({ width: 600, height: 430 });
+  await page.setViewportSize({ width: 680, height: 480 });
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('crash', () => errors.push('popup page crashed'));
@@ -474,7 +474,7 @@ try {
       await new Promise((r) => setTimeout(r, 500));
       page = await ext.context.newPage();
       page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-      await page.setViewportSize({ width: 600, height: 430 });
+      await page.setViewportSize({ width: 680, height: 480 });
       await page.goto(ext.url('src/popup/popup.html'));
     };
     await restart();

@@ -19,8 +19,8 @@
   --surface-soft: rgba(255, 214, 186, .08);
   --hover-on-surface: rgba(255, 200, 160, .07);
   --grid-line: rgba(255, 214, 186, .035);   /* the 16px background grid */
-  --line: rgba(255, 214, 186, .08);          /* hairlines inside boxes */
-  --rule: rgba(255, 214, 186, .09);          /* header / column / status borders */
+  --line: rgba(255, 214, 186, .1);           /* hairlines inside boxes */
+  --rule: rgba(255, 214, 186, .11);          /* header / column / status borders */
   --border: rgba(255, 214, 186, .12);        /* buttons, boxes */
   --border-strong: rgba(255, 214, 186, .16);
   --menu-ring: rgba(255, 214, 186, .14);
@@ -28,10 +28,10 @@
 
   --text: #F2E8DE;
   --text-2: #D7CABD;          /* secondary values */
-  --text-muted: #B9AA9B;      /* icon buttons, secondary labels */
-  --text-dim: #9C8D7F;        /* row subtitles */
-  --text-soft: #8A7B6D;       /* field labels, hints */
-  --text-faint: #7D6F62;      /* placeholders */
+  --text-muted: #C4B6A7;      /* icon buttons, secondary labels */
+  --text-dim: #AE9F90;        /* row subtitles */
+  --text-soft: #A39484;       /* field labels, hints */
+  --text-faint: #8A7B6D;      /* placeholders */
 
   --accent: #FF7A45;          /* 灯 */
   --accent-strong: #FF9A6E;   /* hover, links */

@@ -49,7 +49,7 @@ const browser = await launchBrowser();
 const errors = [];
 
 async function open(cfg = {}, { reducedMotion = 'no-preference' } = {}) {
-  const ctx = await browser.newContext({ viewport: { width: 600, height: 430 }, deviceScaleFactor: 1, reducedMotion });
+  const ctx = await browser.newContext({ viewport: { width: 680, height: 480 }, deviceScaleFactor: 1, reducedMotion });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`[${cfg.name}] ${m.text()}`); });

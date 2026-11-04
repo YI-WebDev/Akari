@@ -64,7 +64,7 @@ export function scrambleWith(key, target, ms, render, glyphs = GLYPHS) {
   step();
 }
 
-/** Confetti-like burst from the centre of `el`, drawn inside `root` (the 600×430 app). */
+/** Confetti-like burst from the centre of `el`, drawn inside `root` (the 680×480 app). */
 export function burst(root, el) {
   if (!root || !el || reducedMotion()) return;
   const r = el.getBoundingClientRect();
