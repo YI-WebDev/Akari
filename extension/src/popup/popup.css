@@ -311,6 +311,19 @@ svg { display: block; }
 .f-link { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .f-note { font-size: 11px; color: var(--text-2); line-height: 1.6; user-select: text; white-space: pre-wrap; word-break: break-word; }
 .f-btns { display: flex; gap: 2px; }
+/* ウェブサイト: every address of a login in one box, each a pill that opens it */
+.w-list { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.w-url {
+  min-width: 0; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 5px;
+  border: 1px solid rgba(255, 214, 186, .1); background: rgba(255, 214, 186, .03); color: var(--link); font-size: 11.5px;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.w-url svg { flex: none; stroke: var(--text-soft); transition: stroke .15s, transform .25s var(--spring); }
+.w-url:hover { border-color: var(--accent-line); background: rgba(255, 122, 69, .06); color: var(--link-hover); }
+.w-url:hover svg { stroke: var(--accent); transform: translate(1px, -1px); }
+.app .w-url:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent-line); }
+.w-url.plain { color: var(--text-2); }
+.w-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* template field names run longer than ユーザー名 / パスワード */
 .box.tpl .f-row { grid-template-columns: 80px minmax(0, 1fr) auto; }
 .box.tpl .f-row.wide { grid-template-columns: 80px minmax(0, 1fr); }
