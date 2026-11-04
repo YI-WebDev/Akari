@@ -328,7 +328,16 @@
       return { moved: moved, deleted: before - db.items.length, vaults: clone(db.vaults) };
     },
     'settings/get': function () { return clone(db.settings); },
-    'settings/set': function (m) { Object.assign(db.settings, m.patch || {}); return clone(db.settings); },
+    'settings/set': async function (m) {
+      var patch = m.patch || {};
+      // "ロックしない" (-1) keeps the key on the device: the master password is asked again (mock: anything but "wrong").
+      if (patch.autoLockMinutes === -1 && db.settings.autoLockMinutes !== -1) {
+        await sleep(400);
+        if (!m.masterPassword || m.masterPassword === 'wrong') throw AkErr('BAD_PASSWORD', 'Wrong master password');
+      }
+      Object.assign(db.settings, patch);
+      return clone(db.settings);
+    },
     'clipboard/scheduleClear': function (m) { console.log('[mock] clipboard clear in', m.seconds, 's'); return {}; },
     'activity/ping': function () { needUnlocked(); return {}; },
     'autofill/matches': async function () {

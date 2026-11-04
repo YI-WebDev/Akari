@@ -229,6 +229,29 @@ const scenarios = {
     await page.fill('#pwNext', 'kotatsu-mikan');
     await settle(page, 500);
     await shot(page, 'settings-password');
+    await page.click('#pwToggle');
+
+    // 自動ロック「しない」: asks for the master password first and says what it means
+    const lockChip = (v) => page.locator(`[data-setting="autoLockMinutes"] [data-value="${v}"]`);
+    await lockChip(-1).click();
+    expect(await page.locator('#neverForm').isVisible(), 'しない opens the confirmation');
+    expect(await lockChip(-1).getAttribute('aria-checked') === 'false', 'not switched before the password');
+    expect(/再起動してもひらいたまま/.test(await page.locator('#neverWarn').textContent()), 'warning shown');
+    await page.click('#neverSubmit');
+    expect(await page.locator('#neverErr').textContent() === 'マスターパスワードを入力してください', 'empty password');
+    await page.fill('#neverPw', 'wrong');
+    await page.click('#neverSubmit');
+    await page.waitForFunction(() => document.getElementById('neverErr').textContent === 'マスターパスワードが違います');
+    await page.fill('#neverPw', 'kotatsu-mikan-2024');
+    await settle(page, 300);
+    await shot(page, 'settings-never');
+    await page.click('#neverSubmit');
+    await page.waitForSelector('#neverForm[hidden]', { state: 'attached' });
+    expect(await lockChip(-1).getAttribute('aria-checked') === 'true', 'しない selected');
+    expect(await page.evaluate(() => window.__AKARI_DB__.settings.autoLockMinutes) === -1, 'saved');
+    await lockChip(15).click();
+    await page.waitForFunction(() => window.__AKARI_DB__.settings.autoLockMinutes === 15);
+    expect(await page.locator('#neverForm').isHidden(), 'other choices need no password');
     await ctx.close();
   },
   async vaults() {

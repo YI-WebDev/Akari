@@ -141,13 +141,22 @@
     <div id="setMain" class="set-scroll">
       <div class="set-row">
         <div class="set-label">自動ロック</div>
-        <div class="chips" role="radiogroup" aria-label="自動ロック" data-setting="autoLockMinutes">
-          <button type="button" role="radio" data-value="1">1分</button>
-          <button type="button" role="radio" data-value="5">5分</button>
-          <button type="button" role="radio" data-value="15">15分</button>
-          <button type="button" role="radio" data-value="30">30分</button>
-          <button type="button" role="radio" data-value="60">60分</button>
-          <button type="button" role="radio" data-value="0">ブラウザを閉じたとき</button>
+        <div class="set-body">
+          <div class="chips" role="radiogroup" aria-label="自動ロック" data-setting="autoLockMinutes">
+            <button type="button" role="radio" data-value="1">1分</button>
+            <button type="button" role="radio" data-value="5">5分</button>
+            <button type="button" role="radio" data-value="15">15分</button>
+            <button type="button" role="radio" data-value="30">30分</button>
+            <button type="button" role="radio" data-value="60">60分</button>
+            <button type="button" role="radio" data-value="0">ブラウザを閉じたとき</button>
+            <button type="button" role="radio" data-value="-1">しない</button>
+          </div>
+          <!-- "しない" (NEVER_LOCK) is confirmed here with the master password -->
+          <form id="neverForm" class="set-form never-form" hidden novalidate>
+            <p id="neverWarn" class="set-warn"></p>
+            <div class="field"><input id="neverPw" type="password" placeholder="マスターパスワード" aria-label="マスターパスワード" autocomplete="current-password"></div>
+            <div class="form-foot"><span id="neverErr" class="field-err" role="alert"></span><button id="neverCancel" class="btn-text" type="button">キャンセル</button><button id="neverSubmit" class="btn-primary btn-sm danger" type="submit">ロックしない</button></div>
+          </form>
         </div>
       </div>
       <div class="set-row">

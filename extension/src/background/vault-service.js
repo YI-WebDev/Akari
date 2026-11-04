@@ -6,7 +6,7 @@
 // decrypted VaultData is cached in memory and rebuilt lazily from that DEK.
 
 import { register, AkariError } from './router.js';
-import { ERR, MSG, DEFAULT_SETTINGS } from '../shared/messages.js';
+import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK } from '../shared/messages.js';
 import { toB64, fromB64 } from '../shared/bytes.js';
 import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
 import {
@@ -20,6 +20,9 @@ import { toBitwardenJson } from '../lib/export/bitwarden.js';
 export const VAULT_KEY = 'akari.vault';
 export const SETTINGS_KEY = 'akari.settings';
 export const SESSION_KEY = 'akari.session';
+// "ロックしない" only: the vault key kept in storage.local, so the vault opens again after a
+// browser restart. Removed by any lock and by choosing another auto-lock setting.
+export const KEEP_KEY = 'akari.keep';
 export const AUTOLOCK_ALARM = 'akari-autolock';
 
 const REARM_THROTTLE_MS = 30000;
@@ -32,7 +35,7 @@ const MAX_IMPORT_CHARS = 20 * 1024 * 1024;
 // Only these keys are read back or stored; anything else in an old settings object
 // (e.g. the retired `theme`) is dropped on the next read/write.
 const SETTING_RULES = {
-  autoLockMinutes: (v) => [0, 1, 5, 15, 30, 60].includes(v),
+  autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
   clipboardClearSeconds: (v) => [0, 10, 30, 60].includes(v),
 };
 
@@ -96,8 +99,15 @@ export function createVaultService({
   async function resume() {
     if (locking) await locking;
     const g = gen;
-    const s = (await session.get(SESSION_KEY))[SESSION_KEY];
-    if (!isObject(s) || typeof s.dek !== 'string') return null;
+    let s = (await session.get(SESSION_KEY))[SESSION_KEY];
+    let kept = false;
+    if (!isObject(s) || typeof s.dek !== 'string') {
+      // "ロックしない": after a browser restart the session is empty; the kept key opens the vault.
+      if ((await getSettings()).autoLockMinutes !== NEVER_LOCK) return null;
+      s = (await local.get(KEEP_KEY))[KEEP_KEY];
+      if (!isObject(s) || typeof s.dek !== 'string') return null;
+      kept = true;
+    }
     const record = await loadRecord();
     let c = null;
     if (record) {
@@ -110,9 +120,10 @@ export function createVaultService({
     }
     if (g !== gen) return cache;
     if (!c) {
-      await session.remove(SESSION_KEY);
+      await (kept ? local.remove(KEEP_KEY) : session.remove(SESSION_KEY));
       return null;
     }
+    if (kept) await session.set({ [SESSION_KEY]: { dek: s.dek } });
     cache = c;
     return c;
   }
@@ -138,7 +149,7 @@ export function createVaultService({
   async function lock() {
     gen++;
     cache = null;
-    const done = Promise.all([session.remove(SESSION_KEY), chrome.alarms.clear(AUTOLOCK_ALARM)]);
+    const done = Promise.all([session.remove(SESSION_KEY), local.remove(KEEP_KEY), chrome.alarms.clear(AUTOLOCK_ALARM)]);
     const mine = done.then(() => {}, () => {});
     locking = mine;
     try {
@@ -154,6 +165,16 @@ export function createVaultService({
     raw.fill(0);
   }
 
+  /** Under "ロックしない", keep `dek` on this device too; a lock that lands meanwhile wins. */
+  async function keepIfNeverLock(dek) {
+    if ((await getSettings()).autoLockMinutes !== NEVER_LOCK) return;
+    const g = gen;
+    const raw = await exportDek(dek);
+    await local.set({ [KEEP_KEY]: { dek: toB64(raw) } });
+    raw.fill(0);
+    if (g !== gen) await local.remove(KEEP_KEY);
+  }
+
   async function startSession(dek, data) {
     if (locking) await locking;
     const g = gen;
@@ -165,6 +186,7 @@ export function createVaultService({
     gen++;
     cache = { dek, data };
     failures = 0;
+    await keepIfNeverLock(dek);
     await armAutoLock(true);
     for (const cb of unlockedListeners) {
       try {
@@ -196,7 +218,7 @@ export function createVaultService({
     if (!force && t - lastArm < REARM_THROTTLE_MS) return;
     lastArm = t;
     const { autoLockMinutes } = await getSettings();
-    // 0 = lock only when the browser closes (storage.session is cleared then).
+    // 0 = lock only when the browser closes (storage.session is cleared then); NEVER_LOCK = not even then.
     if (autoLockMinutes > 0) await chrome.alarms.create(AUTOLOCK_ALARM, { delayInMinutes: autoLockMinutes });
     else await chrome.alarms.clear(AUTOLOCK_ALARM);
   }
@@ -253,16 +275,26 @@ export function createVaultService({
     return out;
   }
 
-  function setSettings(patch) {
+  async function setSettings(patch, masterPassword) {
     if (!isObject(patch)) throw fail(ERR.INVALID, 'patch must be an object');
     for (const [key, value] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTING_RULES, key) || !SETTING_RULES[key](value)) throw fail(ERR.INVALID, 'Invalid setting: ' + key);
+    }
+    // Keeping the vault key on this device is the vault owner's call: an unlocked popup left
+    // open is not enough, the master password must be typed again.
+    if (patch.autoLockMinutes === NEVER_LOCK && (await getSettings()).autoLockMinutes !== NEVER_LOCK) {
+      await ensureUnlocked();
+      if (!(await verifyMasterPassword(masterPassword))) throw fail(ERR.BAD_PASSWORD, 'Wrong master password');
     }
     return runSettings(async () => {
       const current = await getSettings();
       const next = { ...current, ...patch };
       await local.set({ [SETTINGS_KEY]: next });
-      if (next.autoLockMinutes !== current.autoLockMinutes && !(await isLocked())) await armAutoLock(true);
+      if (next.autoLockMinutes !== current.autoLockMinutes) {
+        if (next.autoLockMinutes !== NEVER_LOCK) await local.remove(KEEP_KEY);
+        else if (cache) await keepIfNeverLock(cache.dek);
+        if (!(await isLocked())) await armAutoLock(true);
+      }
       return next;
     });
   }
@@ -313,6 +345,7 @@ export function createVaultService({
           return;
         }
         cache = { dek, data: c.data };
+        await keepIfNeverLock(dek); // the kept key must follow the new DEK
       });
       return {};
     });
@@ -489,7 +522,7 @@ export function createVaultService({
     [MSG.VAULT_UPDATE_VAULT]: (m) => updateVault(m.id, m.name, m.hue),
     [MSG.VAULT_DELETE_VAULT]: (m) => deleteVault(m.id, m.moveTo ?? null, m.deleteItems ?? false),
     [MSG.SETTINGS_GET]: () => getSettings(),
-    [MSG.SETTINGS_SET]: (m) => setSettings(m.patch),
+    [MSG.SETTINGS_SET]: (m) => setSettings(m.patch, m.masterPassword),
     [MSG.ACTIVITY_PING]: () => ({}),
   };
   // A successful call of these counts as user activity (re-arms auto-lock).
@@ -515,6 +548,11 @@ export function createVaultService({
     try {
       Promise.resolve(session.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' })).catch(() => {});
     } catch { /* older Chrome: TRUSTED_CONTEXTS is the default anyway */ }
+    // storage.local is readable from content scripts by default (they run in web pages' processes).
+    // Akari's never read it, and with "ロックしない" it holds the vault key: extension pages and the SW only.
+    try {
+      Promise.resolve(local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' })).catch(() => {});
+    } catch { /* not supported: content scripts still have no reason to read it */ }
     chrome.alarms?.onAlarm?.addListener(onAlarm);
   }
 

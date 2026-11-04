@@ -59,6 +59,10 @@ export const ERR = Object.freeze({
   INTERNAL: 'INTERNAL',
 });
 
+// autoLockMinutes value for "ロックしない": never lock on its own, also not when the browser
+// closes (the vault key is kept on this device). 0 = lock when the browser closes.
+export const NEVER_LOCK = -1;
+
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,

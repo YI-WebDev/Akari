@@ -1,7 +1,7 @@
 // Settings bottom sheet: auto-lock, clipboard clearing, master password, and the
 // 保管庫 / インポート / エクスポート pages (views/vaults.js, import.js, export.js) shown inside the same sheet.
 
-import { MSG, ERR, DEFAULT_SETTINGS } from '../../shared/messages.js';
+import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
 import { S, emit, call, strengthOf, errText, liveToken, live } from '../state.js';
 import { syncInert, keepFocus } from './dom.js';
 import { shake } from './fx.js';
@@ -88,6 +88,48 @@ async function setSetting(key, raw) {
   }
 }
 
+/* 自動ロック「しない」: the service worker keeps the vault key on this device, so it asks for
+   the master password; the form says what that means before anything changes. */
+
+function showNeverForm(open) {
+  const form = $('neverForm');
+  form.hidden = !open;
+  $('neverPw').value = '';
+  $('neverErr').textContent = '';
+  if (open) {
+    $('neverWarn').textContent = t('settings.neverWarn', null,
+      'ロックしないと、この PC でブラウザを開ける人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードやパスキーを使ったりできます。保管庫の鍵はこの PC に保存され、ブラウザを再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。');
+    $('neverPw').focus();
+  }
+}
+
+async function enableNeverLock(e) {
+  e.preventDefault();
+  const pw = $('neverPw');
+  const err = $('neverErr');
+  const fail = (msg) => { err.textContent = msg; shake(pw.closest('.field')); pw.focus(); };
+  if (!pw.value) return fail(t('settings.neverNeedPw', null, 'マスターパスワードを入力してください'));
+  const btn = $('neverSubmit');
+  btn.disabled = true;
+  err.textContent = '';
+  const token = liveToken();
+  try {
+    const next = await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: pw.value });
+    if (!live(token)) return;
+    S.settings = { ...DEFAULT_SETTINGS, ...next };
+    showNeverForm(false);
+    syncChips();
+    emit('settingsChanged', 'autoLockMinutes');
+    toast(t('settings.neverDone', null, 'ロックしない設定にしました'), t('settings.neverDoneSub', null, 'ブラウザを再起動してもひらいたままになります'));
+  } catch (e2) {
+    if (!live(token)) return;
+    if (e2?.code === ERR.BAD_PASSWORD) fail(t('settings.neverBadPw', null, 'マスターパスワードが違います'));
+    else err.textContent = t('settings.neverFailed', { why: errText(e2) }, '変更できませんでした（{why}）');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function setExpanded(btn, form, open) {
   btn.setAttribute('aria-expanded', String(open));
   form.hidden = !open;
@@ -141,6 +183,7 @@ let restoreFocus = null;
 /** Open the sheet on the settings list, or straight on 'import' / 'export'. */
 export function openSettings({ page: start = 'main' } = {}) {
   syncChips();
+  showNeverForm(false);
   resetPwForm();
   setExpanded($('pwToggle'), $('pwForm'), false);
   showPage('main', { focus: false });
@@ -167,6 +210,7 @@ export function closeSettings() {
   sheet.classList.remove('open', 'dragging');
   sheet.setAttribute('aria-hidden', 'true');
   if (!$('genSheet').classList.contains('open')) $('scrim').classList.remove('on');
+  showNeverForm(false);
   resetPwForm();
   showPage('main', { focus: false });
   syncInert();
@@ -185,9 +229,16 @@ export function initSettings() {
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
     group.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-value]');
-      if (b) setSetting(group.dataset.setting, b.dataset.value);
+      if (!b) return;
+      const lockOff = group.dataset.setting === 'autoLockMinutes' && Number(b.dataset.value) === NEVER_LOCK;
+      if (lockOff && S.settings.autoLockMinutes !== NEVER_LOCK) return showNeverForm(true);
+      if (group.dataset.setting === 'autoLockMinutes') showNeverForm(false);
+      setSetting(group.dataset.setting, b.dataset.value);
     });
   }
+  $('neverForm').addEventListener('submit', enableNeverLock);
+  $('neverPw').addEventListener('input', () => { $('neverErr').textContent = ''; });
+  $('neverCancel').addEventListener('click', () => showNeverForm(false));
   $('pwToggle').addEventListener('click', () => {
     const open = $('pwToggle').getAttribute('aria-expanded') !== 'true';
     setExpanded($('pwToggle'), $('pwForm'), open);
