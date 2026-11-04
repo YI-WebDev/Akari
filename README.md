@@ -19,8 +19,6 @@
   <a href="#安全性">安全性</a>
   ·
   <a href="#開発">開発</a>
-  ·
-  <a href="#既知の制限">既知の制限</a>
 </p>
 
 </div>
@@ -68,22 +66,3 @@ node tests/ui/screenshot.mjs        # 画面のスクリーンショット（tes
 ```
 
 アイテムの種類は `extension/src/shared/item-types.js` の定義から、検証・取り込み・書き出し・画面まで作られます。画面の文言は表示言語の切り替えに備えて `extension/src/shared/i18n.js` の `t()` を通します。
-
-## 既知の制限
-
-- KeePass は XML のみ（.kdbx は不可）。Argon2id で保護された Bitwarden JSON とパスワード付き ZIP は読めず、添付ファイルと Proton Pass のパスキーは取り込まない
-- iframe 内の WebAuthn はブラウザ標準に任せる。ロック中はログイン画面を開いてもパスキーのカードは出ない
-- 自動入力（ポップアップ・ショートカット）はトップフレームのみ。認証コードは自動入力しない
-- Google Authenticator の書き出し（`otpauth-migration://`）は未対応
-- クリップボードの消去は、あとから別のものをコピーしていても消す
-
-## サードパーティ
-
-| 名前 | ライセンス | 場所 |
-| --- | --- | --- |
-| [jsQR](https://github.com/cozmo/jsQR) | Apache-2.0 | `extension/src/third_party/` |
-| [OpenPGP.js](https://github.com/openpgpjs/openpgpjs) | LGPL-3.0-or-later | `extension/src/third_party/openpgp.js` |
-| [Public Suffix List](https://publicsuffix.org/) | MPL-2.0 | `extension/src/shared/psl-data.js` |
-| JetBrains Mono / M PLUS 1 Code | SIL OFL 1.1 | `extension/src/assets/fonts/` |
-
-どれも `scripts/` のスクリプトで再生成できます（フォントを除く）。
