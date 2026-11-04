@@ -180,12 +180,33 @@ function totpRow(it) {
   return row;
 }
 
-function urlRow(it) {
-  const href = safeHttpUrl(it.url);
-  const value = href
-    ? h('a', { class: 'f-link', href, target: '_blank', rel: 'noreferrer noopener', title: href, onclick: (e) => openUrl(e, href) }, it.url)
-    : h('span', { class: 'f-value' }, it.url);
-  return h('div', { class: 'f-row wide' }, h('span', { class: 'f-label' }, 'URL'), value);
+// Extra fields that are more addresses of the same login: imports keep a login's second,
+// third… URL there (Proton Pass, Bitwarden, 1Password, KeePass, NordPass label them "URL").
+const URL_LABEL = /^(url|uri|website|web ?site|ウェブサイト|サイト|ホームページ)\s*\d*$/i;
+const isUrlExtra = (x) => !!x && !x.secret && URL_LABEL.test(str(x.label).trim())
+  && !!str(x.value).trim() && !str(x.value).includes('\n');
+
+/** A login's addresses in one box, each opening in a new tab (http/https only; others stay text). */
+function websitesRow(it) {
+  const seen = new Set();
+  const urls = [it.url, ...(Array.isArray(it.extra) ? it.extra : []).filter(isUrlExtra).map((x) => x.value)]
+    .map((u) => str(u).trim())
+    .filter((u) => u && !seen.has(u) && seen.add(u));
+  if (!urls.length) return null;
+  const list = h('div', { class: 'w-list', role: 'list', 'aria-label': t('detail.websites', null, 'ウェブサイト') });
+  // https:// and a bare trailing / are left out so similar addresses differ before the ellipsis;
+  // http:// stays visible (not encrypted). The full address is in the tooltip.
+  const shortOf = (u) => u.replace(/^https:\/\//i, '').replace(/^([^/?#]+)\/$/, '$1');
+  for (const u of urls) {
+    const href = safeHttpUrl(u);
+    list.append(href
+      ? h('a', {
+        class: 'w-url', role: 'listitem', href, target: '_blank', rel: 'noreferrer noopener', title: href,
+        'aria-label': t('detail.openSite', { url: u }, '{url} を開く'), onclick: (e) => openUrl(e, href),
+      }, h('span', { class: 'w-text' }, shortOf(u)), icon('external', 11))
+      : h('span', { class: 'w-url plain', role: 'listitem', title: u }, h('span', { class: 'w-text' }, u)));
+  }
+  return h('div', { class: 'f-row wide top w-row' }, h('span', { class: 'f-label' }, t('detail.websites', null, 'ウェブサイト')), list);
 }
 
 function noteRow(note) {
@@ -311,16 +332,19 @@ function fieldRows(it) {
   return rows;
 }
 
-/** User-defined fields, after the template (or login) fields, in the same style. */
-function extraRows(it) {
+/**
+ * User-defined fields, after the template (or login) fields, in the same style. A web address
+ * in one is a link. `skip` leaves out fields shown elsewhere (a login's URLs: websitesRow).
+ */
+function extraRows(it, skip = () => false) {
   const rows = [];
   (Array.isArray(it.extra) ? it.extra : []).forEach((x, i) => {
     const value = str(x?.value);
-    if (!x || (!value && !x.label)) return;
+    if (!x || (!value && !x.label) || skip(x)) return;
     const label = str(x.label) || t('detail.extraUntitled', null, '（無題の項目）');
     const get = () => str(itemById(it.id)?.extra?.[i]?.value);
     if (x.secret && value) rows.push(secretRow({ key: 'x:' + i, label, get, multiline: value.includes('\n') }));
-    else rows.push(plainRow({ key: 'x:' + i, label, kind: 'text', display: value, copyValue: get }));
+    else rows.push(plainRow({ key: 'x:' + i, label, kind: /^https?:\/\//i.test(value.trim()) ? 'url' : 'text', display: value, copyValue: get }));
   });
   return rows;
 }
@@ -453,8 +477,9 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
     if (isWeak(it)) D.append(weakBox(it));
     box.append(userRow(it), passwordRow(it, animate));
     if (it.totp?.secret) box.append(totpRow(it));
-    if (it.url) box.append(urlRow(it));
-    box.append(...extraRows(it));
+    const sites = websitesRow(it);
+    if (sites) box.append(sites);
+    box.append(...extraRows(it, isUrlExtra));
     if (it.note) box.append(noteRow(it.note));
   } else if (hasTemplate(it.type)) {
     box.classList.add('tpl');

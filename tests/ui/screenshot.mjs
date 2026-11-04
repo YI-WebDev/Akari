@@ -164,6 +164,43 @@ const scenarios = {
     await shot(page, 'note');
     await ctx.close();
   },
+  async websites() {
+    // An imported login keeps its 2nd, 3rd… URL as extra fields labelled "URL" (Proton Pass, Bitwarden…).
+    const { page, ctx } = await open({
+      name: 'websites',
+      seedPatch: {
+        google: {
+          url: 'https://myaccount.google.com/u/0/security',
+          extra: [
+            { label: 'URL', value: 'https://myaccount.google.com/', secret: false },
+            { label: 'URL', value: 'https://accounts.google.com/', secret: false },
+            { label: 'URL', value: 'https://myaccount.google.com/', secret: false }, // a duplicate shows once
+            { label: 'URL', value: 'androidapp://com.google.android.gm', secret: false }, // not a web page: text, no link
+            { label: '管理画面', value: 'https://admin.google.com/', secret: false }, // another field with an address: a link there
+            { label: '合言葉', value: 'kumo', secret: true },
+          ],
+        },
+      },
+    });
+    await page.waitForSelector('.row');
+    await page.click('[data-id="google"]');
+    await settle(page, 900);
+    const urls = page.locator('#detail .w-row .w-url');
+    expect(await urls.count() === 4, 'the login URL, two more, and the app address in one box');
+    expect(await page.locator('#detail .w-row a.w-url').count() === 3, 'web addresses are links');
+    expect(await page.locator('#detail .w-row .w-url.plain').textContent() === 'androidapp://com.google.android.gm', 'others stay text');
+    expect(await page.locator('#detail .f-row .f-label:text-is("URL")').count() === 0, 'no separate URL rows left');
+    expect(await page.locator('#detail .f-row:has(.f-label:text-is("管理画面")) a.f-link').count() === 1, 'an address in another field is a link');
+    const opened = [];
+    page.on('console', (m) => { const r = /\[mock\] tabs\.create (\S+)/.exec(m.text()); if (r) opened.push(r[1]); });
+    for (let i = 0; i < 3; i++) await page.locator('#detail .w-row a.w-url').nth(i).click();
+    await settle(page, 200);
+    expect(JSON.stringify(opened) === JSON.stringify([
+      'https://myaccount.google.com/u/0/security', 'https://myaccount.google.com/', 'https://accounts.google.com/',
+    ]), 'each opens its own address: ' + JSON.stringify(opened));
+    await shot(page, 'websites');
+    await ctx.close();
+  },
   async editor() {
     const { page, ctx } = await open({ name: 'editor' });
     await page.waitForSelector('.row');
