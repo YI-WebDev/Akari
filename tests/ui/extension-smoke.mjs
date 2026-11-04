@@ -306,6 +306,45 @@ try {
     assert.equal(saved.title, new URL(expected).hostname, 'title derived from the host');
   }
 
+  step('vaults: add, rename, then delete moving its item back (settings → 保管庫)');
+  {
+    const vaults = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.vaults);
+    await page.click('#vaultBtn');
+    await page.click('#manageVaults');
+    await page.waitForSelector('#vaultsPage:not([hidden]) .vm-row');
+    await page.click('#vmAdd');
+    await page.fill('#vmName', 'テスト用');
+    await page.click('.vm-hue[data-hue="200"]');
+    await page.click('#vmSubmit');
+    await page.waitForSelector('#vaultsPage .vm-row:has-text("テスト用")');
+    const made = (await vaults()).find((v) => v.name === 'テスト用');
+    assert.equal(made?.hue, 200, 'created with the chosen colour');
+    await page.click('#vaultsPage .vm-row:has-text("テスト用") [data-act="edit"]');
+    await page.fill('#vmName', 'テスト用2');
+    await page.click('#vmSubmit');
+    await page.waitForSelector('#vaultsPage .vm-row:has-text("テスト用2")');
+    assert.equal((await vaults()).find((v) => v.id === made.id)?.name, 'テスト用2', 'renamed in the vault');
+
+    // An item lands in it behind this page's back (another popup, an import): the page still
+    // shows it empty, so its delete must be refused instead of taking the item along.
+    const item = (await getAll()).find((i) => i.url === 'https://localhost:3000');
+    assert.equal((await sendMsg('vault/saveItem', { item: { id: item.id, vault: made.id } })).ok, true);
+    await page.click('#vaultsPage .vm-row:has-text("テスト用2") [data-act="delete"]');
+    assert.match(await page.locator('.vm-confirm').textContent(), /空の保管庫/, 'this page still thinks it is empty');
+    await page.click('#vmDelete');
+    await page.waitForSelector('.vm-confirm .vault-chip:has-text("個人に移す")');
+    assert.match(await page.locator('#vmErr').textContent(), /中身が変わりました/, 'refused, then asked again with the real count');
+    assert.equal((await getAll()).find((i) => i.id === item.id)?.vault, made.id, 'the item is still there');
+    await page.click('.vm-confirm .vault-chip:has-text("個人に移す")');
+    await page.click('#vmDelete');
+    await page.waitForFunction((id) => !document.querySelector(`#vaultsPage .vm-row[data-vault="${id}"]`), made.id);
+    assert.equal((await vaults()).some((v) => v.id === made.id), false, 'vault gone');
+    assert.equal((await getAll()).find((i) => i.id === item.id)?.vault, 'personal', 'its item moved to 個人');
+    await shot('vaults');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+  }
+
   step('autofill fills exactly the account the card shows (vault filter 個人)');
   fx = await serveStatic(join(ROOT, 'tests', 'fixtures', 'login'));
   {

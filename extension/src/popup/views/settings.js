@@ -1,5 +1,5 @@
 // Settings bottom sheet: auto-lock, clipboard clearing, master password, and the
-// インポート / エクスポート pages (views/import.js, views/export.js) shown inside the same sheet.
+// 保管庫 / インポート / エクスポート pages (views/vaults.js, import.js, export.js) shown inside the same sheet.
 
 import { MSG, ERR, DEFAULT_SETTINGS } from '../../shared/messages.js';
 import { S, emit, call, strengthOf, errText, liveToken, live } from '../state.js';
@@ -10,15 +10,18 @@ import { toast, toastError } from './toast.js';
 import { setTrail, revokeDownloads } from './io.js';
 import { initImport, openImport, resetImport, importBack } from './import.js';
 import { openExport, resetExport, exportBack } from './export.js';
+import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
+import { t } from '../../shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
 export const isSettingsOpen = () => $('setSheet').classList.contains('open');
 
-/* ── pages: the settings list, インポート, エクスポート ── */
+/* ── pages: the settings list, 保管庫, インポート, エクスポート ── */
 
 const PAGES = {
   main: { el: 'setMain', title: '設定', sub: 'akari config' },
+  vaults: { el: 'vaultsPage', title: t('vaults.title', null, '保管庫'), sub: 'akari vault' },
   import: { el: 'importPage', title: 'インポート', sub: 'akari import' },
   export: { el: 'exportPage', title: 'エクスポート', sub: 'akari export' },
 };
@@ -34,11 +37,15 @@ function showPage(name, { focus = true } = {}) {
   $('setSub').textContent = PAGES[name].sub;
   $('setBack').hidden = name === 'main';
   $('setBack').title = '戻る (alt+←)';
+  if (prev === 'vaults' && name !== 'vaults') resetVaults();
   if (prev === 'import' && name !== 'import') resetImport();
   if (prev === 'export' && name !== 'export') resetExport();
   if (name === 'main') {
     setTrail(null);
-    if (focus) ({ import: $('importOpen'), export: $('exportOpen') }[prev] || sheet.querySelector('[data-close]')).focus({ preventScroll: true });
+    const from = { vaults: $('vaultsOpen'), import: $('importOpen'), export: $('exportOpen') }[prev];
+    if (focus) (from || sheet.querySelector('[data-close]')).focus({ preventScroll: true });
+  } else if (name === 'vaults') {
+    openVaults({ focus });
   } else if (name === 'import') {
     openImport({ focus });
   } else {
@@ -47,6 +54,7 @@ function showPage(name, { focus = true } = {}) {
 }
 
 function back() {
+  if (page === 'vaults' && vaultsBack()) return;
   if (page === 'import' && importBack()) return;
   if (page === 'export' && exportBack()) return;
   showPage('main');
@@ -151,6 +159,7 @@ export function openSettings({ page: start = 'main' } = {}) {
  *  typed passwords, pending download URLs) is dropped here — also on lock (popup.js lockNow). */
 export function closeSettings() {
   const sheet = $('setSheet');
+  resetVaults();
   resetImport();
   resetExport();
   revokeDownloads();
@@ -187,12 +196,14 @@ export function initSettings() {
   });
   $('pwNext').addEventListener('input', updatePwMeter);
   $('pwForm').addEventListener('submit', changePassword);
+  $('vaultsOpen').addEventListener('click', () => showPage('vaults'));
   $('importOpen').addEventListener('click', () => showPage('import'));
   $('exportOpen').addEventListener('click', () => showPage('export'));
-  // Alt+← goes one step back on the import / export pages
+  // Alt+← goes one step back on the vaults / import / export pages
   $('setSheet').addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.altKey && e.key === 'ArrowLeft' && page !== 'main') { e.preventDefault(); back(); }
   });
   initImport({ close: closeSettings });
+  initVaults();
 }

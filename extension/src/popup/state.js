@@ -56,6 +56,7 @@ export const live = (token) => S.phase === 'main' && S.epoch === token;
 // Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
 const WRITES = new Set([
   MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+  MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
 ]);
 let writing = 0;
 
@@ -80,6 +81,7 @@ export function errText(e) {
     case ERR.NOT_FOUND: return 'アイテムが見つかりません';
     case ERR.INVALID: return '入力内容を確認してください';
     case ERR.DOMAIN_MISMATCH: return 'このサイトのアイテムではありません';
+    case ERR.NOT_EMPTY: return '保管庫の中身が変わりました。もう一度選んでください';
     default: return 'エラーが発生しました';
   }
 }

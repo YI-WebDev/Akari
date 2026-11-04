@@ -703,6 +703,33 @@ svg { display: block; }
 .set-nav .nav-arrow { color: var(--text-soft); margin-left: 2px; transition: transform .25s var(--spring), color .15s; }
 .set-nav:hover .nav-arrow, .set-nav:focus-visible .nav-arrow { color: var(--accent); transform: translateX(2px); }
 
+/* ───────── settings page: 保管庫 ───────── */
+.vm-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.vm-list > * + * { border-top: 1px solid var(--line); }
+.vm-row { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 6px 0 12px; }
+.vm-row .swatch { width: 10px; height: 10px; border-radius: 3px; }
+.vm-name { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vm-count { flex: none; margin-right: 4px; font-size: 10.5px; color: var(--text-soft); }
+.vm-row .vm-del:hover:not(:disabled) { background: rgba(255, 107, 91, .12); color: var(--danger); }
+.vm-form, .vm-confirm { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--bg-deep); animation: akt-rise .2s var(--ease-out); }
+.vm-form.vm-new { border: 1px solid var(--border); border-radius: 6px; }
+.vm-form .field { background: var(--bg); }
+.vm-hues { display: flex; gap: 4px; }
+.vm-hue {
+  width: 24px; height: 24px; flex: none; display: grid; place-items: center; padding: 0; border-radius: 5px;
+  border: 1px solid transparent; background: transparent; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.vm-hue::before { content: ''; width: 12px; height: 12px; border-radius: 3px; background: var(--sw); box-shadow: 0 0 8px var(--sw); }
+.vm-hue:hover { border-color: rgba(255, 214, 186, .2); }
+.vm-hue[aria-checked="true"] { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.app .vm-hue:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.vm-confirm .io-lead { color: var(--text); }
+.vault-chip.vm-purge[aria-checked="true"] { border-color: var(--danger-border); background: rgba(255, 107, 91, .1); color: var(--danger-text); }
+.vm-add { align-self: flex-start; height: 26px; font-size: 11px; padding: 0 10px; }
+.vm-add svg { stroke: var(--accent-strong); }
+.btn-primary.danger { background: var(--danger); }
+.btn-primary.danger:hover { box-shadow: 0 0 18px rgba(255, 107, 91, .5); }
+
 /* ───────── settings pages: インポート / エクスポート ───────── */
 .set-back { font-size: 11px; font-weight: 700; color: var(--accent-strong); }
 .trail { list-style: none; margin: 0 2px 0 0; padding: 0; display: flex; align-items: center; font-size: 10px; color: var(--text-faint); white-space: nowrap; }

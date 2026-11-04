@@ -231,6 +231,74 @@ const scenarios = {
     await shot(page, 'settings-password');
     await ctx.close();
   },
+  async vaults() {
+    const { page, ctx } = await open({ name: 'vaults' });
+    await page.waitForSelector('.row');
+    await settle(page, 400);
+    const allCount = () => page.locator('#filters [data-filter="all"] .count').textContent().then(Number);
+    const rowCount = (name) => page.locator(`#vaultsPage .vm-row:has-text("${name}") .vm-count`).textContent().then((s) => Number(s.match(/\d+/)[0]));
+    const total = await allCount();
+    await page.click('#vaultBtn');
+    await page.click('#manageVaults');
+    await page.waitForSelector('#setSheet.open #vaultsPage:not([hidden]) .vm-row');
+    await settle(page, 700);
+    expect(await page.locator('#vaultsPage .vm-row').count() === 3, 'the three default vaults');
+    expect(await page.locator('#setTitle').textContent() === '保管庫', 'page title');
+    await shot(page, 'vaults');
+
+    // add: a duplicate name is refused, then 趣味 in purple
+    await page.click('#vmAdd');
+    await page.fill('#vmName', ' 仕事 ');
+    await page.click('#vmSubmit');
+    expect(await page.locator('#vmErr').textContent() === '同じ名前の保管庫があります', 'duplicate name refused');
+    await page.fill('#vmName', '趣味');
+    expect(await page.locator('#vmErr').textContent() === '', 'typing clears the error');
+    await page.click('.vm-hue[data-hue="300"]');
+    await settle(page, 300);
+    await shot(page, 'vaults-add');
+    await page.press('#vmName', 'Enter');
+    await page.waitForSelector('#vaultsPage .vm-row:has-text("趣味")');
+    expect(await page.locator('#vaultsPage .vm-row').count() === 4, 'created');
+
+    // rename 家族
+    await page.click('#vaultsPage .vm-row:has-text("家族") [data-act="edit"]');
+    expect(await page.inputValue('#vmName') === '家族', 'edit form starts from the name');
+    await page.fill('#vmName', '家族・親戚');
+    await page.click('#vmSubmit');
+    await page.waitForSelector('#vaultsPage .vm-row:has-text("家族・親戚")');
+
+    // delete 仕事, moving its items to 趣味
+    const work = await rowCount('仕事');
+    expect(work > 0, 'work has items');
+    await page.click('#vaultsPage .vm-row:has-text("仕事") [data-act="delete"]');
+    await page.click('.vm-confirm .vault-chip:has-text("趣味に移す")');
+    expect(/移して削除/.test(await page.locator('#vmDelete').textContent()), 'move button label');
+    await settle(page, 300);
+    await shot(page, 'vaults-delete');
+    await page.click('#vmDelete');
+    await page.waitForFunction(() => !document.querySelector('#vaultsPage .vm-row[data-vault="work"]'));
+    await settle(page, 600);
+    expect(await rowCount('趣味') === work, 'items moved to 趣味');
+    expect(await allCount() === total, 'nothing lost');
+
+    // delete 家族・親戚 together with its items
+    const family = await rowCount('家族・親戚');
+    await page.click('#vaultsPage .vm-row:has-text("家族・親戚") [data-act="delete"]');
+    await page.click('.vm-confirm .vault-chip.vm-purge');
+    expect(new RegExp(`${family} 件ごと削除`).test(await page.locator('#vmDelete').textContent()), 'purge button label');
+    await page.click('#vmDelete');
+    await page.waitForFunction(() => document.querySelectorAll('#vaultsPage .vm-row').length === 2);
+    await settle(page, 600);
+    expect(await allCount() === total - family, 'items deleted with the vault');
+    await shot(page, 'vaults-after');
+
+    await page.keyboard.press('Escape');
+    await settle(page, 500);
+    await page.click('#vaultBtn');
+    const menu = await page.locator('#vaultItems').textContent();
+    expect(menu.includes('趣味') && !menu.includes('仕事') && !menu.includes('家族'), 'vault menu follows');
+    await ctx.close();
+  },
   async import() {
     const { page, ctx } = await open({ name: 'import' });
     await page.waitForSelector('.row');
