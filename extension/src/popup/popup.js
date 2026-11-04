@@ -414,7 +414,7 @@ function openMenu(which) {
   if (which === 'plus') resetPlusMenu(menu);
   if (which === 'type') {
     renderTypeFilterMenu();
-    // under the 種類 button, but never past the bottom of the 430px popup
+    // under the 種類 button, but never past the bottom of the 480px popup
     menu.style.maxHeight = '';
     const below = btn.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 4;
     const top = Math.max(48, Math.min(below, app.clientHeight - menu.offsetHeight - 6));
