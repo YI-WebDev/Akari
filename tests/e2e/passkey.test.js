@@ -3,8 +3,11 @@
 // page (no window); while locked, the consent window unlocks first.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash, createPublicKey, randomBytes, verify as nodeVerify } from 'node:crypto';
 import { launch, extensionMessenger, MASTER, sleep } from './helpers.js';
 import { startRpServer } from '../fixtures/webauthn-rp/server.js';
+import * as protonpass from '../../extension/src/lib/import/importers/protonpass.js';
+import { protonPasskeyEntry } from '../unit/_proton-passkey.js';
 
 let ext, send, rp, page;
 
@@ -300,4 +303,43 @@ test('locked: saving opens the window, and unlocking there counts as user verifi
   assert.equal(await win.locator(`${screen('create')} .uv`).isVisible(), false, 'no second prompt after unlocking here');
   await win.locator(`${screen('create')} #createPrimary`).click(); // auto-waits for the arming delay
   assert.equal(await flags, 0x04);
+});
+
+// A passkey made by Proton Pass, brought over with the Proton Pass importer: Chrome's WebCrypto
+// must accept the private key Akari rebuilds from Proton's record, and the signature must verify
+// with the public key the site registered when Proton created the passkey.
+test('a passkey imported from Proton Pass signs in on the card', async () => {
+  const jwk = await crypto.subtle.exportKey('jwk',
+    (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign'])).privateKey);
+  const credentialId = randomBytes(32);
+  const userHandle = randomBytes(16);
+  const entry = protonPasskeyEntry({ key: jwk, credentialId, rpId: 'localhost', userHandle, userName: 'proton-user' });
+  const json = { vaults: { s: { name: 'Proton', items: [{
+    itemId: 'i1', state: 1, createTime: 1700000000, modifyTime: 1700000000,
+    data: { type: 'login', metadata: { name: 'Proton RP', note: '' }, extraFields: [],
+      content: { itemEmail: '', itemUsername: 'proton-user', password: '', urls: [rp.url], totpUri: '', passkeys: [entry] } },
+  }] } } };
+  const parsed = await protonpass.parse({ name: 'data.json', bytes: new TextEncoder().encode(JSON.stringify(json)) }, {});
+  assert.deepEqual(parsed.warnings, []);
+  const vaults = (await send('vault/getAll')).data.vaults;
+  const res = await send('vault/importItems', { items: parsed.items, vault: vaults[0].id });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.passkeys, 1);
+
+  await page.bringToFront();
+  const assertion = page.evaluate(async (id) => {
+    const cred = await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname,
+      allowCredentials: [{ type: 'public-key', id: Uint8Array.from(atob(id), (c) => c.charCodeAt(0)) }],
+    } });
+    const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const r = cred.response;
+    return { id: cred.id, authData: b64(r.authenticatorData), clientDataJSON: b64(r.clientDataJSON), signature: b64(r.signature), userHandle: b64(r.userHandle) };
+  }, credentialId.toString('base64'));
+  const a = await pickFirst(page, assertion);
+  assert.equal(a.id, credentialId.toString('base64url'));
+  assert.equal(a.userHandle, userHandle.toString('base64'));
+  const signed = Buffer.concat([Buffer.from(a.authData, 'base64'), createHash('sha256').update(Buffer.from(a.clientDataJSON, 'base64')).digest()]);
+  const sitesKey = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y }, format: 'jwk' });
+  assert.equal(nodeVerify('sha256', signed, { key: sitesKey, dsaEncoding: 'der' }, Buffer.from(a.signature, 'base64')), true);
 });

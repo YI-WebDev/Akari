@@ -5,6 +5,7 @@
 //  - a bare data.json, or a CSV (type,name,url,email,username,password,note,totp,createTime,
 //    modifyTime,vault).
 //  - .pgp exports are decrypted by index.js first; a ZIP holding data.pgp is opened here.
+// Login passkeys (JSON only; the CSV has none) come over when they are ES256 on P-256, see below.
 // creditCard / identity / sshKey / wifi items map onto the Akari types of the same name. Proton's
 // other templates (API credential, database, server, bank account, passport, …) are exported as
 // "custom" items that only carry their fields; the template is recognised from the field names
@@ -13,6 +14,8 @@
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { readZip, findEntry } from '../zip.js';
 import { csvToObjects } from '../csv.js';
+import { decodeMsgpack } from '../msgpack.js';
+import { fromB64, toB64url, concat } from '../../../shared/bytes.js';
 import { L, typed, fromEntries, toDate, wifiSecurity, LABEL_RULES } from './_fields.js';
 
 /** Japanese names of kinds that are kept as secure notes. */
@@ -91,7 +94,115 @@ function detectTemplate(names) {
 const str = (v) => (v == null ? '' : String(v).trim());
 
 function makeRun() {
-  return { items: [], skipped: 0, converted: {}, badTotp: 0, passkeys: 0, attachments: 0 };
+  return { items: [], skipped: 0, converted: {}, badTotp: 0, badPasskeys: 0, attachments: 0 };
+}
+
+// --- passkeys (login content.passkeys) ------------------------------------------------------
+//
+// data.json writes a passkey's byte fields (content, credentialId, userHandle, userId) as
+// standard base64. `content` is Proton's own record (proton-pass-common, MessagePack with
+// named fields): { c: <inner record>, v: 1 }, the inner record being { key, cid, rid, uhd,
+// cnt, ext, un, udn } where `key` is the private COSE key { kty, alg, par: [[label, value]…] }.
+// Byte strings are arrays of numbers there; enum values are { t: <kind>, c: <value> }.
+// Akari signs with ES256 only, so a P-256 key is required; its private scalar (COSE -4)
+// becomes a PKCS8 key, the form the vault expects (the public key is derived from it).
+
+const MAX_PASSKEY_BYTES = 64 * 1024;
+
+/** Bytes from a Uint8Array, an array of numbers, or a (standard or URL-safe) base64 string. */
+function bytesOf(v) {
+  if (v instanceof Uint8Array) return v;
+  if (Array.isArray(v)) {
+    return v.length <= MAX_PASSKEY_BYTES && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) ? Uint8Array.from(v) : null;
+  }
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!s || s.length > MAX_PASSKEY_BYTES * 2 || !/^[A-Za-z0-9+/_-]+=*$/.test(s)) return null;
+  try {
+    const b = s.replace(/=+$/, '').replace(/-/g, '+').replace(/_/g, '/');
+    return fromB64(b + '='.repeat((4 - (b.length % 4)) % 4));
+  } catch {
+    return null;
+  }
+}
+
+const nonEmpty = (...values) => {
+  for (const v of values) {
+    const b = bytesOf(v);
+    if (b && b.length) return b;
+  }
+  return null;
+};
+
+/** { t, c } enum value → c when its kind is `t`. */
+const tagged = (v, t) => (v && typeof v === 'object' && v.t === t ? v.c : undefined);
+
+/** COSE integer value { t: 'int', c: { inner: <16 little-endian bytes> } } → Number, else null. */
+function coseInt(v) {
+  const inner = bytesOf(tagged(v, 'int')?.inner);
+  if (!inner || !inner.length || inner.length > 16) return null;
+  let n = 0n;
+  for (let i = inner.length - 1; i >= 0; i--) n = (n << 8n) | BigInt(inner[i]);
+  if (inner[inner.length - 1] & 0x80) n -= 1n << BigInt(inner.length * 8);
+  return n >= BigInt(Number.MIN_SAFE_INTEGER) && n <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(n) : null;
+}
+
+// PKCS8 PrivateKeyInfo for a P-256 key holding only the private scalar (RFC 5915 lets the
+// public key be left out): version 0, id-ecPublicKey + prime256v1, ECPrivateKey { 1, d }.
+const PKCS8_P256_HEAD = Uint8Array.of(
+  0x30, 0x41, 0x02, 0x01, 0x00,
+  0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+  0x04, 0x27, 0x30, 0x25, 0x02, 0x01, 0x01, 0x04, 0x20,
+);
+
+/** Proton's passkey record → the decoded inner record, or null. */
+function protonRecord(content) {
+  const bytes = bytesOf(content);
+  if (!bytes || !bytes.length || bytes.length > MAX_PASSKEY_BYTES) return null;
+  try {
+    const outer = decodeMsgpack(bytes);
+    if (!outer || outer.v !== 1) return null;
+    const inner = bytesOf(outer.c);
+    const rec = inner && decodeMsgpack(inner);
+    return rec && typeof rec === 'object' && !Array.isArray(rec) ? rec : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The P-256 private scalar of an ES256 COSE key, or null for any other kind of key. */
+function p256Scalar(key) {
+  if (!key || typeof key !== 'object' || tagged(key.kty, 'assign') !== 'EC2') return null;
+  if (key.alg != null && tagged(key.alg, 'assign') !== 'ES256') return null;
+  let crv = null, d = null;
+  for (const pair of Array.isArray(key.par) ? key.par : []) {
+    if (!Array.isArray(pair) || pair.length !== 2) continue;
+    const label = tagged(pair[0], 'int');
+    if (label === -1) crv = coseInt(pair[1]);
+    else if (label === -4) d = bytesOf(tagged(pair[1], 'bytes'));
+  }
+  return crv === 1 && d && d.length === 32 ? d : null;
+}
+
+/** One entry of content.passkeys → an ImportedItem passkey (model.js), or null. */
+function toPasskey(p, fallbackCreatedAt) {
+  if (!p || typeof p !== 'object') return null;
+  const rec = protonRecord(p.content);
+  const d = rec && p256Scalar(rec.key);
+  if (!d) return null;
+  // The ids inside the record are the ones Proton signed with; the outer copies are fallbacks.
+  const credentialId = nonEmpty(rec.cid, p.credentialId);
+  const userHandle = nonEmpty(rec.uhd, p.userHandle, p.userId);
+  const rpId = str(rec.rid || p.rpId).toLowerCase();
+  if (!credentialId || !userHandle || !rpId) return null;
+  return {
+    credentialId: toB64url(credentialId),
+    rpId,
+    userHandle: toB64url(userHandle),
+    userName: str(p.userName) || str(rec.un),
+    userDisplayName: str(p.userDisplayName) || str(rec.udn),
+    privateKey: toB64url(concat(PKCS8_P256_HEAD, d)),
+    createdAt: toMs(p.createTime) ?? fallbackCreatedAt,
+  };
 }
 
 /** One extra field { fieldName, type, data: { content | totpUri | timestamp } } → entry. */
@@ -157,6 +268,7 @@ function pushLogin(run, p) {
   const urls = [...new Set(p.urls.map(str).filter(Boolean))];
   run.items.push({
     type: 'login', title: p.title, url: urls[0] || '', username: p.username, password: p.password, totp,
+    passkeys: p.passkeys || [],
     fav: p.fav, createdAt: p.createdAt, updatedAt: p.updatedAt, note: p.note,
     extra: [...urls.slice(1).map((u) => ({ label: L('url', 'URL'), value: u, secret: false })), ...otpExtra, ...p.extra],
   });
@@ -248,7 +360,12 @@ function fromJson(run, json) {
       const fields = d.type === 'identity' ? extraFields.filter((f) => f && typeof f === 'object') : allFields(d, c);
 
       if (d.type === 'login') {
-        if (Array.isArray(c.passkeys)) run.passkeys += c.passkeys.length;
+        const passkeys = [];
+        for (const p of Array.isArray(c.passkeys) ? c.passkeys : []) {
+          const pk = toPasskey(p, base.createdAt);
+          if (pk) passkeys.push(pk);
+          else run.badPasskeys++;
+        }
         const email = str(c.itemEmail), user = str(c.itemUsername || c.username);
         const otherTotps = fields.filter((f) => f.type === 'totp').map((f) => f.data?.totpUri);
         const extra = fields.filter((f) => f.type !== 'totp').map((f) => toExtra(fieldEntry(f)));
@@ -258,6 +375,7 @@ function fromJson(run, json) {
           password: c.password,
           urls: Array.isArray(c.urls) ? c.urls : [],
           totps: [c.totpUri, ...otherTotps],
+          passkeys,
           extra: user && email ? [{ label: label('email'), value: email, secret: false }, ...extra] : extra,
         });
         continue;
@@ -341,7 +459,7 @@ export async function parse(file, ctx = {}) {
     else fromCsv(run, text);
   }
   const warnings = Object.entries(run.converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (run.passkeys) warnings.push(`Proton Pass のパスキー ${run.passkeys} 件は形式が異なるため読み込めませんでした`);
+  if (run.badPasskeys) warnings.push(`パスキー ${run.badPasskeys} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした`);
   if (run.attachments) warnings.push(`添付ファイル ${run.attachments} 件は読み込まれません`);
   if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はカスタムフィールドに残しました`);
   return { items: run.items, skipped: run.skipped, warnings };
