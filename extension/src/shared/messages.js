@@ -32,6 +32,7 @@ export const MSG = Object.freeze({
   AUTOFILL_REQUEST_FILL: 'autofill/requestFill',
   AUTOFILL_OFFER_SAVE: 'autofill/offerSave',
   AUTOFILL_CONFIRM_SAVE: 'autofill/confirmSave',
+  AUTOFILL_NOTE_USERNAME: 'autofill/noteUsername', // the username step of a two-step login
   // SW -> content script
   AUTOFILL_DO_FILL: 'autofill/doFill',
   AUTOFILL_FILL_BEST: 'autofill/fillBest',
