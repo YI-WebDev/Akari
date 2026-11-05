@@ -5,7 +5,7 @@
 
 import { MSG, ERR, VAULT_LIMITS } from '../../shared/messages.js';
 import { t } from '../../shared/i18n.js';
-import { S, on, call, emit, errText, liveToken, live, setItems } from '../state.js';
+import { S, on, call, emit, errText, liveToken, live, setItems, setVaults } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { vaultColor } from './format.js';
 import { shake } from './fx.js';
@@ -208,7 +208,7 @@ async function submit(e) {
       ? await call(MSG.VAULT_CREATE_VAULT, { name, hue: st.hue })
       : await call(MSG.VAULT_UPDATE_VAULT, { id: st.id, name, hue: st.hue });
     if (!live(token)) return;
-    S.vaults = res.vaults;
+    setVaults(res.vaults);
     st.mode = null;
     emit('vaultsChanged');
     render(`.vm-row[data-vault="${CSS.escape(res.vault.id)}"] [data-act="edit"]`);
@@ -233,7 +233,7 @@ async function doDelete(v, btn) {
     // refuses (NOT_EMPTY) if the vault holds items this popup does not know about yet.
     const res = await call(MSG.VAULT_DELETE_VAULT, { id: v.id, moveTo, deleteItems: n > 0 && moveTo === null });
     if (!live(token)) return;
-    S.vaults = res.vaults;
+    setVaults(res.vaults);
     st.mode = null;
     st.err = '';
     // The same change on the popup's copy, so the counts are right at once; then read everything again.

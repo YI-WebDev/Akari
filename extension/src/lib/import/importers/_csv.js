@@ -5,6 +5,7 @@ import { csvToObjects } from '../csv.js';
 import { ImportError, bytesToText, makeImported, parseOtp } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { typeOf } from '../../../shared/item-types.js';
+import { normKey, toDate, toMonth, wifiSecurity } from './_values.js';
 
 const has = (headers, c) => (Array.isArray(c) ? c.some((x) => headers.includes(x)) : headers.includes(c));
 
@@ -86,87 +87,17 @@ export function otpOf(value) {
   return { totp, extra: v && !totp ? [entry(t('import.label.otp', null, 'ワンタイムパスワード'), v, true)] : [] };
 }
 
-// ---- dates ----
-
-/** Label comparison key: NFKC, lower case, letters and digits only. */
-export const normKey = (s) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
-const monthNumber = (tok) => {
-  const t = tok.toLowerCase();
-  return t.length >= 3 && /^[a-z]+$/.test(t) ? MONTHS.findIndex((m) => m.startsWith(t)) + 1 : 0;
-};
-const pad = (n, w = 2) => String(n).padStart(w, '0');
-const fullYear = (y) => (y < 100 ? 2000 + y : y);
-const calendar = ({ y, m, d }) => y >= 1000 && y <= 9999 && m >= 1 && m <= 12
-  && (!d || (d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate()));
-
-/** Year / month / day (0 = absent) of a date written the common ways, or null when unsure. */
-function dateParts(v) {
-  const s = String(v ?? '').normalize('NFKC').trim();
-  if (!s || s.length > 64) return null;
-  let m = /^(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日?)?$/.exec(s)
-    || /^(\d{4})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?(?:[T\s].*)?$/.exec(s)
-    || /^(\d{4})(\d{2})(\d{2})$/.exec(s);
-  let p = null;
-  if (m) p = { y: +m[1], m: +m[2], d: m[3] ? +m[3] : 0 };
-  else if ((m = /^(\d{1,2})\s*[-/.]\s*(\d{4}|\d{2})$/.exec(s))) p = { y: fullYear(+m[2]), m: +m[1], d: 0 }; // 12/2030, 12/30
-  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s))) { // 31/12/2030 or 12/31/2030; 01/02/2030 is ambiguous
-    const [a, b] = [+m[1], +m[2]];
-    if (a > 12) p = { y: +m[3], m: b, d: a };
-    else if (b > 12 || a === b) p = { y: +m[3], m: a, d: b };
-  } else {
-    const tokens = s.split(/[\s,./-]+/).filter(Boolean);
-    const mi = tokens.findIndex((t) => monthNumber(t));
-    if (mi >= 0 && tokens.length <= 3) { // December,2030 · January,15,1990 · 15 January 1990
-      const nums = tokens.filter((_, i) => i !== mi);
-      if (nums.every((t) => /^\d+$/.test(t))) {
-        const year = nums.find((t) => t.length === 4);
-        const day = nums.find((t) => t.length <= 2);
-        if (year && nums.length === (day ? 2 : 1)) p = { y: +year, m: monthNumber(tokens[mi]), d: day ? +day : 0 };
-      }
-    }
-  }
-  return p && calendar(p) ? p : null;
-}
-
-/** → 'YYYY-MM' (a day, if present, is dropped) or null. */
-export function toMonth(v) {
-  const p = dateParts(v);
-  return p ? `${pad(p.y, 4)}-${pad(p.m)}` : null;
-}
-
-/** → 'YYYY-MM-DD', or null (a month without a day is not a date). */
-export function toDate(v) {
-  const p = dateParts(v);
-  return p?.d ? `${pad(p.y, 4)}-${pad(p.m)}-${pad(p.d)}` : null;
-}
-
 // ---- labelled values → template fields + custom fields ----
-
-/** "WPA2-Personal", "WPA2 PSK (AES)", "Open" … → one of the wifi.security option ids, or null. */
-function wifiSecurity(options, v) {
-  const n = normKey(v);
-  const id = (x) => options.find((o) => o.id === x)?.id ?? null;
-  const exact = options.find((o) => normKey(o.id) === n || normKey(o.label) === n);
-  if (exact) return exact.id;
-  if (/wpa3|sae/.test(n)) return id('wpa3');
-  if (/wpa2|rsn/.test(n)) return id('wpa2');
-  if (/wpa/.test(n)) return id('wpa');
-  if (/wep/.test(n)) return id('wep');
-  if (/^(open|none|nosecurity|noauth\w*|unsecured|オープン|無し|なし)$/.test(n)) return id('none');
-  return null;
-}
 
 /** A value fitted to the field's kind (selects → option id), or null when it does not fit. */
 function convert(fd, value) {
   const v = String(value ?? '');
   switch (fd.kind) {
-    case 'month': return toMonth(v);
-    case 'date': return toDate(v);
+    case 'month': return toMonth(v) || null;
+    case 'date': return toDate(v) || null;
     case 'number': { const d = v.replace(/[\s,]/g, ''); return /^\d+$/.test(d) ? d : null; }
     case 'select': {
-      if (fd.key === 'security') return wifiSecurity(fd.options, v);
+      if (fd.key === 'security') return wifiSecurity(v, fd.options) || null;
       const n = normKey(v);
       return fd.options.find((o) => normKey(o.id) === n || normKey(o.label) === n)?.id ?? null;
     }

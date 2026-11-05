@@ -3,7 +3,8 @@
 // chrome.alarms may clamp delays to >= 30 s, so a setTimeout also covers short
 // delays while the SW is alive; the alarm covers a SW that was shut down.
 
-import { register, AkariError } from './router.js';
+import { register } from './router.js';
+import { AkariError } from '../shared/errors.js';
 import { ERR, MSG } from '../shared/messages.js';
 import { getSettings } from './vault-service.js';
 
@@ -54,7 +55,7 @@ export function createClipboardService({
     await chrome.alarms.clear(CLIPBOARD_ALARM);
     await ensureOffscreen();
     try {
-      await chrome.runtime.sendMessage({ target: 'offscreen', type: 'offscreen/clearClipboard' });
+      await chrome.runtime.sendMessage({ target: 'offscreen', type: MSG.OFFSCREEN_CLEAR_CLIPBOARD });
     } finally {
       await chrome.offscreen.closeDocument().catch(() => {});
     }

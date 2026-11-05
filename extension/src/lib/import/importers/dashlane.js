@@ -10,7 +10,8 @@ import { ImportError, fieldsToNote, parseOtp, bytesToText, parseJson, isZip } fr
 import { readZip } from '../zip.js';
 import { csvToObjects, pick } from '../csv.js';
 import { personName } from '../../../shared/item-types.js';
-import { L, typed, fromEntries, monthOf, looksSecret } from './_fields.js';
+import { L, typed, fromEntries, looksSecret } from './_fields.js';
+import { monthOf } from './_values.js';
 
 /** Column → label for rows kept as notes (kinds with no Akari type) and for leftover columns. */
 const LABELS = {

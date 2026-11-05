@@ -2,7 +2,7 @@
 // 保管庫 / インポート / エクスポート pages (views/vaults.js, import.js, export.js) shown inside the same sheet.
 
 import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
-import { S, emit, call, strengthOf, errText, liveToken, live } from '../state.js';
+import { S, emit, call, strengthOf, errText, liveToken, live, setSettings, putSetting } from '../state.js';
 import { syncInert, keepFocus } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
@@ -72,17 +72,16 @@ function syncChips() {
 
 async function setSetting(key, raw) {
   const value = Number(raw);
-  const prev = S.settings[key];
-  if (prev === value) return;
-  S.settings = { ...S.settings, [key]: value };
+  if (S.settings[key] === value) return;
+  const prev = putSetting(key, value);
   syncChips();
   try {
     const next = await call(MSG.SETTINGS_SET, { patch: { [key]: value } });
-    if (next && typeof next === 'object') S.settings = { ...DEFAULT_SETTINGS, ...next };
+    if (next && typeof next === 'object') setSettings(next);
     syncChips();
     emit('settingsChanged', key);
   } catch (e) {
-    S.settings = { ...S.settings, [key]: prev };
+    putSetting(key, prev);
     syncChips();
     toastError('設定を保存できませんでした', errText(e));
   }
@@ -116,7 +115,7 @@ async function enableNeverLock(e) {
   try {
     const next = await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: pw.value });
     if (!live(token)) return;
-    S.settings = { ...DEFAULT_SETTINGS, ...next };
+    setSettings(next);
     showNeverForm(false);
     syncChips();
     emit('settingsChanged', 'autoLockMinutes');

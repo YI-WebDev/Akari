@@ -9,7 +9,7 @@ import {
 } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import {
-  S, emit, call, itemById, vaultById, strengthOf, reuseOf, isWeak, copyText, forSave, replaceItem, mergeSaved, errText,
+  S, emit, call, setSel, itemById, vaultById, strengthOf, reuseOf, isWeak, copyText, forSave, replaceItem, mergeSaved, errText,
   liveToken, live,
 } from '../state.js';
 import { h, clear, icon, copyGlyph } from './dom.js';
@@ -393,9 +393,10 @@ function maskOf(v, { card, multiline }) {
 /**
  * A secret value: masked until the eye reveals it (scramble), copied with clipboard
  * auto-clear. Card numbers are grouped in 4s when shown and copied as digits only;
- * secret-multiline values reveal into the scrollable mono box.
+ * secret-multiline values reveal into the scrollable mono box. `mirror` (an element elsewhere,
+ * the card face's CVV) shows the same masked or revealed value.
  */
-function secretRow({ key, label, get, multiline = false, card = false, sub = '' }) {
+function secretRow({ key, label, get, multiline = false, card = false, sub = '', mirror = null }) {
   view.scr.add(key);
   const text = h(multiline ? 'div' : 'span', {
     class: multiline ? 'ml-box secret' : 'pw-text' + (card ? ' card-num' : ''), 'aria-label': label,
@@ -419,6 +420,10 @@ function secretRow({ key, label, get, multiline = false, card = false, sub = '' 
     } else {
       cancelScramble(key);
       text.textContent = maskOf(v, { card, multiline });
+    }
+    if (mirror) {
+      mirror.textContent = on ? v : masked(v);
+      mirror.classList.toggle('revealed', on);
     }
   };
   eye.addEventListener('click', () => {
@@ -451,7 +456,8 @@ function fieldRows(it) {
     const get = () => str(itemById(it.id)?.fields?.[fd.key]);
     if (isSecretKind(fd.kind)) {
       const card = fd.format === 'card';
-      rows.push(secretRow({ key: 'f:' + fd.key, label, get, multiline: fd.kind === 'secret-multiline', card, sub: card ? cardBrand(v) : '' }));
+      const mirror = it.type === 'card' && fd.key === 'cvv' ? view.els.faceCvv || null : null; // the card face's CVV
+      rows.push(secretRow({ key: 'f:' + fd.key, label, get, multiline: fd.kind === 'secret-multiline', card, sub: card ? cardBrand(v) : '', mirror }));
       continue;
     }
     const display = displayOf(it.type, fd, v);
@@ -480,14 +486,20 @@ function extraRows(it, skip = () => false) {
   return rows;
 }
 
-/** The card's face in one line: brand · •••• 1234 · MM/YY. */
+/**
+ * The card's face in one line: brand · •••• 1234 · CVV ••• · MM/YY. The CVV stays masked
+ * like its field row below and is revealed with that row's eye (secretRow's `mirror`).
+ */
 function cardLine(it) {
   const x = it.fields || {};
   const num = digitsOnly(x.number);
   const exp = str(x.expiry);
-  if (!num && !exp) return null;
+  const cvv = str(x.cvv);
+  if (!num && !exp && !cvv) return null;
   const days = daysUntil(exp);
   const brand = cardBrand(num);
+  const cvvText = cvv ? h('span', { class: 'cl-cvv-v' }, masked(cvv)) : null;
+  view.els.faceCvv = cvvText;
   return h('div', {
     class: 'cardline' + (days != null && days < 0 ? ' expired' : ''), dataset: { f: '' }, vars: { '--h': String(hueOf(it)) },
     'aria-hidden': 'true', // the same facts are in the field rows below
@@ -496,6 +508,7 @@ function cardLine(it) {
   h('span', { class: 'cl-brand' }, brand || typeLabel('card')),
   num ? h('span', { class: 'cl-num' }, maskTail(num)) : null,
   h('span', { class: 'grow' }),
+  cvv ? h('span', { class: 'cl-cvv' }, h('span', { class: 'cl-k' }, t('detail.cardCvv', null, 'CVV')), cvvText) : null,
   exp ? h('span', { class: 'cl-exp' }, h('span', { class: 'cl-k' }, t('detail.cardExp', null, 'EXP')), formatIsoDate(exp, 'month')) : null,
   exp ? expiryTag(exp) : null);
 }
@@ -642,7 +655,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
 
 /** After the generator saved a new password: reveal it with a long scramble, then burst + toast. */
 export async function showPasswordUpdated(id, { password, label, bits }) {
-  S.sel = id;
+  setSel(id);
   renderDetail({ reveal: true, animate: true });
   const it = itemById(id);
   if (!view?.els.pwText) return;

@@ -29,7 +29,7 @@ const BW_PROTECTED = JSON.stringify({
 
 /** Settings sheet → インポート / エクスポート page. */
 async function openSheetPage(page, opener) {
-  await page.click('#vaultBtn');
+  await page.click('#menuBtn');
   await page.click('#openSettings');
   await page.waitForSelector('#setSheet.open');
   await page.waitForTimeout(500);
@@ -180,6 +180,92 @@ const scenarios = {
     expect(amazon.password !== 'amz2024' && amazon.passwordHistory[0].password === 'amz2024', 'updated now, old kept');
     await ctx.close();
   },
+  async health() {
+    const { page, ctx } = await open({ name: 'health', tabUrl: NEW_TAB });
+    await page.waitForSelector('.row');
+    // the vault menu only switches vaults; パスワード診断 is in ≡, with how many need action
+    await page.click('#vaultBtn');
+    await page.waitForSelector('#vaultMenu.open');
+    expect(await page.locator('#vaultMenu #openHealth, #vaultMenu #openSettings, #vaultMenu #manageVaults').count() === 0, 'vault menu: vaults only');
+    await page.keyboard.press('Escape');
+    await page.click('#menuBtn');
+    await page.waitForSelector('#mainMenu.open');
+    await settle(page, 400);
+    await shot(page, 'health-menu');
+    const menuCount = Number(await page.locator('#healthCount').textContent());
+    await page.click('#openHealth');
+    await page.waitForSelector('#healthSheet.open');
+    await settle(page, 900);
+    await shot(page, 'health');
+    // a screen of its own: the main list behind it is unchanged
+    expect(await page.locator('#typeLabel').textContent() === 'すべて', 'the list view did not change');
+    expect(await page.locator('.body').evaluate((el) => el.inert), 'the main view is inert behind the screen');
+    const tabCount = async (k) => parseInt(await page.locator(`#hs-tab-${k} .hs-n`).textContent(), 10);
+    const rows = () => page.locator('#hsList .hs-row');
+    const selected = () => page.locator('#hsList .hs-row[aria-selected="true"]').getAttribute('data-id');
+    // 要対応 first ("14/14": needing action / logins), the same number as in the ≡ menu
+    const action = await tabCount('action');
+    expect(await page.locator('#hs-tab-action').getAttribute('aria-selected') === 'true', '要対応 tab first');
+    expect(action > 0 && action === menuCount && action === await rows().count(), `要対応 ${action} = ≡ ${menuCount} = rows`);
+    expect(await page.evaluate(() => document.activeElement?.id) === 'hsList', 'the list has the keyboard');
+    // ↓ moves the selection and the pane follows
+    const second = await rows().nth(1).getAttribute('data-id');
+    await page.keyboard.press('ArrowDown');
+    expect(await selected() === second, '↓ selects the next login');
+    expect(await page.locator('.hs-title').textContent() === await rows().nth(1).locator('.row-title').textContent(), 'pane shows it');
+    // a weak login lists every issue and offers 強化する
+    await page.click('#hsList .hs-row[data-id="amazon"]');
+    await settle(page, 400);
+    expect(await page.locator('.hs-issues li[data-issue="weak"]').count() === 1, 'amazon: weak listed');
+    expect(await page.locator('.hs-acts .btn-fix').isVisible(), '強化する offered');
+    await shot(page, 'health-detail');
+    // tabs: → from 要対応 goes to 弱い, which lists only weak logins
+    await page.focus('#hs-tab-action');
+    await page.keyboard.press('ArrowRight');
+    await settle(page, 300);
+    expect(await page.locator('#hs-tab-weak').getAttribute('aria-selected') === 'true', '→ selects 弱い');
+    expect(await rows().count() === await tabCount('weak'), '弱い rows');
+    // 2FA なし → 2FA を追加 opens the editor in the main view; saved, the login leaves that tab
+    await page.click('#hs-tab-no2fa');
+    await settle(page, 400);
+    const no2fa = await tabCount('no2fa');
+    expect(no2fa === await rows().count(), `2FA なし ${no2fa} = rows`);
+    await shot(page, 'health-no2fa');
+    const fixed = await rows().first().getAttribute('data-id');
+    await rows().first().click();
+    await page.click('.hs-acts .add-2fa');
+    await page.waitForSelector('#healthSheet:not(.open)', { state: 'attached' });
+    await settle(page, 700);
+    expect(await page.locator('#edTotp').isVisible(), 'the editor is open on the login');
+    await page.fill('#edTotp', 'JBSWY3DPEHPK3PXP');
+    await page.click('.ed-foot .btn-primary');
+    await settle(page, 1300);
+    await page.click('#menuBtn');
+    await page.click('#openHealth');
+    await page.waitForSelector('#healthSheet.open');
+    await settle(page, 500);
+    expect(await page.locator('#hs-tab-no2fa').getAttribute('aria-selected') === 'true', 'the tab is kept');
+    expect(await tabCount('no2fa') === no2fa - 1 && await page.locator(`#hsList .hs-row[data-id="${fixed}"]`).count() === 0, 'fixed login gone from 2FA なし');
+    // Esc closes the screen and gives the keyboard back to ≡; nothing of it stays in the DOM
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    expect(await page.locator('#healthSheet.open').count() === 0, 'Esc closes');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'menuBtn', 'focus back on ≡');
+    expect(await page.locator('#hsList .hs-row').count() === 0, 'rows dropped on close');
+    // 強化する hands the login to the generator in the main view
+    await page.click('#menuBtn');
+    await page.click('#openHealth');
+    await page.waitForSelector('#healthSheet.open');
+    await page.click('#hs-tab-weak');
+    await page.click('#hsList .hs-row[data-id="amazon"]');
+    await page.click('.hs-acts .btn-fix');
+    await page.waitForSelector('#genSheet.open');
+    await settle(page, 600);
+    expect(await page.locator('#healthSheet.open').count() === 0, 'the screen closed');
+    expect(await page.locator('.list .row[aria-selected="true"]').getAttribute('data-id') === 'amazon', 'amazon open in the main view');
+    expect(await page.locator('#genSite').isVisible(), 'the generator changes the site password');
+    await ctx.close();
+  },
   async menus() {
     const { page, ctx } = await open({ name: 'menus' });
     await page.waitForSelector('.row');
@@ -188,6 +274,16 @@ const scenarios = {
     await settle(page, 500);
     await shot(page, 'vaultmenu');
     await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'vaultBtn', 'Esc returns to the vault button');
+    await page.click('#menuBtn');
+    await page.waitForSelector('#mainMenu.open');
+    await settle(page, 500);
+    await shot(page, 'mainmenu');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'openHealth', 'the menu opens on its first item');
+    await page.keyboard.press('ArrowDown');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'manageVaults', '↓ moves through the menu');
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'menuBtn', 'Esc returns to ≡');
     await page.click('#plusBtn');
     await settle(page, 500);
     await shot(page, 'plusmenu');
@@ -334,7 +430,7 @@ const scenarios = {
   async settings() {
     const { page, ctx } = await open({ name: 'settings' });
     await page.waitForSelector('.row');
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#openSettings');
     await settle(page, 900);
     await shot(page, 'settings');
@@ -375,7 +471,7 @@ const scenarios = {
     const allCount = () => page.locator('#viewCount').textContent().then(Number);
     const rowCount = (name) => page.locator(`#vaultsPage .vm-row:has-text("${name}") .vm-count`).textContent().then((s) => Number(s.match(/\d+/)[0]));
     const total = await allCount();
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#manageVaults');
     await page.waitForSelector('#setSheet.open #vaultsPage:not([hidden]) .vm-row');
     await settle(page, 700);
@@ -928,6 +1024,11 @@ const scenarios = {
     expect(await page.locator('.cardline .cl-brand').textContent() === 'JCB', 'brand on the card line');
     expect(await page.locator('.f-sub').textContent() === 'JCB', 'brand next to the label');
     expect(/08\/29$/.test(await page.locator('.cardline .cl-exp').textContent()), 'expiry MM/YY');
+    // the security code is on the card face too, masked until its row's eye reveals it
+    expect(await page.locator('.cardline .cl-cvv').textContent() === 'CVV•••', 'CVV masked on the card face');
+    await reveal('.f-row:has-text("セキュリティコード")');
+    await settle(page, 700);
+    expect(await page.locator('.cardline .cl-cvv-v').textContent() === '418', 'revealed on the face with its row');
     await reveal('.f-row:has(.card-num)');
     await settle(page, 800);
     await shot(page, 'detail-card-revealed');

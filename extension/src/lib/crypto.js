@@ -2,7 +2,7 @@
 // Master password --PBKDF2--> KEK (non-extractable) wraps a random DEK; the DEK encrypts the vault JSON.
 
 import { utf8, fromUtf8, toB64, fromB64, randomBytes } from '../shared/bytes.js';
-import { AkariError } from '../shared/api.js';
+import { AkariError } from '../shared/errors.js';
 import { ERR } from '../shared/messages.js';
 
 export const PBKDF2_ITERATIONS = 600000;

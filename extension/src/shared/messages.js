@@ -1,6 +1,7 @@
-// Message contract between extension contexts. PLAN.md §3 documents payloads.
-// Content scripts cannot import modules, so they hard-code these strings;
-// keep the values stable.
+// Message contract between extension contexts: the one list of message types.
+// Content scripts and the offscreen document are classic scripts and cannot import
+// modules, so they hard-code these strings; tests/unit/messages.test.js checks that every
+// such string is listed here and that every type here has a receiver. Keep values stable.
 
 export const MSG = Object.freeze({
   VAULT_STATUS: 'vault/status',
@@ -37,14 +38,18 @@ export const MSG = Object.freeze({
   AUTOFILL_NOTE_USERNAME: 'autofill/noteUsername', // the username step of a two-step login
   // SW -> content script
   AUTOFILL_DO_FILL: 'autofill/doFill',
-  AUTOFILL_FILL_BEST: 'autofill/fillBest',
 
   PASSKEY_CREATE: 'passkey/create',
   PASSKEY_GET: 'passkey/get',
   PASSKEY_REQUEST: 'passkey/request',
   PASSKEY_RESPOND: 'passkey/respond',
+  PASSKEY_ASSERT: 'passkey/assert', // bridge → SW: the user picked a passkey on the page card
+  PASSKEY_SAVE: 'passkey/save', // bridge → SW: the user saved a passkey on the page card
   PASSKEY_CANCEL: 'passkey/cancel', // bridge → SW when the page aborts
   PASSKEY_VERIFY: 'passkey/verify', // consent window → SW: master-password re-prompt for UV
+
+  // SW -> offscreen document
+  OFFSCREEN_CLEAR_CLIPBOARD: 'offscreen/clearClipboard',
 });
 
 export const ERR = Object.freeze({
@@ -60,6 +65,10 @@ export const ERR = Object.freeze({
   FALLBACK: 'FALLBACK', // let the browser's own WebAuthn handle the request
   NOT_EMPTY: 'NOT_EMPTY', // a vault still holds items and the request said neither where to move them nor to delete them
   INTERNAL: 'INTERNAL',
+  // WebAuthn: webauthn-page.js turns these into the DOMException the site expects
+  INVALID_STATE: 'INVALID_STATE', // InvalidStateError: the credential is already registered
+  SECURITY: 'SECURITY', // SecurityError: the rp id does not fit the page's origin
+  UV_REQUIRED: 'UV_REQUIRED', // the site requires user verification that was not given
 });
 
 // autoLockMinutes value for "ロックしない": never lock on its own, also not when the browser

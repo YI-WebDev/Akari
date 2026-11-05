@@ -4,7 +4,7 @@
 
 import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
-import { S, strengthOf } from '../state.js';
+import { S, strengthOf, setPhase } from '../state.js';
 import { h, clear, syncInert } from './dom.js';
 import { shake, wait, reducedMotion } from './fx.js';
 import { setMeter } from './meter.js';
@@ -176,7 +176,7 @@ async function finish(st, { created }) {
     if ($('gate').dataset.mode === 'setup') {
       // the vault exists now: never leave the user on a spent setup form
       try { await send(MSG.VAULT_LOCK); } catch { /* best effort */ }
-      S.phase = 'locked';
+      setPhase('locked');
       document.getElementById('app').dataset.phase = 'locked';
       showGate('lock');
       status($('lockStatus'), '保管庫を読み込めませんでした。マスターパスワードで解除してください', { err: true });

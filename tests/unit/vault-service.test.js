@@ -4,7 +4,7 @@ import {
   createVaultService, VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, AUTOLOCK_ALARM,
 } from '../../extension/src/background/vault-service.js';
 import { createClipboardService, CLIPBOARD_ALARM } from '../../extension/src/background/clipboard.js';
-import { AkariError } from '../../extension/src/background/router.js';
+import { AkariError } from '../../extension/src/shared/errors.js';
 import { MSG, NEVER_LOCK } from '../../extension/src/shared/messages.js';
 import { importDek, exportDek, decryptJson } from '../../extension/src/lib/crypto.js';
 import { fromB64, toB64, toB64url, randomBytes } from '../../extension/src/shared/bytes.js';

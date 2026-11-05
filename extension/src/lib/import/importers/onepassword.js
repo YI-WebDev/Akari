@@ -8,7 +8,8 @@
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { readZip, findEntry } from '../zip.js';
 import { hasTemplate, fieldLabel } from '../../../shared/item-types.js';
-import { L, toDate, toMonth, monthOf, fromEntries, LABEL_RULES } from './_fields.js';
+import { L, fromEntries, LABEL_RULES } from './_fields.js';
+import { toDate, toMonth, monthOf } from './_values.js';
 
 const LOGIN = 'login', PASSWORD = 'password', NOTE = 'note';
 

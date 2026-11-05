@@ -364,15 +364,23 @@
       menu.appendChild(row);
       field.rows.push({ row, id: it.id });
     }
-    // Key hints below the rows (the first row stays right under the field).
+    // Key hints below the rows (the first row stays right under the field), then the close button.
     const foot = el('div', 'foot');
     foot.append(el('span', 'mark', '灯'), el('span', 'grow'));
-    const keys = field.rows.length ? [['↑↓', '選択'], ['⏎', '入力'], ['esc', '閉じる']] : [['esc', '閉じる']];
+    const keys = field.rows.length ? [['↑↓', '選択'], ['⏎', '入力']] : [];
     for (const [key, label] of keys) {
       const hint = el('span');
       hint.append(el('span', 'k', key), label);
       foot.appendChild(hint);
     }
+    const close = el('button', 'x x-sm', '×');
+    close.type = 'button';
+    close.title = '閉じる (esc)';
+    close.setAttribute('aria-label', '閉じる');
+    close.addEventListener('click', (e) => {
+      if (e.isTrusted) closeMenu();
+    });
+    foot.appendChild(close);
     menu.appendChild(foot);
     field.root.appendChild(menu);
     field.menu = menu;
