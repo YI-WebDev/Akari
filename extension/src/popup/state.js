@@ -1,9 +1,13 @@
 // Popup state, a tiny event bus, and derived views over the decrypted items.
 // Decrypted items live only in this page's memory and are dropped on lock.
+//
+// Other modules read `S` freely but change it only through the functions below
+// (tests/unit/popup-structure.test.js checks that no other file assigns to S).
 
 import { send } from '../shared/api.js';
 import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { estimateStrength } from '../lib/strength.js';
+import { passwordHealth, ISSUES, ACTION_ISSUES } from '../lib/health.js';
 import { typeOf, searchTextOf } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
 import { groupIndex, normQuery, normMap } from './views/format.js';
@@ -39,6 +43,101 @@ try {
 
 export function saveUi() {
   try { localStorage.setItem(UI_KEY, JSON.stringify({ filter: S.filter, sort: S.sort, vault: S.vault, type: S.type })); } catch { /* ignore */ }
+}
+
+/* ── changes to S (the only writers) ── */
+
+/** 'setup' | 'locked' | 'main'. */
+export function setPhase(phase) {
+  S.phase = phase;
+}
+
+/** Lock: async work started before this must not touch state any more. */
+export function endEpoch() {
+  S.phase = 'locked';
+  S.epoch++;
+}
+
+export function setSettings(settings) {
+  S.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+}
+
+/** One setting, e.g. before the SW confirmed it; returns the previous value. */
+export function putSetting(key, value) {
+  const prev = S.settings[key];
+  S.settings = { ...S.settings, [key]: value };
+  return prev;
+}
+
+export function setVaults(vaults) {
+  S.vaults = Array.isArray(vaults) && vaults.length ? vaults : [...DEFAULT_VAULTS];
+  if (S.vault !== 'all' && !S.vaults.some((v) => v.id === S.vault)) S.vault = 'all';
+}
+
+/** Show one vault ('all' = every vault). Saved for the next popup. */
+export function setVaultFilter(id) {
+  S.vault = id;
+  saveUi();
+}
+
+/** The list's one view: filter 'all' | 'recent' | 'fav', or a type id with filter 'all'. */
+export function setListView(filter, type = 'all') {
+  S.filter = filter;
+  S.type = type;
+  saveUi();
+}
+
+export function setSort(sort) {
+  S.sort = sort;
+  saveUi();
+}
+
+/** The search box's text (the input element is the caller's). */
+export function setSearch(q) {
+  S.query = q;
+}
+
+export function setSiteQuery(q) {
+  S.siteQuery = q;
+}
+
+/** The item shown in the detail pane (in selection mode: the keyboard row). */
+export function setSel(id) {
+  S.sel = id;
+}
+
+/** The current tab's autofill matches, or null. */
+export function setAutofill(af) {
+  S.af = af;
+}
+
+/** 'idle' | 'run' | 'done' on the autofill card. */
+export function setAutofillState(state) {
+  if (S.af) S.af.state = state;
+}
+
+/** Selection mode (delete several) on or off; either way nothing is checked yet. */
+export function setPickMode(on) {
+  S.picking = on;
+  S.picked = new Set();
+}
+
+/** Check `ids` (all = true) or exactly these (replace = true). */
+export function setPicked(ids, { replace = false } = {}) {
+  if (replace) S.picked = new Set(ids);
+  else for (const id of ids) S.picked.add(id);
+}
+
+export function togglePicked(id) {
+  if (S.picked.has(id)) S.picked.delete(id);
+  else S.picked.add(id);
+}
+
+/** Uncheck rows that are no longer shown. Returns true when something was unchecked. */
+export function prunePicked(shown) {
+  const before = S.picked.size;
+  for (const id of S.picked) if (!shown.has(id)) S.picked.delete(id);
+  return S.picked.size !== before;
 }
 
 /* ── event bus ── */
@@ -93,6 +192,7 @@ export function errText(e) {
 /* ── derived data ── */
 const strengthCache = new Map();
 let reuse = new Map();
+let health = null; // the パスワード診断 report, see healthReport()
 
 export function strengthOf(pw) {
   if (!pw) return { bits: 0, level: 0, label: '—' };
@@ -110,11 +210,29 @@ export function setItems(items) {
 }
 
 export function recomputeReuse() {
+  health = null;
   reuse = new Map();
   for (const it of S.items) {
     if (it.type !== 'login' || !it.password) continue;
     reuse.set(it.password, (reuse.get(it.password) || 0) + 1);
   }
+}
+
+/* パスワード診断 (lib/health.js), over every vault so reuse across vaults counts; rebuilt when items change */
+export const healthReport = () => (health ??= passwordHealth(S.items, { strength: strengthOf }));
+/** The item's issues (ISSUES order), [] when it has none. */
+export const issuesOf = (it) => healthReport().issues.get(it?.id) || [];
+/** Logins per issue in the current vault, and how many need action: { logins, action, weak, reused, old, no2fa }. */
+export function healthCounts() {
+  const out = { logins: 0, action: 0, ...Object.fromEntries(ISSUES.map((k) => [k, 0])) };
+  for (const it of S.items) {
+    if (!inVault(it) || it.type !== 'login' || !it.password) continue;
+    out.logins++;
+    const list = issuesOf(it);
+    for (const k of list) out[k]++;
+    if (list.some((k) => ACTION_ISSUES.includes(k))) out.action++;
+  }
+  return out;
 }
 
 /** How many *other* items share this item's password. */
@@ -162,6 +280,7 @@ export function clearSecrets() {
   strengthCache.clear();
   normCache.clear();
   reuse = new Map();
+  health = null;
 }
 
 /* ── search (NFKC + lower-case, shared with the highlighter so offsets agree) ── */

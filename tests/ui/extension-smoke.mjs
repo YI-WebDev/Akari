@@ -216,7 +216,7 @@ try {
   assert.equal(await page.locator('.row').count(), 1);
 
   step('settings: clipboard clearing + backup export (no theme choice)');
-  await page.click('#vaultBtn');
+  await page.click('#menuBtn');
   await page.click('#openSettings');
   await page.waitForSelector('#setSheet.open');
   assert.equal(await page.locator('[data-setting="theme"]').count(), 0, 'theme choice removed');
@@ -253,7 +253,7 @@ try {
       'import-alpha.test,https://import-alpha.test/login,alpha@example.com,Alpha-Pass-1!x,first note',
       ',https://import-beta.test/,beta@example.com,Beta-Pass-2!x,',
     ].join('\n') + '\n';
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#openSettings');
     await page.waitForSelector('#setSheet.open');
     await page.click('#importOpen');
@@ -295,7 +295,7 @@ try {
 
   step('export CSV with the master password');
   {
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#openSettings');
     await page.waitForSelector('#setSheet.open');
     await page.click('#exportOpen');
@@ -334,7 +334,7 @@ try {
   step('vaults: add, rename, then delete moving its item back (settings → 保管庫)');
   {
     const vaults = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.vaults);
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#manageVaults');
     await page.waitForSelector('#vaultsPage:not([hidden]) .vm-row');
     await page.click('#vmAdd');
@@ -455,7 +455,7 @@ try {
     await page.press('#lockInput', 'Enter');
     await page.waitForSelector('#app[data-phase="main"]', { timeout: 30000 });
     await page.waitForSelector('#gate:not(.on)', { state: 'attached' });
-    await page.click('#vaultBtn');
+    await page.click('#menuBtn');
     await page.click('#openSettings');
     await page.waitForSelector('#setSheet.open');
     await page.click('[data-setting="autoLockMinutes"] [data-value="-1"]');

@@ -404,6 +404,8 @@ input::placeholder { color: var(--text-faint); }
   font-weight: 700;
 }
 .btn.primary .kbd { border-color: rgba(20, 16, 13, .35); color: var(--on-accent); }
+.kbd.x-ico { padding: 0; border-color: transparent; }
+.kbd.x-ico svg { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
 .btn.primary:hover { background: var(--accent); box-shadow: var(--shadow-accent-hover); }
 .btn.primary:focus-visible { box-shadow: 0 0 0 3px rgba(255, 122, 69, .35); }
 .btn:disabled { opacity: .5; cursor: default; box-shadow: none; }

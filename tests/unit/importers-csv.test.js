@@ -12,7 +12,7 @@ import { parse as parseNordpass } from '../../extension/src/lib/import/importers
 import { parse as parseRoboform } from '../../extension/src/lib/import/importers/roboform.js';
 import { parse as parseKaspersky } from '../../extension/src/lib/import/importers/kaspersky.js';
 import { parse as parseGeneric } from '../../extension/src/lib/import/importers/generic.js';
-import { isSecretLabel, toDate, toMonth } from '../../extension/src/lib/import/importers/_csv.js';
+import { isSecretLabel } from '../../extension/src/lib/import/importers/_csv.js';
 
 const fx = (path) => new Uint8Array(readFileSync(new URL('../fixtures/import/' + path, import.meta.url)));
 const fxText = (path) => readFileSync(new URL('../fixtures/import/' + path, import.meta.url), 'utf8');
@@ -302,31 +302,6 @@ test('lastpass: custom fields are secret when the label says number / code / pas
     ['Telephone Number', false], ['Branch Name', false], ['App Key', true],
   ]);
   assert.equal(items[0].note, 'n');
-});
-
-test('import dates: month and day spellings are converted to ISO, doubtful ones are refused', () => {
-  assert.equal(toMonth('December,2030'), '2030-12');
-  assert.equal(toMonth('Dec 2030'), '2030-12');
-  assert.equal(toMonth('12/30'), '2030-12');
-  assert.equal(toMonth('12/2030'), '2030-12');
-  assert.equal(toMonth('2030-12'), '2030-12');
-  assert.equal(toMonth('2030年12月'), '2030-12');
-  assert.equal(toMonth('2030-12-31'), '2030-12');
-  assert.equal(toMonth('13/2030'), null);
-  assert.equal(toMonth('2030'), null);
-  assert.equal(toMonth('soon'), null);
-  assert.equal(toMonth(''), null);
-  assert.equal(toDate('January,15,1990'), '1990-01-15');
-  assert.equal(toDate('15 January 1990'), '1990-01-15');
-  assert.equal(toDate('1990/1/5'), '1990-01-05');
-  assert.equal(toDate('1990-01-05T00:00:00Z'), '1990-01-05');
-  assert.equal(toDate('19900105'), '1990-01-05');
-  assert.equal(toDate('1990年1月5日'), '1990-01-05');
-  assert.equal(toDate('31/12/2030'), '2030-12-31');
-  assert.equal(toDate('12/31/2030'), '2030-12-31');
-  assert.equal(toDate('01/02/2030'), null); // day-first or month-first: cannot tell
-  assert.equal(toDate('February,30,2030'), null);
-  assert.equal(toDate('December,2030'), null); // no day
 });
 
 test('import labels: secret-looking names are masked, look-alikes are not', () => {

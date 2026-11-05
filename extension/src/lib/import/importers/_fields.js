@@ -1,86 +1,17 @@
 // Internal helpers shared by the structured importers (1Password, Bitwarden, Dashlane, Enpass,
-// Keeper, Proton Pass, KeePass): date / expiry / Wi-Fi security normalisation and a small
-// builder that fills a typed item's template fields and keeps everything else as `extra`.
-// Not an importer itself.
+// Keeper, Proton Pass, KeePass): a small builder that fills a typed item's template fields
+// (dates, months and the Wi-Fi security option via _values.js) and keeps everything else as
+// `extra`. Not an importer itself.
 
 import { t } from '../../../shared/i18n.js';
 import { typeOf, fieldLabel, optionLabel, isSecretKind, cardBrand } from '../../../shared/item-types.js';
+import { toDate, toMonth, wifiSecurity } from './_values.js';
 
+const pad = (n) => String(n).padStart(2, '0');
 const str = (v) => (v == null ? '' : String(v).trim());
 
 /** A label Akari gives a value itself (as opposed to one read from the file). */
 export const L = (key, ja, params = null) => t('import.label.' + key, params, ja);
-
-// --- dates ---------------------------------------------------------------------------------
-
-const pad = (n) => String(n).padStart(2, '0');
-
-function ymd(y, m, d) {
-  [y, m, d] = [Number(y), Number(m), Number(d)];
-  if (!Number.isInteger(y) || y < 1000 || y > 9999 || !(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return '';
-  if (new Date(Date.UTC(y, m - 1, d)).getUTCMonth() !== m - 1) return ''; // 2 月 30 日など
-  return `${y}-${pad(m)}-${pad(d)}`;
-}
-
-function ym(y, m) {
-  [y, m] = [Number(y), Number(m)];
-  return y >= 1000 && y <= 9999 && m >= 1 && m <= 12 ? `${y}-${pad(m)}` : ''; // same bounds as _csv.js and the SW
-}
-
-const fullYear = (y) => (String(y).length <= 2 ? 2000 + Number(y) : Number(y));
-
-/** Unix time (s or ms, negative allowed for dates before 1970) → UTC 'YYYY-MM-DD'. */
-function fromEpoch(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n === 0) return '';
-  const d = new Date(Math.abs(n) < 1e11 ? n * 1000 : n);
-  return Number.isFinite(d.getTime()) ? ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()) : '';
-}
-
-/**
- * 'YYYY-MM-DD' from unix seconds / ms, 'YYYY-M-D' (also / . and a trailing time), 'YYYYMMDD',
- * 'YYYY年M月D日', D/M/YYYY or M/D/YYYY when only one reading is possible, and English month
- * names ("1 January 2023"). '' when the value is not a recognisable date.
- */
-export function toDate(v) {
-  if (v == null || v === '' || typeof v === 'object') return '';
-  const s = str(v);
-  if (typeof v === 'number' || /^-?\d{9,13}(\.\d+)?$/.test(s)) return fromEpoch(v);
-  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:$|[T\s])/.exec(s) || /^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/.exec(s)
-    || /^(\d{4})(\d{2})(\d{2})$/.exec(s);
-  if (m) return ymd(m[1], m[2], m[3]);
-  m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
-  if (m) {
-    const [a, b] = [Number(m[1]), Number(m[2])];
-    if (a > 12 && b <= 12) return ymd(m[3], b, a);
-    if (b > 12 && a <= 12) return ymd(m[3], a, b);
-    return a === b ? ymd(m[3], a, b) : ''; // 01/02/2030 could be either; keep the raw text instead
-  }
-  if (/[a-z]{3}/i.test(s) && /\b\d{4}\b/.test(s) && /\b\d{1,2}\b/.test(s) && s.length < 40) {
-    const d = new Date(Date.parse(s));
-    if (Number.isFinite(d.getTime())) return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
-  }
-  return '';
-}
-
-/**
- * 'YYYY-MM' from 'YYYY-MM' / 'YYYY/MM' / 'YYYYMM' (1Password monthYear), 'MM/YY', 'MM/YYYY',
- * 'MMYY', 'MMYYYY', 'YYYY年M月', a full date or unix time. '' when not recognisable.
- */
-export function toMonth(v) {
-  if (v == null || v === '' || typeof v === 'object') return '';
-  const s = str(v);
-  let m = /^(\d{4})\s*[-/.]\s*(\d{1,2})$/.exec(s) || /^(\d{4})年\s*(\d{1,2})月$/.exec(s);
-  if (m) return ym(m[1], m[2]);
-  if ((m = /^(\d{1,2})\s*[-/.]\s*(\d{2}|\d{4})$/.exec(s))) return ym(fullYear(m[2]), m[1]);
-  if ((m = /^(\d{2})(\d{2})$/.exec(s))) return ym(fullYear(m[2]), m[1]);
-  if ((m = /^(\d{2})(\d{2})(\d{2})$/.exec(s))) return ym(m[1] + m[2], m[3]) || ym(m[2] + m[3], m[1]);
-  const d = toDate(v);
-  return d ? d.slice(0, 7) : '';
-}
-
-/** Card expiry given as separate month and year values. */
-export const monthOf = (month, year) => (str(month) && str(year) ? toMonth(`${str(month)}/${str(year)}`) : '');
 
 /** A month-only value stored in a date field: expiry → last day of the month, else the 1st. */
 function monthToDate(v, key) {
@@ -89,18 +20,6 @@ function monthToDate(v, key) {
   const [y, mo] = m.split('-').map(Number);
   const day = key === 'expiry' ? new Date(Date.UTC(y, mo, 0)).getUTCDate() : 1;
   return `${m}-${pad(day)}`;
-}
-
-/** Wi-Fi security text / code → the wifi.security option id, or '' when not recognisable. */
-export function wifiSecurity(v) {
-  const s = str(v).toLowerCase().replace(/[\s_-]/g, '');
-  if (!s) return '';
-  if (/wpa3/.test(s)) return 'wpa3';
-  if (/wpa2/.test(s)) return 'wpa2';
-  if (/^wpa/.test(s)) return 'wpa';
-  if (/^wep/.test(s)) return 'wep';
-  if (/^(none|open|nosecurity|unsecured|off|なし|オープン|セキュリティなし)$/.test(s)) return 'none';
-  return '';
 }
 
 // Field names that usually hold a secret (custom fields with no "hidden" flag of their own).

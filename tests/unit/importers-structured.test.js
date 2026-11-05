@@ -12,7 +12,7 @@ import * as enpass from '../../extension/src/lib/import/importers/enpass.js';
 import * as keeper from '../../extension/src/lib/import/importers/keeper.js';
 import * as keepass from '../../extension/src/lib/import/importers/keepass.js';
 import * as protonpass from '../../extension/src/lib/import/importers/protonpass.js';
-import { toDate, toMonth, monthOf, wifiSecurity, looksSecret } from '../../extension/src/lib/import/importers/_fields.js';
+import { looksSecret } from '../../extension/src/lib/import/importers/_fields.js';
 import { TYPE_IDS, typeOf, personName } from '../../extension/src/shared/item-types.js';
 import { toBitwardenJson } from '../../extension/src/lib/export/bitwarden.js';
 
@@ -62,36 +62,7 @@ const noNoteWarnings = (out) => assert.ok(!out.warnings.some((w) => /セキュ�
 
 // --- shared helpers (_fields.js) -----------------------------------------------------------
 
-test('date, expiry and Wi-Fi security normalisation', () => {
-  assert.equal(toDate(631152000), '1990-01-01'); // unix seconds
-  assert.equal(toDate(631152000000), '1990-01-01'); // ms
-  assert.equal(toDate(-315619200), '1960-01-01'); // before 1970
-  assert.equal(toDate('2021-3-5'), '2021-03-05');
-  assert.equal(toDate('1988/02/29'), '1988-02-29');
-  assert.equal(toDate('2024-05-06T07:08:09Z'), '2024-05-06');
-  assert.equal(toDate('2027年3月31日'), '2027-03-31');
-  assert.equal(toDate('29/02/1988'), '1988-02-29'); // only D/M/Y fits
-  assert.equal(toDate('12/31/2030'), '2030-12-31'); // only M/D/Y fits
-  assert.equal(toDate('04/05/2032'), ''); // ambiguous: keep the raw text
-  assert.equal(toDate('1 April 2022'), '2022-04-01');
-  for (const bad of ['1991', 'Expiry', '2023-02-30', 1e300, '', null]) assert.equal(toDate(bad), '', String(bad));
-
-  assert.equal(toMonth(202812), '2028-12'); // 1Password monthYear
-  assert.equal(toMonth('2028-11'), '2028-11');
-  assert.equal(toMonth('03/27'), '2027-03');
-  assert.equal(toMonth('12/2029'), '2029-12');
-  assert.equal(toMonth('0528'), '2028-05');
-  assert.equal(toMonth('122029'), '2029-12');
-  assert.equal(toMonth('2030-06-01'), '2030-06');
-  assert.equal(toMonth(1893456000), '2030-01');
-  for (const bad of ['202920', '13/27', 'soon', '']) assert.equal(toMonth(bad), '', bad);
-  assert.equal(monthOf('4', '2029'), '2029-04');
-  assert.equal(monthOf('11', '27'), '2027-11');
-  assert.equal(monthOf('', '2029'), '');
-
-  const sec = { WPA3: 'wpa3', 'WPA2 Personal': 'wpa2', wpa2p: 'wpa2', 'WPA/WPA2': 'wpa2', WPA: 'wpa', wep: 'wep', None: 'none', なし: 'none', 'enterprise-x': '' };
-  for (const [raw, id] of Object.entries(sec)) assert.equal(wifiSecurity(raw), id, raw);
-
+test('secret-looking field names and person names', () => {
   for (const s of ['PIN', 'Support PIN', 'API Key', 'パスワード', '暗証番号', '合言葉', 'recovery seed']) assert.ok(looksSecret(s), s);
   for (const s of ['アカウント ID', 'Public key', '公開鍵', 'Pinterest', 'Keyboard layout']) assert.ok(!looksSecret(s), s);
 

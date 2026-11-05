@@ -2,14 +2,7 @@
 // at import time; sw.js calls `installRouter` once.
 
 import { ERR } from '../shared/messages.js';
-
-export class AkariError extends Error {
-  constructor(code, message) {
-    super(message || code);
-    this.name = 'AkariError';
-    this.code = code;
-  }
-}
+import { AkariError } from '../shared/errors.js';
 
 const handlers = new Map();
 

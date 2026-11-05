@@ -16,7 +16,8 @@
 import { pick } from '../csv.js';
 import { isTruthy } from '../model.js';
 import { ITEM_TYPES, fieldLabel, hasTemplate, typeLabel } from '../../../shared/item-types.js';
-import { collect, entry, normKey, otpOf, readCsv, routeToTemplate } from './_csv.js';
+import { collect, entry, otpOf, readCsv, routeToTemplate } from './_csv.js';
+import { normKey } from './_values.js';
 
 const SYNONYMS = {
   title: ['title', 'name', 'itemname', 'sitename', 'label', 'サイト名', 'タイトル', '名前', '項目名', 'アカウント名'],

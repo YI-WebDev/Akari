@@ -1,11 +1,11 @@
 // Passkey consent window. Opened by background/passkey-service.js with ?req=<id>.
 // Site-controlled strings (rp name, user names) are only ever set via textContent.
 
-import { send, AkariError } from '../shared/api.js';
+import { send } from '../shared/api.js';
+import { AkariError } from '../shared/errors.js';
 import { MSG } from '../shared/messages.js';
 
 const PORT_PREFIX = 'akari-passkey:';
-const PASSKEY_VERIFY = 'passkey/verify'; // registered by background/passkey-service.js
 // Approve stays disabled this long after the window appears or regains focus, so a
 // keystroke or click aimed at the page cannot approve a window that just popped up.
 const ARM_MS = 600;
@@ -148,7 +148,7 @@ async function verifyUv() {
   if (!input.value) { uvError('パスワードを入力してください'); return false; }
   setBusy(true);
   try {
-    await send(PASSKEY_VERIFY, { reqId, masterPassword: input.value });
+    await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword: input.value });
     input.value = '';
     info.verified = true;
     return true;
@@ -356,7 +356,7 @@ async function unlock(event) {
     await send(MSG.VAULT_UNLOCK, { masterPassword });
     bootLine('保管庫を解除', 'PBKDF2 · AES-256-GCM');
     // Unlocking here is a fresh proof for this request (sets user verification).
-    const verified = await send(PASSKEY_VERIFY, { reqId, masterPassword }).then(() => true, () => false);
+    const verified = await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword }).then(() => true, () => false);
     if (verified) bootLine('本人確認', 'マスターパスワード');
     input.value = '';
     await $('lockOrb').animate(

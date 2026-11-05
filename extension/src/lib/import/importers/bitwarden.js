@@ -13,7 +13,8 @@ import { ImportError, parseOtp, toMs, bytesToText, parseJson, isZip } from '../m
 import { readZip, findEntry } from '../zip.js';
 import { utf8, fromUtf8, fromB64, toB64url, fromB64url, concat } from '../../../shared/bytes.js';
 import { TYPE_IDS, typeOf, fieldLabel, personName } from '../../../shared/item-types.js';
-import { L, typed, monthOf } from './_fields.js';
+import { L, typed } from './_fields.js';
+import { monthOf } from './_values.js';
 
 /**
  * Bitwarden key → Akari template key, per item type. Keys not listed become extra fields with

@@ -73,6 +73,7 @@
 .x { flex: none; margin-left: auto; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 1px solid transparent;
   border-radius: 5px; background: transparent; color: #9C8D7F; font-size: 15px; line-height: 1; cursor: pointer; transition: border-color .15s, color .15s; }
 .x:hover, .x:focus-visible { outline: none; border-color: rgba(255, 122, 69, .55); color: #F2E8DE; }
+.x-sm { margin-left: 0; width: 18px; height: 18px; font-size: 13px; border-radius: 3px; }
 .pk-rows { display: flex; flex-direction: column; gap: 2px; margin: 8px -6px 0; max-height: 50vh; overflow: auto;
   scrollbar-width: thin; scrollbar-color: rgba(255, 214, 186, .16) transparent; }
 .pk-rows .row { width: 100%; margin: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 12px; }

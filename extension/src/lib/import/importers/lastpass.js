@@ -7,7 +7,8 @@
 // - `extra` of a normal login is its note, fav is "1" for favourites
 
 import { isTruthy } from '../model.js';
-import { collect, fits, normKey, otpOf, readCsv, routeToTemplate, toMonth } from './_csv.js';
+import { collect, fits, otpOf, readCsv, routeToTemplate } from './_csv.js';
+import { normKey, toMonth } from './_values.js';
 
 const SHAPE = { all: ['url', 'username', 'password', 'name'], any: ['extra', 'grouping', 'fav'] };
 export const accepts = (headers) => fits(headers, SHAPE);
@@ -157,7 +158,7 @@ function structuredItem(r, lines) {
   const type = Object.hasOwn(NOTE_TYPES, kind) ? NOTE_TYPES[kind] : null;
   if (!type) return null;
   const { pairs, notes, loose } = structuredLines(lines);
-  const routed = pairs.map(([label, value]) => [label, type === 'card' && normKey(label) === 'startdate' ? toMonth(value) ?? value : value]);
+  const routed = pairs.map(([label, value]) => [label, type === 'card' && normKey(label) === 'startdate' ? toMonth(value) || value : value]);
   const { fields, extra } = routeToTemplate(type, routed, ALIASES[type], { numbers: true });
   return {
     type, title: r.name, fields, extra,

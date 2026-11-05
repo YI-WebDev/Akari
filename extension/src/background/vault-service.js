@@ -5,7 +5,8 @@
 // contexts only) so a SW restart does not force a new password prompt; the
 // decrypted VaultData is cached in memory and rebuilt lazily from that DEK.
 
-import { register, AkariError } from './router.js';
+import { register } from './router.js';
+import { AkariError } from '../shared/errors.js';
 import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK } from '../shared/messages.js';
 import { toB64, fromB64 } from '../shared/bytes.js';
 import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
@@ -42,13 +43,6 @@ const SETTING_RULES = {
 
 const fail = (code, message) => new AkariError(code, message);
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-
-// lib/ throws shared/api.js AkariError; the router only recognizes its own class.
-function toAkari(err) {
-  if (err instanceof AkariError) return err;
-  if (err && typeof err.code === 'string' && ERR[err.code] === err.code) return new AkariError(err.code, err.message);
-  return err;
-}
 
 /** Promise chain that runs jobs one at a time; a failing job does not block later ones. */
 function serialQueue() {
@@ -208,7 +202,7 @@ export function createVaultService({
       return opened;
     } catch (e) {
       if (e?.code === ERR.BAD_PASSWORD) failures++;
-      throw toAkari(e);
+      throw e;
     }
   }
 
@@ -255,7 +249,7 @@ export function createVaultService({
       await local.set({ [VAULT_KEY]: await sealData(record, c.dek, draft) });
       if (cache) cache.data = draft; // same DEK even if re-unlocked meanwhile
       return result;
-    }).catch((e) => { throw toAkari(e); });
+    });
   }
 
   function onUnlocked(cb) {
@@ -586,13 +580,9 @@ export function createVaultService({
   const handlers = {};
   for (const [type, fn] of Object.entries(table)) {
     handlers[type] = async (msg, sender) => {
-      try {
-        const out = await fn(msg || {}, sender);
-        if (ACTIVE.has(type)) await touchActivity();
-        return out;
-      } catch (e) {
-        throw toAkari(e);
-      }
+      const out = await fn(msg || {}, sender);
+      if (ACTIVE.has(type)) await touchActivity();
+      return out;
     };
   }
 

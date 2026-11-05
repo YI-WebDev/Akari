@@ -16,7 +16,8 @@ import { readZip, findEntry } from '../zip.js';
 import { csvToObjects } from '../csv.js';
 import { decodeMsgpack } from '../msgpack.js';
 import { fromB64, toB64url, concat } from '../../../shared/bytes.js';
-import { L, typed, fromEntries, toDate, wifiSecurity, LABEL_RULES } from './_fields.js';
+import { L, typed, fromEntries, LABEL_RULES } from './_fields.js';
+import { toDate, wifiSecurity } from './_values.js';
 
 /** Japanese names of kinds that are kept as secure notes. */
 const KINDS = {

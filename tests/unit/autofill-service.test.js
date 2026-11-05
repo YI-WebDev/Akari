@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AkariError } from '../../extension/src/background/router.js';
+import { AkariError } from '../../extension/src/shared/errors.js';
 import { createAutofillService, urlMatches } from '../../extension/src/background/autofill-service.js';
 
 const T0 = 1_700_000_000_000;

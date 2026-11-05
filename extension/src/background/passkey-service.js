@@ -17,20 +17,14 @@
 // ('discouraged') gets UV=0. A choice on the page card counts as verified because
 // it needs an unlocked vault, which itself took the master password.
 
-import { register, AkariError } from './router.js';
+import { register } from './router.js';
+import { AkariError } from '../shared/errors.js';
 import * as vaultService from './vault-service.js';
-import { MSG } from '../shared/messages.js';
+import { MSG, ERR } from '../shared/messages.js';
 import { toB64url, fromB64url, sha256 } from '../shared/bytes.js';
 import { isSecureOrigin, isValidRpId, hostnameOf, sameSite } from '../shared/domain.js';
 import { createCredential, getAssertion, buildClientDataJSON, COSE_ALG_ES256 } from '../lib/webauthn.js';
 
-// Not in shared/messages.js: sent by webauthn-bridge.js when the page aborts (AbortSignal),
-// and by the consent window to prove the master password for this request.
-export const PASSKEY_CANCEL = 'passkey/cancel';
-export const PASSKEY_VERIFY = 'passkey/verify';
-// Sent by webauthn-bridge.js when the user picks a passkey / saves one on the page card.
-export const PASSKEY_ASSERT = 'passkey/assert';
-export const PASSKEY_SAVE = 'passkey/save';
 export const PORT_PREFIX = 'akari-passkey:';
 const WINDOW_PATH = 'src/passkey/passkey.html';
 
@@ -43,11 +37,11 @@ const WINDOW_H = 520;
 const fail = (code, message) => new AkariError(code, message || code);
 
 function b64urlBytes(value, what) {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]*$/.test(value)) throw fail('INVALID', what + ' must be base64url');
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]*$/.test(value)) throw fail(ERR.INVALID, what + ' must be base64url');
   try {
     return fromB64url(value);
   } catch {
-    throw fail('INVALID', what + ' must be base64url');
+    throw fail(ERR.INVALID, what + ' must be base64url');
   }
 }
 
@@ -55,7 +49,7 @@ const str = (v, max = 256) => (v == null ? '' : String(v).slice(0, max));
 
 function credentialList(list) {
   if (list == null) return [];
-  if (!Array.isArray(list)) throw fail('INVALID', 'credential list must be an array');
+  if (!Array.isArray(list)) throw fail(ERR.INVALID, 'credential list must be an array');
   return list
     .filter((d) => d && (d.type == null || d.type === 'public-key'))
     .map((d) => toB64url(b64urlBytes(d.id, 'credential id')));
@@ -80,45 +74,45 @@ export function createPasskeyService({ chrome, vault }) {
   // ---------- validation of content-script requests ----------
 
   function callerOrigin(sender) {
-    if (!sender || sender.frameId !== 0 || !sender.tab) throw fail('SECURITY', 'top frame only');
+    if (!sender || sender.frameId !== 0 || !sender.tab) throw fail(ERR.SECURITY, 'top frame only');
     let origin = sender.origin;
     if (origin === undefined) {
       try { origin = new URL(sender.url).origin; } catch { origin = 'null'; }
     }
     // An opaque origin ('null', e.g. a CSP-sandboxed document) must not borrow the URL's origin.
-    if (!origin || origin === 'null' || !isSecureOrigin(origin)) throw fail('SECURITY', 'insecure origin');
+    if (!origin || origin === 'null' || !isSecureOrigin(origin)) throw fail(ERR.SECURITY, 'insecure origin');
     return origin;
   }
 
   function resolveRpId(requested, origin) {
     const rpId = requested == null ? hostnameOf(origin) : String(requested).toLowerCase();
-    if (!isValidRpId(rpId, origin)) throw fail('SECURITY', 'rpId not valid for this origin');
+    if (!isValidRpId(rpId, origin)) throw fail(ERR.SECURITY, 'rpId not valid for this origin');
     return rpId;
   }
 
   function parseChallenge(value) {
     const bytes = b64urlBytes(value, 'challenge');
-    if (bytes.length < 1 || bytes.length > MAX_CHALLENGE) throw fail('INVALID', 'bad challenge length');
+    if (bytes.length < 1 || bytes.length > MAX_CHALLENGE) throw fail(ERR.INVALID, 'bad challenge length');
     return toB64url(bytes);
   }
 
   function parseCreate(options, origin) {
-    if (!options || typeof options !== 'object') throw fail('INVALID', 'missing options');
+    if (!options || typeof options !== 'object') throw fail(ERR.INVALID, 'missing options');
     const rp = options.rp && typeof options.rp === 'object' ? options.rp : {};
     const rpId = resolveRpId(rp.id, origin);
     const user = options.user && typeof options.user === 'object' ? options.user : null;
-    if (!user) throw fail('INVALID', 'missing user');
+    if (!user) throw fail(ERR.INVALID, 'missing user');
     const userHandle = b64urlBytes(user.id, 'user.id');
-    if (userHandle.length < 1 || userHandle.length > 64) throw fail('INVALID', 'user.id must be 1-64 bytes');
+    if (userHandle.length < 1 || userHandle.length > 64) throw fail(ERR.INVALID, 'user.id must be 1-64 bytes');
     const challenge = parseChallenge(options.challenge);
 
     const params = options.pubKeyCredParams;
-    if (params != null && !Array.isArray(params)) throw fail('INVALID', 'pubKeyCredParams must be an array');
+    if (params != null && !Array.isArray(params)) throw fail(ERR.INVALID, 'pubKeyCredParams must be an array');
     // An empty list means "ES256 and RS256" per the spec.
     const es256 = !params || params.length === 0
       || params.some((p) => p && p.type === 'public-key' && p.alg === COSE_ALG_ES256);
-    if (!es256) throw fail('FALLBACK', 'ES256 not acceptable');
-    if (options.authenticatorSelection?.authenticatorAttachment === 'cross-platform') throw fail('FALLBACK', 'security key requested');
+    if (!es256) throw fail(ERR.FALLBACK, 'ES256 not acceptable');
+    if (options.authenticatorSelection?.authenticatorAttachment === 'cross-platform') throw fail(ERR.FALLBACK, 'security key requested');
 
     return {
       rpId,
@@ -133,7 +127,7 @@ export function createPasskeyService({ chrome, vault }) {
   }
 
   function parseGet(options, origin) {
-    if (!options || typeof options !== 'object') throw fail('INVALID', 'missing options');
+    if (!options || typeof options !== 'object') throw fail(ERR.INVALID, 'missing options');
     return {
       rpId: resolveRpId(options.rpId, origin),
       challenge: parseChallenge(options.challenge),
@@ -228,12 +222,12 @@ export function createPasskeyService({ chrome, vault }) {
 
   async function entryForWindow(msg, sender) {
     const entry = typeof msg?.reqId === 'string' ? pending.get(msg.reqId) : null;
-    if (!entry) throw fail('NOT_FOUND', 'request expired');
+    if (!entry) throw fail(ERR.NOT_FOUND, 'request expired');
     await entry.windowReady;
-    if (entry.done) throw fail('NOT_FOUND', 'request expired');
+    if (entry.done) throw fail(ERR.NOT_FOUND, 'request expired');
     const fromOwnPage = typeof sender?.url === 'string' && sender.url.startsWith(ownPageUrl());
     if (!fromOwnPage || sender.tab?.windowId == null || sender.tab.windowId !== entry.windowId) {
-      throw fail('FORBIDDEN', 'request belongs to another window');
+      throw fail(ERR.FORBIDDEN, 'request belongs to another window');
     }
     return entry;
   }
@@ -244,7 +238,7 @@ export function createPasskeyService({ chrome, vault }) {
     const origin = callerOrigin(sender);
     const req = { ...parseCreate(msg.options, origin), origin };
     // Conditional create (silent passkey upgrade after a password sign-in) is left to the browser.
-    if (msg.mediation === 'conditional') throw fail('FALLBACK', 'mediation not supported');
+    if (msg.mediation === 'conditional') throw fail(ERR.FALLBACK, 'mediation not supported');
     // An excluded credential is reported only after the user acts on the card or in the
     // window, so pages cannot probe silently which credentials Akari holds.
     const data = await readIfUnlocked();
@@ -258,16 +252,16 @@ export function createPasskeyService({ chrome, vault }) {
   async function handleGet(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseGet(msg.options, origin), origin };
-    if (msg.mediation === 'silent') throw fail('FALLBACK', 'mediation not supported');
+    if (msg.mediation === 'silent') throw fail(ERR.FALLBACK, 'mediation not supported');
     const data = await readIfUnlocked();
     if (data) {
       const found = passkeysFor(data, req.rpId, req.allow);
-      if (!found.length) throw fail('FALLBACK', 'no passkey for this site');
+      if (!found.length) throw fail(ERR.FALLBACK, 'no passkey for this site');
       touch();
       return { inline: { rpId: req.rpId, candidates: candidatesOf(data, found) } };
     }
     // Locked: whether Akari holds a passkey for this site is unknown until it is unlocked.
-    if (msg.mediation === 'conditional') throw fail('FALLBACK', 'locked');
+    if (msg.mediation === 'conditional') throw fail(ERR.FALLBACK, 'locked');
     return { credential: await startRequest('get', sender, msg, req) };
   }
 
@@ -275,9 +269,9 @@ export function createPasskeyService({ chrome, vault }) {
   async function handleSave(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseCreate(msg.options, origin), origin };
-    if (await vault.isLocked()) throw fail('LOCKED', 'unlock first');
+    if (await vault.isLocked()) throw fail(ERR.LOCKED, 'unlock first');
     const data = await vault.readData();
-    if (req.exclude.length && passkeysFor(data, req.rpId, req.exclude).length) throw fail('INVALID_STATE', 'already saved');
+    if (req.exclude.length && passkeysFor(data, req.rpId, req.exclude).length) throw fail(ERR.INVALID_STATE, 'already saved');
     touch();
     return { credential: await approveCreate({ req, verifiedAt: Date.now() }, msg.vault) };
   }
@@ -286,8 +280,8 @@ export function createPasskeyService({ chrome, vault }) {
   async function handleAssert(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseGet(msg.options, origin), origin };
-    if (typeof msg.credentialId !== 'string' || !msg.credentialId) throw fail('INVALID', 'credentialId required');
-    if (await vault.isLocked()) throw fail('LOCKED', 'unlock first');
+    if (typeof msg.credentialId !== 'string' || !msg.credentialId) throw fail(ERR.INVALID, 'credentialId required');
+    if (await vault.isLocked()) throw fail(ERR.LOCKED, 'unlock first');
     touch();
     return { credential: await approveGet({ req, verifiedAt: Date.now() }, msg.credentialId) };
   }
@@ -361,9 +355,9 @@ export function createPasskeyService({ chrome, vault }) {
 
   async function handleVerify(msg, sender) {
     const entry = await entryForWindow(msg, sender);
-    if (typeof msg.masterPassword !== 'string' || !msg.masterPassword) throw fail('INVALID', 'password required');
-    if (typeof vault.verifyMasterPassword !== 'function') throw fail('INTERNAL', 'verifyMasterPassword unavailable');
-    if (!(await vault.verifyMasterPassword(msg.masterPassword))) throw fail('BAD_PASSWORD', 'wrong master password');
+    if (typeof msg.masterPassword !== 'string' || !msg.masterPassword) throw fail(ERR.INVALID, 'password required');
+    if (typeof vault.verifyMasterPassword !== 'function') throw fail(ERR.INTERNAL, 'verifyMasterPassword unavailable');
+    if (!(await vault.verifyMasterPassword(msg.masterPassword))) throw fail(ERR.BAD_PASSWORD, 'wrong master password');
     if (!entry.done) entry.verifiedAt = Date.now();
     return {};
   }
@@ -436,7 +430,7 @@ export function createPasskeyService({ chrome, vault }) {
     const { req } = entry;
     const data = await vault.readData();
     const found = passkeysFor(data, req.rpId, req.allow).find(({ pk }) => pk.credentialId === credentialId);
-    if (!found) throw fail('INVALID', 'unknown passkey');
+    if (!found) throw fail(ERR.INVALID, 'unknown passkey');
     const clientDataJSON = buildClientDataJSON({ type: 'webauthn.get', challenge: req.challenge, origin: req.origin });
     const assertion = await getAssertion({
       passkey: found.pk, rpId: req.rpId, clientDataHash: await sha256(clientDataJSON), uv: entry.verifiedAt != null,
@@ -467,8 +461,8 @@ export function createPasskeyService({ chrome, vault }) {
     const entry = await entryForWindow(msg, sender);
     if (msg.fallback) { finish(entry, 'FALLBACK'); return {}; }
     if (!msg.approve) { finish(entry, 'NOT_ALLOWED'); return {}; }
-    if (entry.busy) throw fail('INVALID', 'already in progress');
-    if (await vault.isLocked()) throw fail('LOCKED', 'unlock first');
+    if (entry.busy) throw fail(ERR.INVALID, 'already in progress');
+    if (await vault.isLocked()) throw fail(ERR.LOCKED, 'unlock first');
     entry.busy = true;
     try {
       touch();
@@ -478,10 +472,10 @@ export function createPasskeyService({ chrome, vault }) {
           finish(entry, 'INVALID_STATE'); // the user confirmed the "already saved" notice
           return {};
         }
-        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail('UV_REQUIRED', 'verify first');
+        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail(ERR.UV_REQUIRED, 'verify first');
         finish(entry, null, await approveCreate(entry, msg.vault));
       } else {
-        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail('UV_REQUIRED', 'verify first');
+        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail(ERR.UV_REQUIRED, 'verify first');
         finish(entry, null, await approveGet(entry, msg.credentialId));
       }
       return {};
@@ -533,10 +527,10 @@ const service = globalThis.chrome?.runtime?.id
 if (service) {
   register(MSG.PASSKEY_CREATE, service.handleCreate, { from: 'content' });
   register(MSG.PASSKEY_GET, service.handleGet, { from: 'content' });
-  register(PASSKEY_ASSERT, service.handleAssert, { from: 'content' });
-  register(PASSKEY_SAVE, service.handleSave, { from: 'content' });
-  register(PASSKEY_CANCEL, service.handleCancel, { from: 'content' });
+  register(MSG.PASSKEY_ASSERT, service.handleAssert, { from: 'content' });
+  register(MSG.PASSKEY_SAVE, service.handleSave, { from: 'content' });
+  register(MSG.PASSKEY_CANCEL, service.handleCancel, { from: 'content' });
   register(MSG.PASSKEY_REQUEST, service.handleRequest, { from: 'extension' });
-  register(PASSKEY_VERIFY, service.handleVerify, { from: 'extension' });
+  register(MSG.PASSKEY_VERIFY, service.handleVerify, { from: 'extension' });
   register(MSG.PASSKEY_RESPOND, service.handleRespond, { from: 'extension' });
 }

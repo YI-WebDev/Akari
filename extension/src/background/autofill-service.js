@@ -2,7 +2,8 @@
 // "save / update this password" prompt. Origins are always judged from sender.url /
 // sender.tab.url / chrome.tabs.get — never from anything the page or popup sends.
 
-import { register, AkariError } from './router.js';
+import { register } from './router.js';
+import { AkariError } from '../shared/errors.js';
 import { ERR, MSG } from '../shared/messages.js';
 import { sameSite, hostnameOf } from '../shared/domain.js';
 import { setLoginPassword } from '../lib/vault.js';

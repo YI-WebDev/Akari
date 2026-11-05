@@ -1,12 +1,6 @@
 // Client side of the message contract, for extension pages (popup, passkey window).
 
-export class AkariError extends Error {
-  constructor(code, message) {
-    super(message || code);
-    this.name = 'AkariError';
-    this.code = code;
-  }
-}
+import { AkariError } from './errors.js';
 
 /**
  * Send a message to the service worker and unwrap the `{ ok, data | error }` envelope.

@@ -3,7 +3,9 @@
 
 import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
-import { S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, vaultById } from '../state.js';
+import {
+  S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, vaultById, setAutofillState, prunePicked,
+} from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
 import { stagger } from './fx.js';
@@ -45,10 +47,18 @@ function onRowClick(e, id) {
   }
 }
 
-function rowEl(it, q) {
+function rowFlags(it) {
   const weak = isWeak(it);
   const totp = it.type === 'login' && !!it.totp?.secret;
   const tag = typeOf(it.type)?.tag || null;
+  if (!weak && !totp && !tag) return null;
+  return h('span', { class: 'row-flags' },
+    weak ? h('span', { class: 'row-weak', title: '弱いパスワード', role: 'img', 'aria-label': '弱いパスワード' }) : null,
+    totp ? h('span', { class: 'tag', title: '認証コード（2FA）あり' }, '2FA') : null,
+    tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null);
+}
+
+function rowEl(it, q) {
   const sub = subtitle(it);
   return h('div', {
     class: 'row' + (S.picking && it.id === S.sel ? ' cur' : ''), role: 'option', id: 'row-' + it.id,
@@ -63,15 +73,12 @@ function rowEl(it, q) {
   h('span', { class: 'row-text' },
     h('span', { class: 'row-title' }, highlight(it.title || '(無題)', q)),
     h('span', { class: 'row-user' + (sub.plain ? ' plain' : '') }, sub.plain ? sub.text : highlight(sub.text, q))),
-  weak || totp || tag ? h('span', { class: 'row-flags' },
-    weak ? h('span', { class: 'row-weak', title: '弱いパスワード', role: 'img', 'aria-label': '弱いパスワード' }) : null,
-    totp ? h('span', { class: 'tag', title: '認証コード（2FA）あり' }, '2FA') : null,
-    tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null) : null);
+  rowFlags(it));
 }
 
 export function setAfState(state) {
   if (!S.af) return;
-  S.af.state = state;
+  setAutofillState(state);
   if (!afButton) return;
   afButton.dataset.state = state;
   afButton.disabled = state !== 'idle';
@@ -205,10 +212,7 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   L.toggleAttribute('aria-multiselectable', S.picking);
   if (S.picking) {
     // Only what is on screen can be deleted: a filter or search change unchecks the rest.
-    const shown = new Set(vis.map((i) => i.id));
-    const before = S.picked.size;
-    for (const id of S.picked) if (!shown.has(id)) S.picked.delete(id);
-    if (S.picked.size !== before) emit('picked');
+    if (prunePicked(new Set(vis.map((i) => i.id)))) emit('picked');
   }
   if (!S.items.length) {
     L.append(emptyHero());
@@ -223,22 +227,26 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
     L.append(groupEl('A → Z', vis.length));
     for (const it of vis) L.append(rowEl(it, q));
   } else {
-    const gi = vis.map((it) => groupIndex(it.lastUsedAt, now));
-    const per = new Map();
-    for (const g of gi) per.set(g, (per.get(g) || 0) + 1);
-    let last = -1;
-    vis.forEach((it, k) => {
-      if (gi[k] !== last) {
-        last = gi[k];
-        L.append(groupEl(GROUPS[last], per.get(last)));
-      }
-      L.append(rowEl(it, q));
-    });
+    appendGroups(L, vis, q, vis.map((it) => groupIndex(it.lastUsedAt, now)), (g) => GROUPS[g]);
   }
   L.setAttribute('aria-activedescendant', S.sel ? 'row-' + S.sel : '');
   if (keepScroll && !animate) L.scrollTop = top;
   else L.scrollTop = 0;
   if (animate) stagger(L);
+}
+
+/** Rows under a heading per run of equal keys (vis is sorted so equal keys are adjacent). */
+function appendGroups(L, vis, q, keys, label) {
+  const per = new Map();
+  for (const g of keys) per.set(g, (per.get(g) || 0) + 1);
+  let last;
+  vis.forEach((it, k) => {
+    if (k === 0 || keys[k] !== last) {
+      last = keys[k];
+      L.append(groupEl(label(last), per.get(last)));
+    }
+    L.append(rowEl(it, q));
+  });
 }
 
 /** Move the selection (or, in selection mode, the checks and the keyboard row) without rebuilding rows. */

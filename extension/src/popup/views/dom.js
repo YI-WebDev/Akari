@@ -126,10 +126,9 @@ export function svgEl(tag, attrs) {
 export function syncInert() {
   const byId = (id) => document.getElementById(id);
   const gate = byId('gate').classList.contains('on');
-  const sheet = byId('genSheet').classList.contains('open') || byId('setSheet').classList.contains('open');
+  const sheet = ['genSheet', 'setSheet', 'healthSheet'].some((id) => byId(id).classList.contains('open'));
   for (const sel of ['.hdr', '.body', '.status']) document.querySelector(sel).inert = gate || sheet;
-  byId('genSheet').inert = gate;
-  byId('setSheet').inert = gate;
+  for (const id of ['genSheet', 'setSheet', 'healthSheet']) byId(id).inert = gate;
 }
 
 /** Remember focus when a dialog opens; returns a function that restores it. */

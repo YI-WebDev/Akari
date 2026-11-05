@@ -89,7 +89,8 @@
     const head = el('div', 'head');
     const close = el('button', 'x', '×');
     close.type = 'button';
-    close.setAttribute('aria-label', '閉じる');
+    close.title = '閉じて他の方法 (esc)';
+    close.setAttribute('aria-label', '閉じて他の方法');
     head.append(orb(20), el('div', 'ttl', title), close);
     const body = el('div', 'body');
     const msg = el('div', 'msg');
@@ -183,7 +184,7 @@
       const i = rows.indexOf(card.root.activeElement);
       rows[(i + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
     });
-    body.append(el('div', 'who', rpId), list, msg, foot([['⏎', 'サインイン'], ['esc', '閉じて他の方法']]));
+    body.append(el('div', 'who', rpId), list, msg, foot([['⏎', 'サインイン']]));
     card.controls = rows;
     takeFocus(d, rows[0]);
   }
@@ -244,7 +245,7 @@
       });
       card.controls = [primary, ...chips];
     }
-    body.append(msg, btns, foot([['⏎', info.excluded ? 'OK' : '保存'], ['esc', '閉じて他の方法']]));
+    body.append(msg, btns, foot([['⏎', info.excluded ? 'OK' : '保存']]));
     takeFocus(d, primary);
   }
 
