@@ -16,7 +16,7 @@ import { h, clear, icon, copyGlyph } from './dom.js';
 import {
   vaultColor, relTime, formatDate, safeHttpUrl, hueOf, formatIsoDate, daysUntil, digitsOnly, groupDigits,
 } from './format.js';
-import { scramble, cancelScramble, rise, burst, wait, DIGITS } from './fx.js';
+import { scramble, cancelScramble, rise, wait, DIGITS } from './fx.js';
 import { totpView } from './totp-view.js';
 import { meterEl, setMeter } from './meter.js';
 import { tileEl } from './list.js';
@@ -133,7 +133,7 @@ function weakBox(it) {
   return h('div', { class: 'weak', dataset: { f: '' }, role: 'note' },
     h('span', { class: 'weak-bang', 'aria-hidden': 'true' }, '!'),
     h('span', { class: 'weak-text' }, warnText(it)),
-    h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, '強化する →'));
+    h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, '強化する', icon('arrowRight', 11, 2.6)));
 }
 
 // ---- a password change on the site ----------------------------------------------------
@@ -589,11 +589,11 @@ function emptyDetail() {
   const cmd = (ico, label, key, ev, arg) => h('button', { class: 'cmd', type: 'button', onclick: () => emit(ev, arg) },
     icon(ico, 14), h('span', { class: 'grow' }, label), h('span', { class: 'cmd-key', 'aria-hidden': 'true' }, key));
   return h('div', { class: 'welcome' },
-    h('div', { class: 'welcome-brand' },
-      h('span', { class: 'mark', 'aria-hidden': 'true' }, '灯'),
-      h('div', null,
-        h('div', { class: 'welcome-name' }, 'akari', h('span', { class: 'brand-cursor', 'aria-hidden': 'true' }, '_')),
-        h('div', { class: 'welcome-sub' }, 'パスワード・認証コード・パスキーをひとつに'))),
+    h('div', { class: 'welcome-head' },
+      h('div', { class: 'welcome-name' }, '保管庫は空です'),
+      h('div', { class: 'welcome-sub' }, 'Chrome やほかのパスワードマネージャーから移すか、ひとつずつ追加します。')),
+    h('div', null, h('button', { class: 'btn-primary', type: 'button', onclick: () => emit('openImport') },
+      icon('import', 13), 'ほかのアプリから読み込む')),
     h('div', { class: 'cmds' },
       cmd('key', '新規ログイン', 'L', 'newLogin'),
       cmd('note', 'セキュアノート', 'N', 'newNote'),
@@ -653,7 +653,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   if (animate) rise(D);
 }
 
-/** After the generator saved a new password: reveal it with a long scramble, then burst + toast. */
+/** After the generator saved a new password: decode it with a long scramble, then the toast. */
 export async function showPasswordUpdated(id, { password, label, bits }) {
   setSel(id);
   renderDetail({ reveal: true, animate: true });
@@ -663,6 +663,5 @@ export async function showPasswordUpdated(id, { password, label, bits }) {
   scramble('pass', view.els.pwText, password, 1000);
   await wait(650);
   if (!live(token) || view?.id !== id) return;
-  burst(document.getElementById('app'), view.els.meter);
   toast(`${it?.title || ''} のパスワードを更新しました`, `強度: ${label} · ${bits} bit`);
 }

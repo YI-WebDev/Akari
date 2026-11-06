@@ -59,7 +59,7 @@
 
   <footer class="status" aria-label="ステータス">
     <span id="stSave" class="st-save" data-state="saved" title="保管庫は暗号化してこの端末に保存されています"><span class="st-dot" aria-hidden="true"></span><span id="stSaveText">保存済み</span></span>
-    <span id="stVault">vault: すべて</span>
+    <span id="stVault">保管庫: すべて</span>
     <span id="stCount">0 件</span>
     <span class="grow"></span>
     <span class="st-key st-main"><kbd>/</kbd>検索</span>
@@ -137,8 +137,7 @@
     </div>
     <!-- 強化する: the site keeps the old password until it is changed there too -->
     <div id="genSite" class="gen-site" role="note" hidden>
-      <span class="gen-site-bang" aria-hidden="true">!</span>
-      <span>Akari で変えてもサイトのパスワードは変わりません。新しいパスワードは保留してコピーするので、サイトで変更してから Akari で「確定」してください。</span>
+      <span>Akari で変えても、サイトのパスワードはまだ変わりません。新しいパスワードは保留にしてコピーします。サイトで変更してから、Akari で「確定」してください。</span>
     </div>
     <div class="sheet-actions">
       <button id="genAkariOnly" class="btn-text gen-only" type="button" title="サイトでもう変更したときだけ。前のパスワードは履歴に残ります" hidden>Akari だけ更新</button>
@@ -274,13 +273,13 @@
       <div class="brand">
         <span id="gateOrb" class="brand-mark" aria-hidden="true">灯</span>
         <div>
-          <h1 class="brand-name">akari<span class="brand-cursor" aria-hidden="true">_</span></h1>
-          <div id="gateVersion" class="brand-sub">ゼロ知識・端末内で暗号化される保管庫</div>
+          <h1 class="brand-name">Akari</h1>
+          <div id="gateVersion" class="brand-sub">暗号化して、このブラウザの中だけに保存します</div>
         </div>
       </div>
 
       <form id="lockForm" class="gate-form gate-lock" novalidate>
-        <label class="gate-label" for="lockInput"><span class="ps" aria-hidden="true">&gt; </span>マスターパスワードを入力</label>
+        <label class="gate-label" for="lockInput">マスターパスワード</label>
         <div class="gate-row">
           <div id="lockField" class="gate-field">
             <input id="lockInput" type="password" placeholder="••••••••" autocomplete="current-password" aria-describedby="lockStatus">
@@ -291,7 +290,8 @@
       </form>
 
       <form id="setupForm" class="gate-form gate-setup" novalidate>
-        <label class="gate-label" for="setupPw"><span class="ps" aria-hidden="true">&gt; </span>マスターパスワードを決める</label>
+        <label class="gate-label" for="setupPw">マスターパスワードを決める</label>
+        <p class="gate-note">Akari を開くときに使う、ひとつだけのパスワードです。保管庫の中身はこのパスワードで暗号化されます。</p>
         <div class="gate-field"><input id="setupPw" type="password" placeholder="10 文字以上" autocomplete="new-password"></div>
         <div class="gate-row">
           <div class="gate-field"><input id="setupPw2" type="password" placeholder="もう一度" aria-label="マスターパスワード（確認）" autocomplete="new-password"></div>

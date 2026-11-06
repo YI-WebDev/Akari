@@ -31,7 +31,7 @@
   --text-muted: #C4B6A7;      /* icon buttons, secondary labels */
   --text-dim: #AE9F90;        /* row subtitles */
   --text-soft: #A39484;       /* field labels, hints */
-  --text-faint: #8A7B6D;      /* placeholders */
+  --text-faint: #938374;      /* placeholders, zero counts (≥ 4.5:1 on every surface) */
 
   --accent: #FF7A45;          /* 灯 */
   --accent-strong: #FF9A6E;   /* hover, links */
@@ -42,7 +42,6 @@
   --accent-tint: rgba(255, 122, 69, .1);
   --accent-tint-border: rgba(255, 122, 69, .45);
   --accent-line: rgba(255, 122, 69, .55);    /* hovered borders */
-  --highlight: #FF7A45;       /* search match background */
   --link: #FF9A6E;
   --link-hover: #FFC0A4;
   --focus-border: rgba(255, 122, 69, .7);
@@ -80,19 +79,17 @@
 
   --toast-bg: #F2E8DE; --toast-text: #14100D; --toast-sub: #5E5046;
   --scrim: rgba(8, 6, 5, .66);
-  --blob-1: rgba(255, 122, 69, .2); --blob-2: rgba(255, 122, 69, .07);
+  --blob-1: rgba(255, 122, 69, .2);  /* the lamp glow at the lock screen's corner */
 
   --shadow-card: none;
   --shadow-row: none;
   --shadow-menu: 0 18px 40px rgba(0, 0, 0, .55);
   --shadow-sheet: 0 -24px 50px rgba(0, 0, 0, .5);
-  --shadow-accent: 0 0 14px rgba(255, 122, 69, .5);
-  --shadow-accent-hover: 0 0 18px rgba(255, 122, 69, .6);
   --shadow-toast: 0 14px 34px rgba(0, 0, 0, .55);
   --shadow-chip: none;
 
   --r-row: 5px; --r-card: 6px; --r-menu: 8px; --r-sheet: 0; --r-pill: 4px; --r-tile: 6px;
-  --spring: cubic-bezier(.3, 1.5, .5, 1);
+  --spring: cubic-bezier(.22, 1, .36, 1);     /* decelerates, never overshoots */
   --spring-soft: cubic-bezier(.2, .9, .2, 1);
   --ease-out: cubic-bezier(.2, .8, .2, 1);
 }

@@ -81,6 +81,8 @@ export function onKey(e) {
     if (typing && ae !== search) return;
     if (ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A')) return;
     if (S.picking) return; // no password copy while choosing what to delete
+    // only the row on screen: with 0 search results, S.sel may still point at a hidden item
+    if (!S.sel || !visibleItems().some((i) => i.id === S.sel)) return;
     const target = primarySecret(itemById(S.sel));
     if (!target) return;
     e.preventDefault();

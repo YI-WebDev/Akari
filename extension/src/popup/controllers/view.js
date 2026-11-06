@@ -14,7 +14,7 @@ export function renderVaultLabel() {
   const v = S.vaults.find((x) => x.id === S.vault);
   const all = S.vault === 'all' || !v;
   $('vaultLabel').textContent = all ? 'すべて' : v.name;
-  $('vaultDot').style.background = all ? 'var(--accent)' : vaultColor(v.hue);
+  $('vaultDot').style.background = all ? 'var(--text-soft)' : vaultColor(v.hue);
 }
 
 /** The list bar: the 表示 chip and the sort toggle. */

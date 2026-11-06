@@ -11,15 +11,16 @@
   if (globalThis.__akariShadowUi) return;
 
   // "Akari Terminal" look. System monospace fonts only: nothing is loaded into the page.
+  // A closed shadow root cannot read shared/tokens.css, so the colours below are literal copies of those
+  // tokens (e.g. #AE9F90 = --text-dim, #C4B6A7 = --text-muted, #938374 = --text-faint). Keep them in step with tokens.css.
   const FONT = 'ui-monospace, "Cascadia Mono", Consolas, "BIZ UDGothic", monospace';
   const CSS = `
 :host { all: initial; }
 *, *::before, *::after { box-sizing: border-box; }
 * { font-family: ${FONT}; -webkit-font-smoothing: antialiased; }
 .orb { position: fixed; display: block; margin: 0; padding: 0; border: 0; border-radius: 5px; cursor: pointer;
-  background: #FF7A45; color: #14100D; font-weight: 700; text-align: center;
-  box-shadow: 0 0 10px rgba(255, 122, 69, .5); transition: box-shadow .15s, transform .12s; }
-.orb:hover { box-shadow: 0 0 16px rgba(255, 122, 69, .75); transform: scale(1.06); }
+  background: #FF7A45; color: #14100D; font-weight: 700; text-align: center; transition: background-color .15s; }
+.orb:hover { background: #FF9A6E; }
 .menu { position: fixed; min-width: 260px; background: #1A1511; color: #F2E8DE; color-scheme: dark; border-radius: 8px; padding: 6px;
   border: 1px solid rgba(255, 214, 186, .14); box-shadow: 0 18px 40px rgba(0, 0, 0, .55); font-size: 12px; line-height: 1.45;
   animation: in .18s cubic-bezier(.2, .9, .2, 1) both; max-height: 60vh; overflow: auto;
@@ -27,7 +28,7 @@
 .row { position: relative; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 10px 0 16px;
   border-radius: 5px; cursor: pointer; transition: background .15s; }
 .row::before { content: '›'; position: absolute; left: 5px; top: 13px; height: 16px; line-height: 16px; color: #FF7A45;
-  font-size: 13px; font-weight: 700; opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .25s cubic-bezier(.3, 1.5, .5, 1); }
+  font-size: 13px; font-weight: 700; opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .25s cubic-bezier(.22, 1, .36, 1); }
 .row:hover { background: rgba(255, 200, 160, .05); }
 .row.hi { background: rgba(255, 122, 69, .11); box-shadow: inset 0 0 0 1px rgba(255, 122, 69, .3); }
 .row:hover::before, .row.hi::before { opacity: 1; transform: none; }
@@ -35,29 +36,28 @@
   background: oklch(0.72 0.12 var(--h, 55) / .13); border: 1px solid oklch(0.72 0.12 var(--h, 55) / .32); color: oklch(0.85 0.11 var(--h, 55)); }
 .txt { min-width: 0; display: flex; flex-direction: column; }
 .t { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.u { color: #9C8D7F; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.note { padding: 8px 10px; color: #B9AA9B; font-size: 11px; line-height: 1.55; }
+.u { color: #AE9F90; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note { padding: 8px 10px; color: #C4B6A7; font-size: 11px; line-height: 1.55; }
 .note::before { content: '! '; color: #FF7A45; font-weight: 700; }
 .foot { display: flex; align-items: center; gap: 10px; margin-top: 4px; padding: 6px 4px 1px; border-top: 1px solid rgba(255, 214, 186, .08);
-  color: #8A7B6D; font-size: 10px; line-height: 16px; white-space: nowrap; }
+  color: #938374; font-size: 10.5px; line-height: 16px; white-space: nowrap; }
 .mark { width: 14px; height: 14px; border-radius: 3px; background: #FF7A45; color: #14100D; font-size: 9px; font-weight: 700;
   line-height: 14px; text-align: center; }
 .grow { flex: 1; }
-.k { display: inline-block; margin-right: 4px; padding: 0 4px; border: 1px solid rgba(255, 214, 186, .14); border-radius: 3px; color: #B9AA9B;
+.k { display: inline-block; margin-right: 4px; padding: 0 4px; border: 1px solid rgba(255, 214, 186, .14); border-radius: 3px; color: #C4B6A7;
   line-height: 14px; }
 .bar { position: fixed; top: 16px; right: 16px; width: 340px; max-width: calc(100vw - 32px); background: #14100D; color: #F2E8DE;
   color-scheme: dark; border: 1px solid rgba(255, 214, 186, .14); border-radius: 8px; overflow: hidden; font-size: 12px; line-height: 1.45;
   box-shadow: 0 18px 40px rgba(0, 0, 0, .55); animation: in .22s cubic-bezier(.2, .9, .2, 1) both; }
 .head { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #1A1511;
   border-bottom: 1px solid rgba(255, 214, 186, .09); }
-.head .orb { position: static; flex: none; cursor: default; box-shadow: 0 0 14px rgba(255, 122, 69, .5); }
-.head .orb:hover { transform: none; }
+.head .orb { position: static; flex: none; cursor: default; }
+.head .orb:hover { background: #FF7A45; }
 .ttl { min-width: 0; font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag { flex: none; margin-left: auto; padding: 0 6px; border: 1px solid rgba(255, 122, 69, .45); border-radius: 4px;
   background: rgba(255, 122, 69, .08); color: #FF9A6E; font-size: 10px; line-height: 18px; }
 .body { padding: 12px; }
 .who { color: #D7CABD; font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
-.who::before { content: '> '; color: #FF7A45; font-weight: 700; }
 .msg { margin-top: 6px; color: #FF6B5B; font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
 .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .btn { height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 5px; font-size: 12px; cursor: pointer; white-space: nowrap;
@@ -65,13 +65,13 @@
 .btn:disabled { opacity: .5; cursor: default; }
 .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 122, 69, .35); }
 .primary { min-width: 76px; background: #FF7A45; color: #14100D; font-weight: 700; }
-.primary:hover:not(:disabled) { box-shadow: 0 0 18px rgba(255, 122, 69, .55); }
-.ghost { background: transparent; color: #B9AA9B; border-color: rgba(255, 214, 186, .16); }
+.primary:hover:not(:disabled) { background: #FF9A6E; }
+.ghost { background: transparent; color: #C4B6A7; border-color: rgba(255, 214, 186, .16); }
 .ghost:hover:not(:disabled) { border-color: rgba(255, 122, 69, .55); background: rgba(255, 122, 69, .06); color: #F2E8DE; }
 .done { display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 12px; font-weight: 700; }
 .ok { color: #9BD67E; font-weight: 400; }
 .x { flex: none; margin-left: auto; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 1px solid transparent;
-  border-radius: 5px; background: transparent; color: #9C8D7F; font-size: 15px; line-height: 1; cursor: pointer; transition: border-color .15s, color .15s; }
+  border-radius: 5px; background: transparent; color: #C4B6A7; font-size: 15px; line-height: 1; cursor: pointer; transition: border-color .15s, color .15s; }
 .x:hover, .x:focus-visible { outline: none; border-color: rgba(255, 122, 69, .55); color: #F2E8DE; }
 .x-sm { margin-left: 0; width: 18px; height: 18px; font-size: 13px; border-radius: 3px; }
 .pk-rows { display: flex; flex-direction: column; gap: 2px; margin: 8px -6px 0; max-height: 50vh; overflow: auto;
@@ -84,9 +84,9 @@
 .bar .note { margin-top: 8px; padding: 0; }
 .acct { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
-.lbl { margin-right: 2px; color: #8A7B6D; font-size: 10.5px; }
-.chip { height: 24px; padding: 0 10px; border: 1px solid rgba(255, 214, 186, .16); border-radius: 12px; background: transparent;
-  color: #B9AA9B; font-size: 11px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+.lbl { margin-right: 2px; color: #938374; font-size: 11px; }
+.chip { height: 24px; padding: 0 10px; border: 1px solid rgba(255, 214, 186, .16); border-radius: 4px; background: transparent;
+  color: #C4B6A7; font-size: 11px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
 .chip:hover:not(:disabled) { border-color: rgba(255, 122, 69, .55); color: #F2E8DE; }
 .chip[aria-pressed="true"] { border-color: oklch(0.72 0.12 var(--h, 55) / .6); background: oklch(0.72 0.12 var(--h, 55) / .14); color: #F2E8DE; }
 .chip:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 122, 69, .35); }

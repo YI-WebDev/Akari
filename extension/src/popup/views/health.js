@@ -168,13 +168,13 @@ function renderPane() {
     list.includes('no2fa')
       ? h('button', { class: 'btn-mini add-2fa', type: 'button', onclick: () => act('edit', it.id) }, icon('pencil', 11), t('health.add2fa', null, '2FA を追加'))
       : null,
-    action ? h('button', { class: 'btn-fix', type: 'button', onclick: () => act('fix', it.id) }, t('health.fix', null, '強化する →')) : null));
+    action ? h('button', { class: 'btn-fix', type: 'button', onclick: () => act('fix', it.id) }, t('health.fix', null, '強化する'), icon('arrowRight', 11, 2.6)) : null));
 }
 
 function render() {
   const c = healthCounts();
   const v = vaultById(S.vault);
-  $('hsSub').textContent = `vault: ${S.vault === 'all' || !v ? 'すべて' : v.name} · ` + t('health.logins', { n: c.logins }, 'ログイン {n} 件');
+  $('hsSub').textContent = `保管庫: ${S.vault === 'all' || !v ? 'すべて' : v.name} · ` + t('health.logins', { n: c.logins }, 'ログイン {n} 件');
   rows = rowsOf(tab);
   if (!rows.some((x) => x.id === sel)) sel = rows[0]?.id ?? null;
   renderTabs(c);

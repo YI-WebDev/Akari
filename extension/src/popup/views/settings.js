@@ -221,7 +221,7 @@ export function closeSettings() {
 export function initSettings() {
   try {
     const m = chrome.runtime.getManifest();
-    $('setVersion').textContent = `akari v${m.version} · ゼロ知識・端末内で暗号化`;
+    $('setVersion').textContent = `akari v${m.version} · 暗号化して、このブラウザの中だけに保存します`;
   } catch { /* ignore */ }
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
