@@ -90,6 +90,9 @@ function foot(...kids) {
 const backBtn = () => h('button', { class: 'btn-text', type: 'button', onclick: () => importBack() }, '戻る');
 
 /** The sheet head's back button: one step back, or false to leave the page. */
+/** The import has finished (its result is on screen): Esc closes the sheet from here. */
+export const importDone = () => st.step === 'done';
+
 export function importBack() {
   switch (st.step) {
     case 'file': renderSource(); return true;
@@ -458,7 +461,8 @@ function vaultPicker() {
   return group;
 }
 
-const reviewCmd = () => `akari import --from ${st.parsed.source} ${quote(st.parsed.fileName)} --vault ${st.vault} --dry-run`;
+const vaultArg = (id) => quote(S.vaults.find((v) => v.id === id)?.name || id);
+const reviewCmd = () => `akari import --from ${st.parsed.source} ${quote(st.parsed.fileName)} --vault ${vaultArg(st.vault)} --dry-run`;
 
 function renderReview({ focus = true } = {}) {
   go('review');
@@ -553,7 +557,7 @@ function renderDone(r) {
     ];
   } else {
     body = [
-      cmdLine(`akari import --from ${r.source} ${quote(r.name)} --vault ${r.vault}`),
+      cmdLine(`akari import --from ${r.source} ${quote(r.name)} --vault ${vaultArg(r.vault)}`),
       h('div', { class: 'io-log io-result', role: 'status', 'data-f': '' }, logLine('ok', resultText(r), `保管庫: ${vaultName}`)),
       h('div', { class: 'io-alert', role: 'note', 'data-f': '' },
         h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'),

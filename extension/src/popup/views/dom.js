@@ -129,7 +129,7 @@ export function syncInert() {
   const byId = (id) => document.getElementById(id);
   const gate = byId('gate').classList.contains('on');
   const sheet = ['genSheet', 'setSheet', 'healthSheet'].some((id) => byId(id).classList.contains('open'));
-  for (const sel of ['.hdr', '.body', '.status']) document.querySelector(sel).inert = gate || sheet;
+  for (const sel of ['.hdr', '.body']) document.querySelector(sel).inert = gate || sheet;
   for (const id of ['genSheet', 'setSheet', 'healthSheet']) byId(id).inert = gate;
 }
 

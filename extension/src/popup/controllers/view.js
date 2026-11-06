@@ -25,13 +25,6 @@ export function renderFilters() {
   $('sortBtn').title = $('sortBtn').ariaLabel = `並び替え: ${sort}（クリックで切り替え）`;
 }
 
-/** Status bar dot: 保存中… while a change is on its way to the encrypted store. */
-export function renderSaving(saving) {
-  const el = $('stSave');
-  el.dataset.state = saving ? 'saving' : 'saved';
-  $('stSaveText').textContent = saving ? '保存中…' : '保存済み';
-}
-
 /** Rebuild list (and detail if the selection moved) after the visible set changed. Returns whether it moved. */
 export function refreshList({ animate = false } = {}) {
   const moved = ensureSel();

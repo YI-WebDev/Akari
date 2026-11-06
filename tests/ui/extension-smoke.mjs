@@ -235,7 +235,9 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
   assert.match(download.suggestedFilename(), /^akari-backup-\d{8}\.json$/);
   assert.equal(JSON.parse(await readFile(await download.path(), 'utf8')).format, 'akari-backup');
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape'); // Esc steps back: エクスポート → the settings list
+  await page.waitForSelector('#setMain:not([hidden])');
+  await page.keyboard.press('Escape'); // and closes the sheet from the list
   await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
 
   step('reopen popup restores unlocked state');
@@ -314,6 +316,8 @@ try {
     assert.equal(await page.inputValue('#expMaster'), '', 'master password cleared after the download');
     await page.waitForTimeout(300);
     await shot('export-csv');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#setMain:not([hidden])');
     await page.keyboard.press('Escape');
     await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
   }

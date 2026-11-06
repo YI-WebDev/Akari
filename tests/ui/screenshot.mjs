@@ -82,7 +82,7 @@ const scenarios = {
     await shot(page, 'main');
     expect(await page.locator('#viewCount').textContent() === '32', 'filter count');
     expect(await page.locator('.row[aria-selected="true"] .tag').textContent() === '2FA', '2FA tag on github');
-    expect(/^保管庫: すべて$/.test(await page.locator('#stVault').textContent()), 'status vault');
+    expect(await page.locator('#vaultLabel').textContent() === 'すべて', 'vault label');
     expect(await page.locator('.ticks span').count() === 30, '30 TOTP ticks');
     expect(await page.locator('.pw-col .segs span').count() === 12, '12 meter segments');
     // reveal + copy
@@ -295,7 +295,7 @@ const scenarios = {
     await page.click('#vaultItems .menu-item:has-text("仕事")');
     await settle(page, 800);
     await shot(page, 'vault-work');
-    expect(await page.locator('#stVault').textContent() === '保管庫: 仕事', 'status vault after switch');
+    expect(await page.locator('#vaultLabel').textContent() === '仕事', 'vault label after switch');
     await ctx.close();
   },
   async search() {
@@ -689,7 +689,9 @@ const scenarios = {
     await page.keyboard.press('Enter');
     await page.waitForSelector('#exportPage .field-err:has-text("マスターパスワードが違います")');
     await page.fill('#expMaster', 'akari-master');
-    await page.click('#expPgp');
+    await page.click('.fmt[data-fmt="pgp"]'); // PGP 暗号化, CSV inside by default
+    expect(await page.inputValue('#expMaster') === 'akari-master', 'the master password stays when the format changes');
+    expect(await page.locator('#expInner [aria-checked="true"]').getAttribute('data-inner') === 'csv', 'CSV inside by default');
     await page.fill('#expPass', 'kotatsu-mikan-2026');
     await page.fill('#expPass2', 'kotatsu-mikan-2025');
     await page.click('#exportPage .btn-primary');
@@ -765,7 +767,6 @@ const scenarios = {
     expect(await page.locator('.af-btn').count() === 1, 'autofill card kept with the site query');
     expect(await page.locator('.row').count() === 1, 'only the github login listed');
     expect(!(await page.locator('#searchClear').isHidden()), 'clear button shown');
-    expect(await page.locator('#stCount').textContent() === '1 件', 'status count follows the query');
     await page.keyboard.press('Escape');
     await settle(page, 400);
     expect(await page.inputValue('#search') === '', 'Esc clears the site query');
@@ -831,7 +832,6 @@ const scenarios = {
     expect(/3 件を削除しました/.test(await page.locator('#toast').textContent()), 'toast');
     const left = await page.$$eval('.row', (rows) => rows.map((r) => r.dataset.id));
     expect(left.length === total - 3 && ![ids[0], ids[2], ids[3]].some((id) => left.includes(id)) && left.includes(ids[1]), 'the three are gone');
-    expect(await page.locator('#stCount').textContent() === `${total - 3} 件`, 'status count');
     expect(await page.locator('.row[aria-selected="true"]').count() === 1 && !(await page.locator('.row-check').count()), 'back to the normal list');
     await settle(page, 900);
     await shot(page, 'pick-deleted');
@@ -941,7 +941,7 @@ const scenarios = {
     expect(await page.locator('#typeLabel').textContent() === 'クレジットカード', 'chip shows the type');
     expect(await page.locator('#viewCount').textContent() === '2', 'the chip counts the type');
     expect(await page.locator('#typeBtn.on').count() === 1, 'accent while filtered');
-    expect(await page.locator('#stCount').textContent() === '2 件', 'status count');
+    expect(await page.locator('#list .row').count() === 2, 'two cards listed');
     expect(await page.locator('.af').count() === 0, 'no autofill card while filtering cards');
     await view(page, 'fav'); // one view at a time: お気に入り replaces the type
     await settle(page, 400);

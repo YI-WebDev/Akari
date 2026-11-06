@@ -4,7 +4,7 @@
 import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import {
-  S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, vaultById, setAutofillState, prunePicked,
+  S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, setAutofillState, prunePicked,
 } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
@@ -182,12 +182,9 @@ export function renderViewButton(counts = viewCounts()) {
   btn.setAttribute('aria-label', label);
 }
 
-/** The 表示 chip, vault label and status bar. */
-export function renderCounts(visibleCount, now = Date.now()) {
+/** The 表示 chip: the current view and its count. */
+export function renderCounts(now = Date.now()) {
   renderViewButton(viewCounts(now));
-  const v = vaultById(S.vault);
-  $('stVault').textContent = `保管庫: ${S.vault === 'all' || !v ? 'すべて' : v.name}`;
-  $('stCount').textContent = `${visibleCount} 件`;
 }
 
 export function renderList({ animate = false, keepScroll = true } = {}) {
@@ -204,7 +201,7 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
-  renderCounts(vis.length, now);
+  renderCounts(now);
   L.toggleAttribute('aria-multiselectable', S.picking);
   if (S.picking) {
     // Only what is on screen can be deleted: a filter or search change unchecks the rest.
