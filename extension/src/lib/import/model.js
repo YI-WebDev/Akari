@@ -146,6 +146,6 @@ export function parseJson(text, what) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new ImportError('INVALID_FORMAT', `${what} の JSON として読めませんでした`);
+    throw new ImportError('INVALID_FORMAT', t('{what} の JSON として読めませんでした', { what }));
   }
 }

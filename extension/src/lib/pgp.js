@@ -6,6 +6,7 @@ import {
   SymEncryptedSessionKeyPacket, PublicKeyEncryptedSessionKeyPacket,
 } from '../third_party/openpgp.js';
 import { ImportError } from './import/model.js';
+import { t } from '../shared/i18n.js';
 
 const te = new TextEncoder();
 
@@ -50,7 +51,7 @@ async function wasmAllowed() {
 export async function decryptPgp(bytes, passphrase) {
   if (!(bytes instanceof Uint8Array)) throw new TypeError('decryptPgp: bytes must be a Uint8Array');
   if (typeof passphrase !== 'string' || !passphrase) {
-    throw new ImportError('NEEDS_PASSWORD', 'PGP で暗号化されたファイルです。パスフレーズを入力してください');
+    throw new ImportError('NEEDS_PASSWORD', t('PGP で暗号化されたファイルです。パスフレーズを入力してください'));
   }
   let message;
   try {
@@ -58,26 +59,26 @@ export async function decryptPgp(bytes, passphrase) {
       ? await readMessage({ armoredMessage: new TextDecoder().decode(bytes) })
       : await readMessage({ binaryMessage: bytes });
   } catch {
-    throw new ImportError('INVALID_FORMAT', 'PGP のファイルとして読めませんでした');
+    throw new ImportError('INVALID_FORMAT', t('PGP のファイルとして読めませんでした'));
   }
   const skesks = message.packets.filter((p) => p instanceof SymEncryptedSessionKeyPacket);
   if (!skesks.length) {
     if (message.packets.some((p) => p instanceof PublicKeyEncryptedSessionKeyPacket)) {
-      throw new ImportError('UNSUPPORTED', '公開鍵で暗号化されたファイルには対応していません。パスフレーズ（共通鍵）で暗号化して書き出してください');
+      throw new ImportError('UNSUPPORTED', t('公開鍵で暗号化されたファイルには対応していません。パスフレーズ（共通鍵）で暗号化して書き出してください'));
     }
-    throw new ImportError('INVALID_FORMAT', 'パスフレーズで暗号化された PGP メッセージではありません');
+    throw new ImportError('INVALID_FORMAT', t('パスフレーズで暗号化された PGP メッセージではありません'));
   }
   if (skesks.length > MAX_SKESK_PACKETS) {
-    throw new ImportError('UNSUPPORTED', 'パスフレーズ用の鍵パケットが多すぎるファイルには対応していません');
+    throw new ImportError('UNSUPPORTED', t('パスフレーズ用の鍵パケットが多すぎるファイルには対応していません'));
   }
   const argon2 = skesks.map((p) => p.s2k).filter((s2k) => s2k?.type === 'argon2');
   if (argon2.some((s2k) => s2k.t > ARGON2_MAX.passes || s2k.p > ARGON2_MAX.parallelism || s2k.encodedM > ARGON2_MAX.memoryExponent)) {
-    throw new ImportError('UNSUPPORTED', 'Argon2 の設定（計算回数・メモリー）が大きすぎるファイルには対応していません');
+    throw new ImportError('UNSUPPORTED', t('Argon2 の設定（計算回数・メモリー）が大きすぎるファイルには対応していません'));
   }
   // OpenPGP.js runs Argon2 in WebAssembly. The extension CSP allows that ('wasm-unsafe-eval';
   // JS eval stays blocked), but where a context does not, say so instead of "wrong passphrase".
   if (argon2.length === skesks.length && !(await wasmAllowed())) {
-    throw new ImportError('UNSUPPORTED', 'Argon2 で暗号化されたファイルには対応していません。別の方式で暗号化して書き出してください');
+    throw new ImportError('UNSUPPORTED', t('Argon2 で暗号化されたファイルには対応していません。別の方式で暗号化して書き出してください'));
   }
   try {
     const { data } = await decrypt({ message, passwords: [passphrase], format: 'binary', config: READ_CONFIG });
@@ -86,16 +87,16 @@ export async function decryptPgp(bytes, passphrase) {
     const msg = String(e?.message || '');
     // decrypt() wraps the original error as `cause`.
     if (e?.name === 'Argon2OutOfMemoryError' || e?.cause?.name === 'Argon2OutOfMemoryError') {
-      throw new ImportError('UNSUPPORTED', 'Argon2 の計算に必要なメモリーを確保できませんでした');
+      throw new ImportError('UNSUPPORTED', t('Argon2 の計算に必要なメモリーを確保できませんでした'));
     }
     if (/maximum decompressed (message )?size exceeded/i.test(msg)) {
-      throw new ImportError('UNSUPPORTED', 'ファイルが大きすぎます（展開後 64 MB まで）');
+      throw new ImportError('UNSUPPORTED', t('ファイルが大きすぎます（展開後 64 MB まで）'));
     }
     if (/not authenticated|unsupported|not supported|unknown/i.test(msg)) {
-      throw new ImportError('UNSUPPORTED', 'このファイルの暗号化方式には対応していません');
+      throw new ImportError('UNSUPPORTED', t('このファイルの暗号化方式には対応していません'));
     }
     // Without a session-key packet a wrong passphrase and a damaged file fail the same way.
-    throw new ImportError('BAD_PASSWORD', 'パスフレーズが違うか、ファイルが壊れています');
+    throw new ImportError('BAD_PASSWORD', t('パスフレーズが違うか、ファイルが壊れています'));
   }
 }
 

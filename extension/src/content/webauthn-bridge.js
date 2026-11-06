@@ -21,6 +21,10 @@
   const ASSERT = 'passkey/assert';
   const SAVE = 'passkey/save';
   const ui = globalThis.__akariShadowUi;
+  // In-page UI text (i18n-page.js); the Japanese source text, placeholders filled, if that script is missing.
+  const t = (text, params = null) => (globalThis.__akariI18n
+    ? globalThis.__akariI18n.t(text, params)
+    : text.replace(/\{(\w+)\}/g, (m, k) => (params && Object.hasOwn(params, k) ? String(params[k]) : m)));
 
   if (ORIGIN === 'null' || window.top !== window || !ui) return;
 
@@ -89,8 +93,8 @@
     const head = el('div', 'head');
     const close = el('button', 'x', '×');
     close.type = 'button';
-    close.title = '閉じて他の方法 (esc)';
-    close.setAttribute('aria-label', '閉じて他の方法');
+    close.title = t('閉じて他の方法 (esc)');
+    close.setAttribute('aria-label', t('閉じて他の方法'));
     head.append(orb(20), el('div', 'ttl', title), close);
     const body = el('div', 'body');
     const msg = el('div', 'msg');
@@ -159,20 +163,20 @@
       return;
     }
     const { el } = ui;
-    const { body, msg } = openCard(d, 'パスキーでサインイン');
+    const { body, msg } = openCard(d, t('パスキーでサインイン'));
     const list = el('div', 'pk-rows');
     list.setAttribute('role', 'list');
     const rows = [];
     for (const c of candidates) {
-      const name = c.userDisplayName || c.userName || 'パスキー';
+      const name = c.userDisplayName || c.userName || t('パスキー');
       const sub = [c.userName !== name ? c.userName : '', c.vaultName].filter(Boolean).join(' · ');
       const row = account('row', name, sub);
       row.type = 'button';
       row.setAttribute('role', 'listitem');
-      row.setAttribute('aria-label', `${name} でサインイン`);
+      row.setAttribute('aria-label', t('{name} でサインイン', { name }));
       row.addEventListener('click', (e) => {
         if (card.guard && card.guard.ok(e)) {
-          act({ type: ASSERT, options: d.options, credentialId: c.credentialId, requestId: d.id }, 'サインインしました', 'サインインできませんでした');
+          act({ type: ASSERT, options: d.options, credentialId: c.credentialId, requestId: d.id }, t('サインインしました'), t('サインインできませんでした'));
         }
       });
       list.append(row);
@@ -184,14 +188,14 @@
       const i = rows.indexOf(card.root.activeElement);
       rows[(i + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
     });
-    body.append(el('div', 'who', rpId), list, msg, foot([['⏎', 'サインイン']]));
+    body.append(el('div', 'who', rpId), list, msg, foot([['⏎', t('サインイン')]]));
     card.controls = rows;
     takeFocus(d, rows[0]);
   }
 
   function showSave(d, info) {
     const { el } = ui;
-    const { body, msg } = openCard(d, 'パスキーを保存');
+    const { body, msg } = openCard(d, t('パスキーを保存'));
     const user = info.user || {};
     const vaults = Array.isArray(info.vaults) ? info.vaults : [];
     body.append(el('div', 'who', info.rpName && info.rpName !== info.rpId ? `${info.rpName} · ${info.rpId}` : info.rpId));
@@ -203,7 +207,7 @@
 
     if (info.excluded) {
       // Told only after the user acts, so the page cannot probe what Akari holds.
-      body.append(el('div', 'note', 'このアカウントのパスキーは Akari に保存済みです'));
+      body.append(el('div', 'note', t('このアカウントのパスキーは Akari に保存済みです')));
       primary.textContent = 'OK';
       primary.addEventListener('click', (e) => {
         if (!card.guard || !card.guard.ok(e) || card.d !== d) return;
@@ -212,7 +216,7 @@
       });
       card.controls = [primary];
     } else {
-      const name = user.displayName || user.name || 'パスキー';
+      const name = user.displayName || user.name || t('パスキー');
       let chosen = info.defaultVault;
       const single = vaults.length === 1 ? vaults[0].name : '';
       body.append(account('acct', name, [user.name !== name ? user.name : '', single].filter(Boolean).join(' · ')));
@@ -220,8 +224,8 @@
       if (vaults.length > 1) {
         const row = el('div', 'chips');
         row.setAttribute('role', 'group');
-        row.setAttribute('aria-label', '保存先の保管庫');
-        row.append(el('span', 'lbl', '保存先'));
+        row.setAttribute('aria-label', t('保存先の保管庫'));
+        row.append(el('span', 'lbl', t('保存先')));
         for (const v of vaults) {
           const chip = el('button', 'chip', v.name);
           chip.type = 'button';
@@ -237,15 +241,15 @@
         }
         body.append(row);
       }
-      primary.textContent = '保存';
+      primary.textContent = t('保存');
       primary.addEventListener('click', (e) => {
         if (card.guard && card.guard.ok(e)) {
-          act({ type: SAVE, options: d.options, vault: chosen, requestId: d.id }, 'パスキーを保存しました', '保存できませんでした');
+          act({ type: SAVE, options: d.options, vault: chosen, requestId: d.id }, t('パスキーを保存しました'), t('保存できませんでした'));
         }
       });
       card.controls = [primary, ...chips];
     }
-    body.append(msg, btns, foot([['⏎', info.excluded ? 'OK' : '保存']]));
+    body.append(msg, btns, foot([['⏎', info.excluded ? 'OK' : t('保存')]]));
     takeFocus(d, primary);
   }
 
@@ -287,7 +291,7 @@
     }
     card.busy = false;
     for (const c of card.controls) c.disabled = false;
-    card.note(res ? failText : 'Akari が更新されました — ページを再読み込みしてください');
+    card.note(res ? failText : t('Akari が更新されました — ページを再読み込みしてください'));
   }
 
   // ---- page messages ------------------------------------------------------------------

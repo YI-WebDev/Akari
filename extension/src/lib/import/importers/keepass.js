@@ -4,6 +4,7 @@
 // and the predefined + numeric character entities.
 
 import { ImportError, parseOtp, bytesToText } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { L, looksSecret } from './_fields.js';
 import { normalizeSecret, isValidSecret, base32Encode } from '../../totp.js';
 import { fromB64 } from '../../../shared/bytes.js';
@@ -19,8 +20,8 @@ function decodeEntities(s) {
   });
 }
 
-const badXml = () => new ImportError('INVALID_FORMAT', 'XML として読めませんでした（ファイルが壊れている可能性があります）');
-const tooLarge = () => new ImportError('UNSUPPORTED', 'ファイルが大きすぎます');
+const badXml = () => new ImportError('INVALID_FORMAT', t('XML として読めませんでした（ファイルが壊れている可能性があります）'));
+const tooLarge = () => new ImportError('UNSUPPORTED', t('ファイルが大きすぎます'));
 const NAME = /[^\s/>=]+/y;
 
 // Limits keep a hostile file from exhausting the popup's memory or stack. Real KeePass
@@ -127,7 +128,7 @@ export function parseXml(xml) {
     }
     top.children.push(el);
     if (!selfClosing) {
-      if (stack.length > MAX_DEPTH) throw new ImportError('UNSUPPORTED', 'XML の入れ子が深すぎます');
+      if (stack.length > MAX_DEPTH) throw new ImportError('UNSUPPORTED', t('XML の入れ子が深すぎます'));
       stack.push(el);
     }
     i = p;
@@ -229,11 +230,11 @@ export async function parse(file) {
   if (file.bytes.length > MAX_XML_CHARS) throw tooLarge(); // encoded text has at least as many bytes as chars
   const text = bytesToText(file.bytes);
   if (!/<KeePassFile[\s>]/.test(text)) {
-    throw new ImportError('INVALID_FORMAT', 'KeePass の XML（2.x）ではありません。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください');
+    throw new ImportError('INVALID_FORMAT', t('KeePass の XML（2.x）ではありません。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください'));
   }
   const kp = kid(parseXml(text), 'KeePassFile');
   const root = kid(kp, 'Root');
-  if (!root) throw new ImportError('INVALID_FORMAT', 'KeePass の XML に Root がありません');
+  if (!root) throw new ImportError('INVALID_FORMAT', t('KeePass の XML に Root がありません'));
   const meta = kid(kp, 'Meta');
   const binEl = kid(meta, 'RecycleBinUUID');
   const binUuid = (binEl?.text || '').trim();
@@ -253,7 +254,7 @@ export async function parse(file) {
       const val = kid(s, 'Value');
       if (!key || !val) continue;
       if (/^true$/i.test(val.attrs.Protected || '')) {
-        throw new ImportError('UNSUPPORTED', '暗号化された値を含む XML です。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください');
+        throw new ImportError('UNSUPPORTED', t('暗号化された値を含む XML です。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください'));
       }
       strings.set(key, val.text);
       if (/^true$/i.test(val.attrs.ProtectInMemory || '')) hidden.add(key);
@@ -297,7 +298,7 @@ export async function parse(file) {
   for (const g of kids(root, 'Group')) walk(g);
 
   const warnings = [];
-  if (attachments) warnings.push(`添付ファイル ${attachments} 件は読み込まれません`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
+  if (attachments) warnings.push(t('添付ファイル {n} 件は読み込まれません', { n: attachments }));
+  if (badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: badTotp }));
   return { items, skipped, warnings };
 }

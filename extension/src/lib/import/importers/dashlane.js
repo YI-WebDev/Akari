@@ -7,6 +7,7 @@
 //  - the legacy JSON layout ({ AUTHENTIFIANT: [...], SECURENOTE: [...], … }), bare or zipped.
 
 import { ImportError, fieldsToNote, parseOtp, bytesToText, parseJson, isZip } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { readZip } from '../zip.js';
 import { csvToObjects, pick } from '../csv.js';
 import { personName } from '../../../shared/item-types.js';
@@ -24,9 +25,9 @@ const LABELS = {
   city: '市区町村', zip: '郵便番号', address_recipient: '宛名', address_door_code: 'ドアコード', job_title: '役職',
   url: 'URL', category: 'カテゴリ', type: '種類', title: 'タイトル', item_name: '名称',
 };
-const label = (col) => L(col, LABELS[col] || col);
+const label = (col) => (LABELS[col] ? L(col, LABELS[col]) : col); // an unknown column keeps the file's own name
 
-/** Legacy JSON section → Japanese name of a kind kept as a note. */
+/** Legacy JSON section → Japanese name of a kind kept as a note (translated when reported or used as a title). */
 const JSON_NOTE_KINDS = { FISCALSTATEMENT: '税務情報' };
 /** Legacy JSON keys that are bookkeeping, not data. */
 const LEGACY_SKIP = /^(id|anonid|spaceid|localeformat|lastbackuptime|creationdatetime|usermodificationdatetime|creationdate|updatedate|kwtype|attachments|lastuse|color)$/i;
@@ -119,7 +120,7 @@ function payment(run, rec, headers) {
     rest(b, rec, headers, ['type', 'account_name', 'account_holder', 'account_number', 'routing_number', 'issuing_bank', 'bank_name', 'bank', 'iban', 'bic', 'note']);
     run.items.push(b.item({ title, note: rec.note }));
   } else {
-    asNote(run, '支払い情報', title || '支払い情報', headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
+    asNote(run, '支払い情報', title || t('支払い情報'), headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
   }
 }
 
@@ -139,7 +140,7 @@ function idRow(run, rec, headers) {
   const title = pick(rec, 'name', 'title');
   if (!known) {
     const name = kind === 'tax_number' ? '税番号' : '身分証明書';
-    asNote(run, name, title || name, headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
+    asNote(run, name, title || t(name), headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
     return;
   }
   const entries = headers.filter((h) => h && h !== 'type' && h !== 'note').map((h) => ({ id: h, label: label(h), value: rec[h], secret: looksSecret(h) }));
@@ -215,7 +216,7 @@ function fromCsv(run, text, fileName) {
     } else if (isIds) {
       idRow(run, rec, headers);
     } else {
-      const title = pick(rec, 'title', 'item_name', 'account_name', 'name') || 'その他';
+      const title = pick(rec, 'title', 'item_name', 'account_name', 'name') || t('その他');
       asNote(run, 'その他', title, headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
     }
   }
@@ -269,7 +270,7 @@ function fromLegacyJson(run, json) {
       } else {
         const kind = JSON_NOTE_KINDS[section] || 'その他';
         const pairs = Object.entries(e).filter(([k, v]) => k !== 'note' && v != null && typeof v !== 'object' && !LEGACY_SKIP.test(k));
-        asNote(run, kind, str(e.title || e.name || e.fullname) || kind, pairs, e.note);
+        asNote(run, kind, str(e.title || e.name || e.fullname) || t(kind), pairs, e.note);
       }
     }
   }
@@ -293,19 +294,19 @@ export async function parse(file) {
         const j = parseJson(bytesToText(await e.bytes()), 'Dashlane');
         if (isLegacyJson(j)) { fromLegacyJson(run, j); found = true; }
       }
-      if (!found) throw new ImportError('INVALID_FORMAT', 'Dashlane の書き出しファイルではありません（ZIP に CSV が見つかりませんでした）');
+      if (!found) throw new ImportError('INVALID_FORMAT', t('Dashlane の書き出しファイルではありません（ZIP に CSV が見つかりませんでした）'));
     }
   } else {
     const text = bytesToText(file.bytes);
     if (/^\s*\{/.test(text)) {
       const j = parseJson(text, 'Dashlane');
-      if (!isLegacyJson(j)) throw new ImportError('INVALID_FORMAT', 'Dashlane の書き出しファイルではありません');
+      if (!isLegacyJson(j)) throw new ImportError('INVALID_FORMAT', t('Dashlane の書き出しファイルではありません'));
       fromLegacyJson(run, j);
     } else {
       fromCsv(run, text, file.name || '');
     }
   }
-  const warnings = Object.entries(run.converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はカスタムフィールドに残しました`);
+  const warnings = Object.entries(run.converted).map(([k, n]) => t('{kind} {n} 件をセキュアノートとして読み込みました', { kind: t(k), n }));
+  if (run.badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: run.badTotp }));
   return { items: run.items, skipped: run.skipped, warnings };
 }

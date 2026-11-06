@@ -3,6 +3,7 @@
 
 import { MSG } from '../../shared/messages.js';
 import { generatePassword } from '../../lib/generator.js';
+import { t } from '../../shared/i18n.js';
 import {
   emit, call, itemById, copyText, forSave, replaceItem, mergeSaved, errText, liveToken, live,
 } from '../state.js';
@@ -13,7 +14,8 @@ import { setMeter } from './meter.js';
 import { toastError } from './toast.js';
 
 const KEY = 'akari.gen';
-const LABELS = ['—', '弱い', '普通', '強い', '非常に強い'];
+// strength names, translated when shown (the locale is chosen after the modules load)
+const levelLabel = (lv) => t(['—', '弱い', '普通', '強い', '非常に強い'][lv]);
 const RANGE = { random: [8, 48], phrase: [3, 8] };
 
 const opts = { mode: 'random', length: 20, words: 4, upper: true, digits: true, symbols: true, avoidAmbiguous: false };
@@ -67,12 +69,12 @@ function renderChars(text) {
     const cls = /\d/.test(c) ? 'cd' : /[A-Za-z]/.test(c) ? 'cl' : 'cs';
     box.append(h('span', { class: cls }, c));
   }
-  box.setAttribute('aria-label', '生成したパスワード');
+  box.setAttribute('aria-label', t('生成したパスワード'));
 }
 
 function renderStrength() {
   const lv = levelFromBits(bits);
-  setMeter($('genMeter'), { bits, level: lv, label: LABELS[lv] });
+  setMeter($('genMeter'), { bits, level: lv, label: levelLabel(lv) });
 }
 
 /** The options as the equivalent `akari gen` command line. */
@@ -90,7 +92,7 @@ function renderControls() {
   const [mn, mx] = RANGE[opts.mode];
   const v = isR ? opts.length : opts.words;
   const pct = ((v - mn) / (mx - mn) * 100).toFixed(1) + '%';
-  $('sliderLabel').textContent = isR ? '長さ' : '単語数';
+  $('sliderLabel').textContent = isR ? t('長さ') : t('単語数');
   $('sliderFill').style.width = pct;
   $('sliderKnob').style.left = pct;
   $('sliderVal').textContent = String(v);
@@ -98,7 +100,7 @@ function renderControls() {
   sl.setAttribute('aria-valuemin', mn);
   sl.setAttribute('aria-valuemax', mx);
   sl.setAttribute('aria-valuenow', v);
-  sl.setAttribute('aria-valuetext', isR ? `${v} 文字` : `${v} 語`);
+  sl.setAttribute('aria-valuetext', isR ? t('{n} 文字', { n: v }) : t('{n} 語', { n: v }));
   for (const b of $('genToggles').querySelectorAll('.tgl')) {
     const k = b.dataset.opt;
     b.setAttribute('aria-checked', String(!!opts[k]));
@@ -151,9 +153,9 @@ function setValue(v, animate) {
 const siteOf = (item) => (item?.type === 'login' ? safeHttpUrl(item.url) : '');
 
 function applyLabel() {
-  if (ctx.source === 'editor') return 'パスワードに使う';
-  if (ctx.target) return siteOf(itemById(ctx.target)) ? 'サイトで変更する' : '保留してコピー';
-  return 'コピーして閉じる';
+  if (ctx.source === 'editor') return t('パスワードに使う');
+  if (ctx.target) return siteOf(itemById(ctx.target)) ? t('サイトで変更する') : t('保留してコピー');
+  return t('コピーして閉じる');
 }
 
 export function openGenerator({ target = null, source = null, onUse = null, title = '' } = {}) {
@@ -161,7 +163,7 @@ export function openGenerator({ target = null, source = null, onUse = null, titl
   clearTimeout(wipeTimer);
   ctx = { target: item ? item.id : null, source, onUse, title };
   const chip = $('genChip');
-  const chipText = item ? item.title : source === 'editor' ? title || '新規ログイン' : '';
+  const chipText = item ? item.title : source === 'editor' ? title || t('新規ログイン') : '';
   chip.textContent = chipText;
   chip.hidden = !chipText;
   $('genApply').textContent = applyLabel();
@@ -213,7 +215,7 @@ async function apply() {
   const genBits = bits;
   const lv = levelFromBits(genBits);
   if (ctx.source === 'editor') {
-    ctx.onUse?.(password, { bits: genBits, level: lv, label: LABELS[lv] });
+    ctx.onUse?.(password, { bits: genBits, level: lv, label: levelLabel(lv) });
     closeGenerator();
     return;
   }
@@ -246,7 +248,7 @@ async function holdForSite(password) {
     emit('passwordPending', item.id);
     if (site) chrome.tabs.create({ url: site }); // the saved URL; the popup closes here
   } catch (e) {
-    if (live(token)) toastError('保留できませんでした', errText(e));
+    if (live(token)) toastError(t('保留できませんでした'), errText(e));
   } finally {
     setBusy(false);
   }
@@ -267,9 +269,9 @@ async function updateNow() {
     if (!live(token)) return;
     replaceItem(mergeSaved(res?.item, { ...item, password, updatedAt: Date.now() }));
     closeGenerator();
-    emit('passwordUpdated', item.id, { password, level: lv, label: LABELS[lv], bits: genBits });
+    emit('passwordUpdated', item.id, { password, level: lv, label: levelLabel(lv), bits: genBits });
   } catch (e) {
-    if (live(token)) toastError('パスワードを更新できませんでした', errText(e));
+    if (live(token)) toastError(t('パスワードを更新できませんでした'), errText(e));
   } finally {
     setBusy(false);
   }

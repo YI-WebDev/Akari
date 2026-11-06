@@ -6,8 +6,8 @@ import { t } from '../../shared/i18n.js';
 import {
   S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, setAutofillState, prunePicked,
 } from '../state.js';
-import { h, clear, icon } from './dom.js';
-import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
+import { h, clear, icon, brLines } from './dom.js';
+import { groupName, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
 import { isView, viewName, viewIcon } from './type-menu.js';
 
 const $ = (id) => document.getElementById(id);
@@ -52,8 +52,8 @@ function rowFlags(it) {
   const tag = typeOf(it.type)?.tag || null;
   if (!weak && !totp && !tag) return null;
   return h('span', { class: 'row-flags' },
-    weak ? h('span', { class: 'row-weak', title: '弱いパスワード', role: 'img', 'aria-label': '弱いパスワード' }) : null,
-    totp ? h('span', { class: 'tag', title: '認証コード（2FA）あり' }, '2FA') : null,
+    weak ? h('span', { class: 'row-weak', title: t('弱いパスワード'), role: 'img', 'aria-label': t('弱いパスワード') }) : null,
+    totp ? h('span', { class: 'tag', title: t('認証コード（2FA）あり') }, '2FA') : null,
     tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null);
 }
 
@@ -70,7 +70,7 @@ function rowEl(it, q) {
   S.picking ? h('span', { class: 'row-check', 'aria-hidden': 'true' }, icon('check', 10, 3.4)) : null,
   tileEl(it),
   h('span', { class: 'row-text' },
-    h('span', { class: 'row-title' }, highlight(it.title || '(無題)', q)),
+    h('span', { class: 'row-title' }, highlight(it.title || t('(無題)'), q)),
     h('span', { class: 'row-user' + (sub.plain ? ' plain' : '') }, sub.plain ? sub.text : highlight(sub.text, q))),
   rowFlags(it));
 }
@@ -82,9 +82,9 @@ export function setAfState(state) {
   afButton.dataset.state = state;
   afButton.disabled = state !== 'idle';
   clear(afButton);
-  if (state === 'run') afButton.append(h('span', { class: 'spinner' }), h('span', null, '入力中'));
-  else if (state === 'done') afButton.append(icon('check', 11), h('span', null, '完了'));
-  else afButton.append(h('span', null, '⏎ 入力'));
+  if (state === 'run') afButton.append(h('span', { class: 'spinner' }), h('span', null, t('入力中')));
+  else if (state === 'done') afButton.append(icon('check', 11), h('span', null, t('完了')));
+  else afButton.append(h('span', null, t('⏎ 入力')));
 }
 
 export function afButtonEl() {
@@ -105,13 +105,13 @@ export function afCandidate() {
 function afCard(it) {
   afButton = h('button', {
     class: 'af-btn', type: 'button', dataset: { state: S.af.state },
-    'aria-label': `${S.af.site} に自動入力`, title: `${S.af.site} に自動入力`,
+    'aria-label': t('{site} に自動入力', { site: S.af.site }), title: t('{site} に自動入力', { site: S.af.site }),
     onclick: (e) => { e.stopPropagation(); emit('autofill'); },
   });
   setAfState(S.af.state);
   return h('div', { class: 'af', dataset: { row: '' } },
     h('div', { class: 'af-head' },
-      h('span', { class: 'af-label' }, '現在のタブ'),
+      h('span', { class: 'af-label' }, t('現在のタブ')),
       h('span', { class: 'af-site' }, S.af.site)),
     h('div', { class: 'af-row' },
       tileEl(it, 'sm'),
@@ -119,17 +119,17 @@ function afCard(it) {
       afButton));
 }
 
-const emptyBox = (lines) => h('div', { class: 'empty' }, h('div', { class: 'empty-n' }, '0 件'), ...lines);
+const emptyBox = (lines) => h('div', { class: 'empty' }, h('div', { class: 'empty-n' }, t('{n} 件', { n: 0 })), ...lines);
 
 function emptyHero() {
   return h('div', { class: 'empty-hero' },
-    h('div', { class: 'empty-n' }, '0 件'),
-    h('div', { class: 'empty-msg' }, 'ログインやメモを追加すると', h('br'), 'ここに並びます'));
+    h('div', { class: 'empty-n' }, t('{n} 件', { n: 0 })),
+    h('div', { class: 'empty-msg' }, brLines(t('ログインやメモを追加すると\nここに並びます'))));
 }
 
 function emptyMessage(q) {
   if (q) {
-    return emptyBox([`「${S.query.trim()}」に一致するアイテムはありません`,
+    return emptyBox([t('「{q}」に一致するアイテムはありません', { q: S.query.trim() }),
       S.type !== 'all' ? [h('br'), t('list.emptyQueryType', { type: typeLabel(S.type) }, '（種類「{type}」で絞り込み中）')] : null]);
   }
   if (S.type !== 'all') {
@@ -139,9 +139,9 @@ function emptyMessage(q) {
         class: 'btn-line btn-sm', type: 'button', onclick: () => emit(type === 'login' ? 'newLogin' : 'newItem', type),
       }, icon('plus', 11, 2.6), t('editor.new', { type: typeLabel(type) }, '新規{type}')))]);
   }
-  if (S.filter === 'fav') return emptyBox(['お気に入りはまだありません', h('br'), '詳細の ★ で追加できます']);
-  if (S.filter === 'recent') return emptyBox(['最近つかったアイテムは', h('br'), 'ありません']);
-  return emptyBox(['この保管庫は空です']);
+  if (S.filter === 'fav') return emptyBox([t('お気に入りはまだありません'), h('br'), t('詳細の ★ で追加できます')]);
+  if (S.filter === 'recent') return emptyBox(brLines(t('最近つかったアイテムは\nありません')));
+  return emptyBox([t('この保管庫は空です')]);
 }
 
 function groupEl(label, count) {
@@ -221,7 +221,7 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
     L.append(groupEl('A–Z', vis.length));
     for (const it of vis) L.append(rowEl(it, hq));
   } else {
-    appendGroups(L, vis, hq, vis.map((it) => groupIndex(it.lastUsedAt, now)), (g) => GROUPS[g]);
+    appendGroups(L, vis, hq, vis.map((it) => groupIndex(it.lastUsedAt, now)), groupName);
   }
   L.setAttribute('aria-activedescendant', S.sel ? 'row-' + S.sel : '');
   if (keepScroll && !animate) L.scrollTop = top;

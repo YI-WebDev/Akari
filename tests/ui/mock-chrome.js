@@ -1,7 +1,7 @@
 // Fake `chrome` for previewing the popup outside the extension (tests/ui/preview.html,
 // tests/ui/screenshot.mjs). Classic script — load it before popup.js.
 // Implements the PLAN §3 messages the popup sends, over the design's seed data.
-// Config: window.__AKARI_MOCK__ = { state: 'unlocked'|'locked'|'setup', empty, tabUrl, qrDataUrl, delay }
+// Config: window.__AKARI_MOCK__ = { state: 'unlocked'|'locked'|'setup', empty, tabUrl, qrDataUrl, delay, lang, uiLang }
 // or the same keys as query parameters of the page URL.
 (function () {
   'use strict';
@@ -11,6 +11,8 @@
     empty: params.get('empty') === '1',
     tabUrl: params.get('tab') || 'https://github.com/login',
     delay: params.has('delay') ? Number(params.get('delay')) : 1,
+    lang: params.get('lang') || 'auto', // the 言語 setting
+    uiLang: params.get('uiLang') || 'ja', // what chrome.i18n.getUILanguage() answers
     qrDataUrl: null,
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
@@ -154,7 +156,7 @@
     master: 'akari-master',
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
     items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
-    settings: { autoLockMinutes: 15, clipboardClearSeconds: 30 },
+    settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang },
   };
   // cfg.seedPatch: { [id]: partial item } — `fields` is merged, other keys replace (edge cases for tests)
   Object.keys(cfg.seedPatch || {}).forEach(function (id) {
@@ -444,6 +446,7 @@
       captureVisibleTab: async function () { return cfg.qrDataUrl || BLANK_PNG; },
     },
     storage: { local: store(), session: store(), onChanged: { addListener: function () {} } },
+    i18n: { getUILanguage: function () { return cfg.uiLang; } },
   };
 
   try {

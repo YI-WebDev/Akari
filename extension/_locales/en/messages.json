@@ -1,0 +1,11 @@
+{
+  "name": {
+    "message": "Akari — Password manager"
+  },
+  "description": {
+    "message": "A light for your keys in the dark. A password manager that keeps passwords, 2FA codes (TOTP) and passkeys together, encrypted on your device."
+  },
+  "cmdAutofill": {
+    "message": "Autofill this page"
+  }
+}

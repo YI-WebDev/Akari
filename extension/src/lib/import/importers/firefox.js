@@ -26,7 +26,8 @@ const hostText = (url) => url
   .replace(/:\d+$/, '');
 
 export async function parse(file) {
-  const { records } = readCsv(file, 'Firefox', accepts, 'url, username, password, httpRealm などの');
+  const { records } = readCsv(file, accepts,
+    t('Firefox の CSV ではないようです（url, username, password, httpRealm などの列が見つかりません）'));
   const warnings = [];
   let internal = 0;
   const out = collect(records, (r) => {
@@ -43,6 +44,6 @@ export async function parse(file) {
       updatedAt: toMs(r.timepasswordchanged),
     };
   }, warnings);
-  if (internal) warnings.push(`Firefox の同期用エントリ ${internal} 件は取り込みませんでした`);
+  if (internal) warnings.push(t('Firefox の同期用エントリ {n} 件は取り込みませんでした', { n: internal }));
   return out;
 }

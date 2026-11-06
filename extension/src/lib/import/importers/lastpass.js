@@ -7,6 +7,7 @@
 // - `extra` of a normal login is its note, fav is "1" for favourites
 
 import { isTruthy } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { collect, fits, otpOf, readCsv, routeToTemplate } from './_csv.js';
 import { normKey, toMonth } from './_values.js';
 
@@ -168,7 +169,8 @@ function structuredItem(r, lines) {
 }
 
 export async function parse(file) {
-  const { records } = readCsv(file, 'LastPass', accepts, 'url, username, password, name, extra の');
+  const { records } = readCsv(file, accepts,
+    t('LastPass の CSV ではないようです（url, username, password, name, extra の列が見つかりません）'));
   const warnings = [];
   let foldered = false;
   const out = collect(records, (r) => {
@@ -192,6 +194,6 @@ export async function parse(file) {
       fav: isTruthy(r.fav),
     };
   }, warnings);
-  if (foldered) warnings.push('フォルダー（グループ）の情報は取り込まれません');
+  if (foldered) warnings.push(t('フォルダー（グループ）の情報は取り込まれません'));
   return out;
 }

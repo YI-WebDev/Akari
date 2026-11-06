@@ -108,7 +108,7 @@ function renderTabs(c) {
 
 function rowEl(it) {
   const list = issuesOf(it);
-  const label = list.map(issueLabel).join('・');
+  const label = list.map(issueLabel).join(t('・'));
   return h('div', {
     class: 'row hs-row', role: 'option', id: 'hs-row-' + it.id, 'aria-selected': String(it.id === sel), dataset: { id: it.id },
     onclick: () => select(it.id, { focusList: true }),
@@ -117,7 +117,7 @@ function rowEl(it) {
   h('span', { class: 'row-caret', 'aria-hidden': 'true' }, '›'),
   tileEl(it),
   h('span', { class: 'row-text' },
-    h('span', { class: 'row-title' }, it.title || '(無題)'),
+    h('span', { class: 'row-title' }, it.title || t('(無題)')),
     h('span', { class: 'row-user' }, it.username || '')),
   h('span', { class: 'row-flags hz-dots', role: 'img', 'aria-label': label, title: label },
     ...list.map((k) => h('span', { class: 'hz-dot', dataset: { issue: k } }))));
@@ -151,7 +151,7 @@ function renderPane() {
   const action = list.some(isAction);
   P.append(h('div', { class: 'hs-head' }, tileEl(it),
     h('div', { class: 'hs-who' },
-      h('div', { class: 'hs-title' }, it.title || '(無題)'),
+      h('div', { class: 'hs-title' }, it.title || t('(無題)')),
       h('div', { class: 'hs-user' }, [it.username, vault?.name && `[${vault.name}]`].filter(Boolean).join('  ')))));
   P.append(h('ul', { class: 'hs-issues' + (action ? '' : ' advice'), 'aria-label': t('health.issues', null, '見つかった問題') },
     ...list.map((k) => h('li', { dataset: { issue: k } },
@@ -159,9 +159,9 @@ function renderPane() {
       h('span', { class: 'hs-text' }, line(k, it))))));
   if (list.includes('reused')) {
     const same = samePassword(it);
-    const shown = same.slice(0, 5).map((x) => x.title || '(無題)');
+    const shown = same.slice(0, 5).map((x) => x.title || t('(無題)'));
     if (same.length > shown.length) shown.push(t('health.more', { n: same.length - shown.length }, 'ほか {n} 件'));
-    P.append(h('p', { class: 'hs-same' }, h('span', { class: 'hs-same-k' }, t('health.same', null, '同じパスワード')), shown.join('、')));
+    P.append(h('p', { class: 'hs-same' }, h('span', { class: 'hs-same-k' }, t('health.same', null, '同じパスワード')), shown.join(t('、'))));
   }
   P.append(h('div', { class: 'hs-acts' },
     h('button', { class: 'btn-mini', type: 'button', onclick: () => act('show', it.id) }, t('health.show', null, '詳細を開く')),
@@ -174,7 +174,7 @@ function renderPane() {
 function render() {
   const c = healthCounts();
   const v = vaultById(S.vault);
-  $('hsSub').textContent = `保管庫: ${S.vault === 'all' || !v ? 'すべて' : v.name} · ` + t('health.logins', { n: c.logins }, 'ログイン {n} 件');
+  $('hsSub').textContent = t('保管庫: {name}', { name: S.vault === 'all' || !v ? t('すべて') : v.name }) + ' · ' + t('health.logins', { n: c.logins }, 'ログイン {n} 件');
   rows = rowsOf(tab);
   if (!rows.some((x) => x.id === sel)) sel = rows[0]?.id ?? null;
   renderTabs(c);

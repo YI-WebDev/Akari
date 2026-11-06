@@ -56,7 +56,7 @@ export function openMenu(which) {
 function renderVaultMenu() {
   const box = $('vaultItems');
   clear(box);
-  const entries = [{ id: 'all', name: 'すべての保管庫', count: S.items.length, color: 'var(--accent)' }]
+  const entries = [{ id: 'all', name: t('すべての保管庫'), count: S.items.length, color: 'var(--accent)' }]
     .concat(S.vaults.map((v) => ({ id: v.id, name: v.name, count: S.items.filter((i) => i.vault === v.id).length, color: vaultColor(v.hue) })));
   for (const v of entries) {
     const on = S.vault === v.id;

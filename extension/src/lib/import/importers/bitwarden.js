@@ -10,6 +10,7 @@
 // HMAC-SHA256(macKey, iv ‖ ciphertext), verified before decrypting.
 
 import { ImportError, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
 import { utf8, fromUtf8, fromB64, toB64url, fromB64url, concat } from '../../../shared/bytes.js';
 import { TYPE_IDS, typeOf, fieldLabel, personName } from '../../../shared/item-types.js';
@@ -78,15 +79,15 @@ async function deriveKeys(password, salt, iterations) {
 /** Decrypt a type-2 EncString; returns null when the MAC does not match (wrong password). */
 async function decryptEncString(s, keys) {
   const m = /^2\.([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)$/.exec(String(s).trim());
-  if (!m) throw new ImportError('INVALID_FORMAT', 'Bitwarden の暗号化データの形式が正しくありません');
+  if (!m) throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
   let iv, ct, mac;
   try {
     [iv, ct, mac] = [fromB64(m[1]), fromB64(m[2]), fromB64(m[3])];
   } catch {
-    throw new ImportError('INVALID_FORMAT', 'Bitwarden の暗号化データの形式が正しくありません');
+    throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
   }
   if (iv.length !== 16 || mac.length !== 32 || !ct.length || ct.length % 16) {
-    throw new ImportError('INVALID_FORMAT', 'Bitwarden の暗号化データの形式が正しくありません');
+    throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
   }
   const macKey = await crypto.subtle.importKey('raw', keys.mac, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
   if (!(await crypto.subtle.verify('HMAC', macKey, mac, concat(iv, ct)))) return null;
@@ -94,33 +95,33 @@ async function decryptEncString(s, keys) {
   try {
     return fromUtf8(new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aes, ct)));
   } catch {
-    throw new ImportError('INVALID_FORMAT', 'Bitwarden の暗号化データを復号できませんでした');
+    throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データを復号できませんでした'));
   }
 }
 
 async function decryptExport(j, password) {
   if (!j.passwordProtected) {
-    throw new ImportError('UNSUPPORTED', 'Bitwarden アカウントの鍵で暗号化されたファイルには対応していません。「パスワード保護」か暗号化なしで書き出してください');
+    throw new ImportError('UNSUPPORTED', t('Bitwarden アカウントの鍵で暗号化されたファイルには対応していません。「パスワード保護」か暗号化なしで書き出してください'));
   }
   const kdf = j.kdfType == null ? 0 : Number(j.kdfType);
-  if (kdf === 1) throw new ImportError('UNSUPPORTED', 'Argon2id で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください');
-  if (kdf !== 0) throw new ImportError('UNSUPPORTED', 'このキー導出方式で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください');
+  if (kdf === 1) throw new ImportError('UNSUPPORTED', t('Argon2id で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
+  if (kdf !== 0) throw new ImportError('UNSUPPORTED', t('このキー導出方式で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
   const iterations = Number(j.kdfIterations);
   if (!Number.isInteger(iterations) || iterations < 1 || iterations > 2_000_000 // Bitwarden's own maximum
     || typeof j.salt !== 'string' || !j.salt
     || typeof j.encKeyValidation_DO_NOT_EDIT !== 'string' || typeof j.data !== 'string') {
-    throw new ImportError('INVALID_FORMAT', 'パスワード保護された Bitwarden ファイルの形式が正しくありません');
+    throw new ImportError('INVALID_FORMAT', t('パスワード保護された Bitwarden ファイルの形式が正しくありません'));
   }
   if (!password) {
-    throw new ImportError('NEEDS_PASSWORD', 'パスワードで保護された Bitwarden のファイルです。書き出し時に設定したパスワードを入力してください');
+    throw new ImportError('NEEDS_PASSWORD', t('パスワードで保護された Bitwarden のファイルです。書き出し時に設定したパスワードを入力してください'));
   }
   const keys = await deriveKeys(password, j.salt, iterations);
   if ((await decryptEncString(j.encKeyValidation_DO_NOT_EDIT, keys)) == null) {
-    throw new ImportError('BAD_PASSWORD', 'パスワードが違います');
+    throw new ImportError('BAD_PASSWORD', t('パスワードが違います'));
   }
   const plain = await decryptEncString(j.data, keys);
-  if (plain == null) throw new ImportError('INVALID_FORMAT', 'ファイルが壊れているか、書き換えられています');
-  return parseJson(plain, 'Bitwarden（復号後）');
+  if (plain == null) throw new ImportError('INVALID_FORMAT', t('ファイルが壊れているか、書き換えられています'));
+  return parseJson(plain, t('Bitwarden（復号後）'));
 }
 
 // --- passkeys (login.fido2Credentials) -----------------------------------------------------
@@ -232,16 +233,16 @@ export async function parse(file, ctx = {}) {
   if (isZip(file.bytes)) {
     const entries = readZip(file.bytes);
     const data = findEntry(entries, 'data.json');
-    if (!data) throw new ImportError('INVALID_FORMAT', 'Bitwarden の ZIP に data.json が見つかりませんでした');
+    if (!data) throw new ImportError('INVALID_FORMAT', t('Bitwarden の ZIP に data.json が見つかりませんでした'));
     const others = entries.filter((e) => e !== data).length;
-    if (others) warnings.push(`添付ファイル ${others} 件は読み込まれません`);
+    if (others) warnings.push(t('添付ファイル {n} 件は読み込まれません', { n: others }));
     json = parseJson(bytesToText(await data.bytes()), 'Bitwarden');
   } else {
     json = parseJson(bytesToText(file.bytes), 'Bitwarden');
   }
   if (json && json.encrypted === true) json = await decryptExport(json, ctx.password);
   if (!json || typeof json !== 'object' || !Array.isArray(json.items)) {
-    throw new ImportError('INVALID_FORMAT', 'Bitwarden の書き出しファイル（JSON）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('Bitwarden の書き出しファイル（JSON）ではありません'));
   }
 
   const items = [];
@@ -288,8 +289,8 @@ export async function parse(file, ctx = {}) {
     }
   }
 
-  if (unknown) warnings.push(`種類の分からないアイテム ${unknown} 件をセキュアノートとして読み込みました`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
-  if (badPasskeys) warnings.push(`パスキー ${badPasskeys} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした`);
+  if (unknown) warnings.push(t('種類の分からないアイテム {n} 件をセキュアノートとして読み込みました', { n: unknown }));
+  if (badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: badTotp }));
+  if (badPasskeys) warnings.push(t('パスキー {n} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした', { n: badPasskeys }));
   return { items, skipped, warnings };
 }

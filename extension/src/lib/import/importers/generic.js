@@ -14,6 +14,7 @@
 // are organisational and reported like the other folder-like columns.
 
 import { pick } from '../csv.js';
+import { t } from '../../../shared/i18n.js';
 import { isTruthy } from '../model.js';
 import { ITEM_TYPES, fieldLabel, hasTemplate, typeLabel } from '../../../shared/item-types.js';
 import { collect, entry, otpOf, readCsv, routeToTemplate } from './_csv.js';
@@ -113,7 +114,8 @@ export function accepts(headers) {
 }
 
 export async function parse(file) {
-  const { headers, rawHeaders, records } = readCsv(file, 'Generic', accepts, 'password、または url と username、または type と項目名の');
+  const { headers, rawHeaders, records } = readCsv(file, accepts,
+    t('Generic の CSV ではないようです（password、または url と username、または type と項目名の列が見つかりません）'));
   const { cols, rest } = plan(headers);
   // Headers are lower-cased to read records; labels shown to the user keep the file's spelling.
   const shown = new Map();
@@ -171,7 +173,7 @@ export async function parse(file) {
     return { type: isNote ? 'note' : 'login', title, url, username, password, note, extra, totp, fav };
   }, warnings);
   if (usedFolderish.size) {
-    warnings.push(`次の列は Akari に対応する項目がないため取り込まれません: ${[...usedFolderish].map((h) => shown.get(h)).join(', ')}`);
+    warnings.push(t('次の列は Akari に対応する項目がないため取り込まれません: {columns}', { columns: [...usedFolderish].map((h) => shown.get(h)).join(', ') }));
   }
   return out;
 }

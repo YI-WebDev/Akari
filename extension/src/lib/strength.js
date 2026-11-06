@@ -5,6 +5,7 @@
 // list, keyboard/alphabet/digit sequences, repeats, years, separators) and plain characters.
 // The result never exceeds the baseline.
 import WORDS from './wordlist.js';
+import { t } from '../shared/i18n.js';
 
 const LABELS = ['—', '弱い', '普通', '強い', '非常に強い'];
 const MAX_ANALYSED = 128; // longer passwords are scored on their first 128 characters
@@ -59,7 +60,7 @@ export function estimateStrength(password) {
 
 function result(bits) {
   const level = bits === 0 ? 0 : bits < 40 ? 1 : bits < 64 ? 2 : bits < 88 ? 3 : 4;
-  return { bits, level, label: LABELS[level] };
+  return { bits, level, label: t(LABELS[level]) };
 }
 
 function poolSize(p) {

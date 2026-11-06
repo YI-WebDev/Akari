@@ -6,6 +6,7 @@ import { MSG, DEFAULT_VAULTS } from '../shared/messages.js';
 import { send } from '../shared/api.js';
 import { typeOf } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
+import { useLanguage } from '../shared/locale.js';
 import {
   S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets, itemById, visibleItems, ensureSel,
   liveToken, live, setPhase, endEpoch, setSettings, setVaults, setVaultFilter, setListView, setSort, setSearch,
@@ -36,6 +37,8 @@ const app = $('app');
 
 // The soft theme is gone; drop the theme cache older versions kept in localStorage.
 try { localStorage.removeItem('akari.themePref'); } catch { /* storage blocked */ }
+
+const REOPEN_KEY = 'akari.reopen'; // views/settings.js sets it before reloading for a new language
 
 /* ───────── data ───────── */
 
@@ -149,8 +152,8 @@ async function lockService() {
     const st = await send(MSG.VAULT_STATUS);
     if (st?.locked) return;
   } catch { /* fall through */ }
-  setGateStatus('ロックできませんでした。保管庫はまだひらいています', { err: true });
-  toastError('ロックできませんでした', 'もう一度ロックしてください');
+  setGateStatus(t('ロックできませんでした。保管庫はまだひらいています'), { err: true });
+  toastError(t('ロックできませんでした'), t('もう一度ロックしてください'));
 }
 
 async function lockNow({ remote = false } = {}) {
@@ -319,7 +322,7 @@ function wire() {
     setSel(id);
     renderList();
     renderDetail({ animate: true });
-    toast('新しいパスワードを保留してコピーしました', 'サイトで変更してから「確定」を押してください');
+    toast(t('新しいパスワードを保留してコピーしました'), t('サイトで変更してから「確定」を押してください'));
   });
   on('passwordUpdated', (id, info) => {
     if (S.phase !== 'main') return;
@@ -335,7 +338,8 @@ function wire() {
     renderList();
     renderDetail({ animate: true });
     setTimeout(() => scrollToRow(item.id), 0);
-    toast(isNew ? `${item.title} を追加しました` : `${item.title} を保存しました`, isNew ? null : '変更は暗号化して保存されました');
+    toast(isNew ? t('{title} を追加しました', { title: item.title }) : t('{title} を保存しました', { title: item.title }),
+      isNew ? null : t('変更は暗号化して保存されました'));
     refreshAutofill();
   });
   on('deleted', (id, title) => {
@@ -346,7 +350,7 @@ function wire() {
     setSel(rest[Math.min(Math.max(idx, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
     renderList();
     renderDetail({ animate: true });
-    toast(`${title || 'アイテム'} を削除しました`);
+    toast(title ? t('{title} を削除しました', { title }) : t('アイテム を削除しました'));
   });
   on('editorClosed', () => { if (S.phase === 'main') renderDetail({ animate: true }); });
   on('reload', async () => {
@@ -361,7 +365,7 @@ function wire() {
       renderDetail({ animate: true });
       emit('reloaded');
     } catch (e) {
-      if (live(token)) toastError('保管庫を読み込めませんでした', errText(e));
+      if (live(token)) toastError(t('保管庫を読み込めませんでした'), errText(e));
     }
   });
   // A vault was added, renamed or recolored (views/vaults.js): items are unchanged.
@@ -382,20 +386,31 @@ function wire() {
   initGate({ load: loadAll, enter: () => enterMain({ animate: true }) });
 }
 
-async function boot() {
-  wire();
-  const settingsP = loadSettings();
-  let status;
+/** After a language change the popup reloads; it comes back to the settings sheet. */
+function reopenAfterLanguage() {
+  let target = null;
   try {
-    status = await send(MSG.VAULT_STATUS);
-  } catch {
-    await settingsP;
+    target = sessionStorage.getItem(REOPEN_KEY);
+    sessionStorage.removeItem(REOPEN_KEY);
+  } catch { /* storage blocked */ }
+  if (target !== 'settings' || S.phase !== 'main') return;
+  openSettings();
+  setTimeout(() => document.querySelector('#setSheet [data-setting="language"] [aria-checked="true"]')?.focus({ preventScroll: true }), 80);
+}
+
+async function boot() {
+  // the language comes first: the views build their text as they are wired
+  const statusP = send(MSG.VAULT_STATUS).then((s) => ({ s }), (e) => ({ e }));
+  await loadSettings();
+  useLanguage(S.settings?.language);
+  wire();
+  const { s: status, e: statusErr } = await statusP;
+  if (statusErr) {
     showGate('lock', { instant: true });
-    $('lockStatus').textContent = 'Akari のサービスに接続できませんでした';
+    $('lockStatus').textContent = t('Akari のサービスに接続できませんでした');
     $('lockStatus').classList.add('err');
     return;
   }
-  await settingsP;
   if (!status?.initialized) {
     setPhase('setup');
     app.dataset.phase = 'setup';
@@ -411,6 +426,7 @@ async function boot() {
   try {
     await loadAll();
     enterMain({ animate: true });
+    reopenAfterLanguage();
   } catch {
     setPhase('locked');
     app.dataset.phase = 'locked';

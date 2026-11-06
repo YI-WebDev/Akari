@@ -44,7 +44,8 @@ function parseRfFields(raw) {
 }
 
 export async function parse(file) {
-  const { records } = readCsv(file, 'RoboForm', accepts, 'Name, Login, Pwd, RfFieldsV2 などの');
+  const { records } = readCsv(file, accepts,
+    t('RoboForm の CSV ではないようです（Name, Login, Pwd, RfFieldsV2 などの列が見つかりません）'));
   const warnings = [];
   let foldered = false;
   const out = collect(records, (r) => {
@@ -96,6 +97,6 @@ export async function parse(file) {
       totp,
     };
   }, warnings);
-  if (foldered) warnings.push('フォルダーの情報は取り込まれません');
+  if (foldered) warnings.push(t('フォルダーの情報は取り込まれません'));
   return out;
 }

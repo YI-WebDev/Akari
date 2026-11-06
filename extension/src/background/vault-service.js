@@ -8,6 +8,7 @@
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK } from '../shared/messages.js';
+import { applyLanguage } from './locale.js';
 import { toB64, fromB64 } from '../shared/bytes.js';
 import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
 import {
@@ -39,6 +40,7 @@ const MAX_IMPORT_CHARS = 20 * 1024 * 1024;
 const SETTING_RULES = {
   autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
   clipboardClearSeconds: (v) => [0, 10, 30, 60].includes(v),
+  language: (v) => ['auto', 'ja', 'en'].includes(v),
 };
 
 const fail = (code, message) => new AkariError(code, message);
@@ -285,6 +287,7 @@ export function createVaultService({
       const current = await getSettings();
       const next = { ...current, ...patch };
       await local.set({ [SETTINGS_KEY]: next });
+      if (next.language !== current.language) applyLanguage(next.language);
       if (next.autoLockMinutes !== current.autoLockMinutes) {
         if (next.autoLockMinutes !== NEVER_LOCK) await local.remove(KEEP_KEY);
         else if (cache) await keepIfNeverLock(cache.dek);
@@ -596,6 +599,7 @@ export function createVaultService({
       Promise.resolve(local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' })).catch(() => {});
     } catch { /* not supported: content scripts still have no reason to read it */ }
     chrome.alarms?.onAlarm?.addListener(onAlarm);
+    getSettings().then((s) => applyLanguage(s.language), () => {});
   }
 
   return {
@@ -610,6 +614,8 @@ const live = globalThis.chrome?.storage?.local ? createVaultService({ chrome: gl
 if (live) {
   live.install();
   for (const [type, handler] of Object.entries(live.handlers)) register(type, handler, { from: 'extension' });
+  // the in-page UI may learn the language, and nothing else of the settings
+  register(MSG.SETTINGS_LANGUAGE, async () => ({ language: (await live.getSettings()).language }), { from: 'content' });
 }
 
 function svc() {

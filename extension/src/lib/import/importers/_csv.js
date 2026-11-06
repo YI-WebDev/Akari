@@ -18,11 +18,14 @@ export function fits(headers, { all = [], any = [] }) {
   return all.every((c) => has(headers, c)) && (!any.length || any.some((c) => has(headers, c)));
 }
 
-/** Decode + parse a CSV export; throws INVALID_FORMAT unless `accepts(headers)`. */
-export function readCsv(file, label, accepts, hint) {
+/**
+ * Decode + parse a CSV export; throws INVALID_FORMAT with `notThis` (the whole, translated
+ * sentence) unless `accepts(headers)`.
+ */
+export function readCsv(file, accepts, notThis) {
   const { headers, rawHeaders, records } = csvToObjects(bytesToText(file.bytes));
   if (!accepts(headers)) {
-    throw new ImportError('INVALID_FORMAT', `${label} の CSV ではないようです（${hint}列が見つかりません）`);
+    throw new ImportError('INVALID_FORMAT', notThis);
   }
   return { headers, rawHeaders, records };
 }

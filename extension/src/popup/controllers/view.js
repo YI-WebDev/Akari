@@ -1,6 +1,7 @@
 // Main view: the header and list-bar labels, rebuilding the list after the visible set
 // changed, the selection, and the search box.
 
+import { t } from '../../shared/i18n.js';
 import { S, ensureSel, visibleItems, setSearch, setSel } from '../state.js';
 import { vaultColor } from '../views/format.js';
 import { renderList, markSelected, scrollToRow, renderViewButton } from '../views/list.js';
@@ -13,16 +14,16 @@ const $ = (id) => document.getElementById(id);
 export function renderVaultLabel() {
   const v = S.vaults.find((x) => x.id === S.vault);
   const all = S.vault === 'all' || !v;
-  $('vaultLabel').textContent = all ? 'すべて' : v.name;
+  $('vaultLabel').textContent = all ? t('すべて') : v.name;
   $('vaultDot').style.background = all ? 'var(--text-soft)' : vaultColor(v.hue);
 }
 
 /** The list bar: the 表示 chip and the sort toggle. */
 export function renderFilters() {
   renderViewButton();
-  const sort = S.sort === 'az' ? 'A-Z' : '新着';
+  const sort = S.sort === 'az' ? 'A-Z' : t('新着');
   $('sortBtn').textContent = sort;
-  $('sortBtn').title = $('sortBtn').ariaLabel = `並び替え: ${sort}（クリックで切り替え）`;
+  $('sortBtn').title = $('sortBtn').ariaLabel = t('並び替え: {sort}（クリックで切り替え）', { sort });
 }
 
 /** Rebuild list (and detail if the selection moved) after the visible set changed. Returns whether it moved. */

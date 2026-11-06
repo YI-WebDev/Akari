@@ -25,6 +25,7 @@ export const MSG = Object.freeze({
 
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',
+  SETTINGS_LANGUAGE: 'settings/language', // content scripts: the 言語 setting only (they cannot read storage)
 
   CLIPBOARD_SCHEDULE_CLEAR: 'clipboard/scheduleClear',
   ACTIVITY_PING: 'activity/ping',
@@ -78,6 +79,7 @@ export const NEVER_LOCK = -1;
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,
+  language: 'auto', // 'auto' follows the browser's UI language; 'ja' | 'en' pin one (shared/i18n.js)
 });
 
 // Vaults (保管庫) the user can make: name length in characters, how many in all.

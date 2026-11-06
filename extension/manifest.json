@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Akari — パスワードマネージャー",
+  "name": "__MSG_name__",
   "short_name": "Akari",
   "version": "0.1.0",
-  "description": "暗いところで鍵を照らす灯り。パスワード・認証コード（TOTP）・パスキーをまとめて守るパスワードマネージャー。",
+  "description": "__MSG_description__",
+  "default_locale": "ja",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "src/assets/icons/icon-16.png",
@@ -28,7 +29,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/content/shadow-ui.js", "src/content/autofill.js"],
+      "js": ["src/content/i18n-page.js", "src/content/shadow-ui.js", "src/content/autofill.js"],
       "run_at": "document_idle",
       "all_frames": true
     },
@@ -41,7 +42,7 @@
     },
     {
       "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
-      "js": ["src/content/shadow-ui.js", "src/content/webauthn-bridge.js"],
+      "js": ["src/content/i18n-page.js", "src/content/shadow-ui.js", "src/content/webauthn-bridge.js"],
       "run_at": "document_start",
       "all_frames": false
     }
@@ -49,7 +50,7 @@
   "commands": {
     "autofill": {
       "suggested_key": { "default": "Ctrl+Shift+L", "mac": "Command+Shift+L" },
-      "description": "このページに自動入力"
+      "description": "__MSG_cmdAutofill__"
     }
   },
   "content_security_policy": {

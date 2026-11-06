@@ -4,6 +4,7 @@
 
 import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
+import { t } from '../../shared/i18n.js';
 import { S, strengthOf, setPhase } from '../state.js';
 import { h, clear, syncInert } from './dom.js';
 import { shake, wait, reducedMotion } from './fx.js';
@@ -18,8 +19,8 @@ let bootGen = 0;
 
 function idleHint() {
   const m = Number(S.settings.autoLockMinutes);
-  if (m === NEVER_LOCK) return 'ひらいたあとは自動ではロックしません（鍵のボタンでロック）';
-  return m > 0 ? `${m} 分操作しないと自動でロックします` : 'ブラウザを閉じるとロックします';
+  if (m === NEVER_LOCK) return t('ひらいたあとは自動ではロックしません（鍵のボタンでロック）');
+  return m > 0 ? t('{n} 分操作しないと自動でロックします', { n: m }) : t('ブラウザを閉じるとロックします');
 }
 
 function status(el, text, { err = false, detail = '' } = {}) {
@@ -130,7 +131,7 @@ async function unlock(e) {
   const pw = input.value;
   if (!pw) {
     field.classList.add('err');
-    status(st, 'パスワードを入力してください', { err: true });
+    status(st, t('パスワードを入力してください'), { err: true });
     shake(field);
     return;
   }
@@ -139,8 +140,8 @@ async function unlock(e) {
   $('lockSubmit').classList.add('busy');
   input.blur();
   bootClear();
-  status(st, '認証しています…');
-  const derive = bootLine('鍵を導出', KDF, { running: true });
+  status(st, t('認証しています…'));
+  const derive = bootLine(t('鍵を導出'), KDF, { running: true });
   const t0 = performance.now();
   try {
     await send(MSG.VAULT_UNLOCK, { masterPassword: pw });
@@ -149,7 +150,7 @@ async function unlock(e) {
     busy = false;
     $('lockSubmit').classList.remove('busy');
     field.classList.add('err');
-    status(st, err?.code === ERR.BAD_PASSWORD ? 'パスワードが違います' : '解除できませんでした。もう一度入力してください', { err: true });
+    status(st, err?.code === ERR.BAD_PASSWORD ? t('パスワードが違います') : t('解除できませんでした。もう一度入力してください'), { err: true });
     shake(field);
     input.select();
     input.focus();
@@ -165,7 +166,7 @@ async function finish(st, { created }) {
   let count = 0;
   try {
     count = await hooks.load({
-      onDecrypted: (vaults) => push(created ? '保管庫を作成' : '保管庫を復号',
+      onDecrypted: (vaults) => push(created ? t('保管庫を作成') : t('保管庫を復号'),
         (created ? ['AES-256-GCM'] : []).concat(vaults.map((v) => v.name)).join(' · ')),
     });
   } catch {
@@ -179,13 +180,13 @@ async function finish(st, { created }) {
       setPhase('locked');
       document.getElementById('app').dataset.phase = 'locked';
       showGate('lock');
-      status($('lockStatus'), '保管庫を読み込めませんでした。マスターパスワードで解除してください', { err: true });
+      status($('lockStatus'), t('保管庫を読み込めませんでした。マスターパスワードで解除してください'), { err: true });
       return;
     }
-    status(st, '保管庫を読み込めませんでした', { err: true });
+    status(st, t('保管庫を読み込めませんでした'), { err: true });
     return;
   }
-  await push('アイテムを読込', `${count} 件`);
+  await push(t('アイテムを読込'), t('{n} 件', { n: count }));
   await wait(300);
   await leave();
   busy = false;
@@ -215,7 +216,7 @@ async function setup(e) {
   const { a, len, lv, match } = setupState();
   const st = $('setupStatus');
   if (!(len && lv && match)) {
-    status(st, !len ? '10 文字以上にしてください' : !lv ? '推測されやすいパスワードです。単語を足すか、記号や数字を混ぜてください' : '2 回の入力が一致しません', { err: true });
+    status(st, !len ? t('10 文字以上にしてください') : !lv ? t('推測されやすいパスワードです。単語を足すか、記号や数字を混ぜてください') : t('2 回の入力が一致しません'), { err: true });
     shake($('setupForm'));
     return;
   }
@@ -223,8 +224,8 @@ async function setup(e) {
   $('setupSubmit').classList.add('busy');
   $('setupSubmit').disabled = true;
   bootClear();
-  status(st, '保管庫を作成しています…');
-  const derive = bootLine('鍵を導出', KDF, { running: true });
+  status(st, t('保管庫を作成しています…'));
+  const derive = bootLine(t('鍵を導出'), KDF, { running: true });
   const t0 = performance.now();
   try {
     await send(MSG.VAULT_SETUP, { masterPassword: a });
@@ -233,7 +234,7 @@ async function setup(e) {
     busy = false;
     $('setupSubmit').classList.remove('busy');
     updateSetup();
-    status(st, err?.code === ERR.ALREADY_INITIALIZED ? 'すでに作成されています。開き直してください' : '作成できませんでした', { err: true });
+    status(st, err?.code === ERR.ALREADY_INITIALIZED ? t('すでに作成されています。開き直してください') : t('作成できませんでした'), { err: true });
     return;
   }
   $('setupPw').value = '';
@@ -245,7 +246,7 @@ async function setup(e) {
 export function initGate({ load, enter }) {
   hooks = { load, enter };
   try {
-    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · 暗号化して、このブラウザの中だけに保存します`;
+    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
   } catch { /* keep the static text */ }
   $('lockForm').addEventListener('submit', unlock);
   $('lockInput').addEventListener('input', () => {

@@ -3,6 +3,7 @@
 
 import { MSG } from '../../shared/messages.js';
 import { hostnameOf, registrableDomain } from '../../shared/domain.js';
+import { t } from '../../shared/i18n.js';
 import { S, call, errText, itemById, replaceItem, liveToken, live, setAutofill } from '../state.js';
 import { siteOf } from '../views/format.js';
 import { toast, toastError } from '../views/toast.js';
@@ -62,17 +63,17 @@ export async function doAutofill() {
     if (!live(token)) return;
     if (!res?.filled) {
       setAfState('idle');
-      toastError('入力欄が見つかりませんでした', 'ログインの入力欄が表示されているページで、もう一度押してください');
+      toastError(t('入力欄が見つかりませんでした'), t('ログインの入力欄が表示されているページで、もう一度押してください'));
       return;
     }
     setAfState('done');
-    toast(`${site} に自動入力しました`, 'ユーザー名とパスワードを入力');
+    toast(t('{site} に自動入力しました', { site }), t('ユーザー名とパスワードを入力'));
     const local = itemById(target.id);
     if (local) replaceItem({ ...local, lastUsedAt: Date.now() });
     setTimeout(() => window.close(), 700);
   } catch (e) {
     if (!live(token)) return;
     setAfState('idle');
-    toastError('自動入力できませんでした', errText(e));
+    toastError(t('自動入力できませんでした'), errText(e));
   }
 }

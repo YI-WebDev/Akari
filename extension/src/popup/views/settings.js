@@ -11,7 +11,7 @@ import { setTrail, revokeDownloads, arrowNav, setRoving, setBusy } from './io.js
 import { initImport, openImport, resetImport, importBack, importDone } from './import.js';
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
-import { t } from '../../shared/i18n.js';
+import { t, browserLocale } from '../../shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,10 +20,10 @@ export const isSettingsOpen = () => $('setSheet').classList.contains('open');
 /* ── pages: the settings list, 保管庫, インポート, エクスポート ── */
 
 const PAGES = {
-  main: { el: 'setMain', title: '設定' },
-  vaults: { el: 'vaultsPage', title: t('vaults.title', null, '保管庫') },
-  import: { el: 'importPage', title: 'インポート' },
-  export: { el: 'exportPage', title: 'エクスポート' },
+  main: { el: 'setMain', title: () => t('設定') },
+  vaults: { el: 'vaultsPage', title: () => t('vaults.title', null, '保管庫') },
+  import: { el: 'importPage', title: () => t('インポート') },
+  export: { el: 'exportPage', title: () => t('エクスポート') },
 };
 let page = 'main';
 let entry = 'main'; // the page the sheet was opened on: going back from it closes the sheet
@@ -34,7 +34,7 @@ function showPage(name, { focus = true } = {}) {
   const sheet = $('setSheet');
   sheet.dataset.page = name;
   for (const [k, p] of Object.entries(PAGES)) $(p.el).hidden = k !== name;
-  $('setTitle').textContent = PAGES[name].title;
+  $('setTitle').textContent = PAGES[name].title();
   $('setCmdLine').hidden = name !== 'main'; // the pages draw their own command line
   $('setBack').hidden = name === 'main';
   if (prev === 'vaults' && name !== 'vaults') resetVaults();
@@ -83,6 +83,7 @@ export function escapeSettings() {
 /* ── the list's command line: `akari config`, then what was just set ── */
 
 const CMD_VALUES = {
+  language: (v) => `language ${v}`,
   autoLockMinutes: (v) => `auto-lock ${v === NEVER_LOCK ? 'never' : v === 0 ? 'on-browser-close' : `${v}m`}`,
   clipboardClearSeconds: (v) => `clipboard-clear ${v === 0 ? 'off' : `${v}s`}`,
 };
@@ -97,6 +98,10 @@ const chipOf = (key, value) => document.querySelector(`#setSheet .chips[data-set
 
 /** What the chosen value does, in one line under its chips. */
 function hintFor(key, v) {
+  if (key === 'language') {
+    if (v !== 'auto') return v === 'en' ? t('画面を英語で表示します') : t('画面を日本語で表示します');
+    return t('ブラウザの言語に合わせます（いまは{lang}）', { lang: browserLocale() === 'ja' ? '日本語' : 'English' });
+  }
   if (key === 'autoLockMinutes') {
     if (v === NEVER_LOCK) return t('settings.hintNever', null, '自動ではロックしません。鍵のボタンでロックします');
     return v > 0 ? t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
@@ -104,19 +109,21 @@ function hintFor(key, v) {
   return v > 0 ? t('settings.hintClip', { n: v }, 'コピーした値は {n} 秒後にクリップボードから消えます') : t('settings.hintClipOff', null, 'コピーした値はクリップボードに残ります');
 }
 
+const valueOf = (key, raw) => (key === 'language' ? String(raw) : Number(raw));
+
 function syncChips() {
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
     const key = group.dataset.setting;
-    const value = Number(S.settings[key] ?? DEFAULT_SETTINGS[key]);
+    const value = valueOf(key, S.settings[key] ?? DEFAULT_SETTINGS[key]);
     const chips = [...group.querySelectorAll('button')];
-    chips.forEach((b) => b.setAttribute('aria-checked', String(Number(b.dataset.value) === value)));
-    setRoving(chips, Math.max(0, chips.findIndex((b) => Number(b.dataset.value) === value)));
+    chips.forEach((b) => b.setAttribute('aria-checked', String(valueOf(key, b.dataset.value) === value)));
+    setRoving(chips, Math.max(0, chips.findIndex((b) => valueOf(key, b.dataset.value) === value)));
     $(group.getAttribute('aria-describedby')).textContent = hintFor(key, value);
   }
 }
 
 async function setSetting(key, raw) {
-  const value = Number(raw);
+  const value = valueOf(key, raw);
   if (S.settings[key] === value) return;
   const prev = putSetting(key, value);
   syncChips();
@@ -126,10 +133,15 @@ async function setSetting(key, raw) {
     syncChips();
     setCmd(`akari config set ${CMD_VALUES[key](value)}`);
     emit('settingsChanged', key);
+    // every view builds its text in the language it starts in: reload, and come back here
+    if (key === 'language') {
+      try { sessionStorage.setItem('akari.reopen', 'settings'); } catch { /* storage blocked */ }
+      setTimeout(() => location.reload(), 120);
+    }
   } catch (e) {
     putSetting(key, prev);
     syncChips();
-    toastError('設定を保存できませんでした', errText(e));
+    toastError(t('設定を保存できませんでした'), errText(e));
   }
 }
 
@@ -208,11 +220,11 @@ async function changePassword(e) {
   const confirm = $('pwConfirm').value;
   const err = $('pwErr');
   const fail = (msg, el) => { err.textContent = msg; shake(el); el.focus(); };
-  if (!current) return fail('いまのマスターパスワードを入力してください', $('pwCurrent'));
-  if (next.length < 10) return fail('新しいパスワードは 10 文字以上にしてください', $('pwNext'));
-  if (strengthOf(next).level < 2) return fail('推測されやすいパスワードです。単語を足すか、記号や数字を混ぜてください', $('pwNext'));
-  if (next !== confirm) return fail('確認用のパスワードが一致しません', $('pwConfirm'));
-  if (next === current) return fail('いまと同じパスワードです', $('pwNext'));
+  if (!current) return fail(t('いまのマスターパスワードを入力してください'), $('pwCurrent'));
+  if (next.length < 10) return fail(t('新しいパスワードは 10 文字以上にしてください'), $('pwNext'));
+  if (strengthOf(next).level < 2) return fail(t('推測されやすいパスワードです。単語を足すか、記号や数字を混ぜてください'), $('pwNext'));
+  if (next !== confirm) return fail(t('確認用のパスワードが一致しません'), $('pwConfirm'));
+  if (next === current) return fail(t('いまと同じパスワードです'), $('pwNext'));
   const btn = $('pwSubmit');
   setBusy(btn, true);
   err.textContent = '';
@@ -223,10 +235,10 @@ async function changePassword(e) {
     resetPwForm();
     setExpanded($('pwToggle'), $('pwForm'), false);
     setCmd('akari passwd');
-    toast('マスターパスワードを変更しました', '次回からは新しいパスワードでひらきます');
+    toast(t('マスターパスワードを変更しました'), t('次回からは新しいパスワードでひらきます'));
   } catch (e2) {
-    if (e2?.code === ERR.BAD_PASSWORD) fail('いまのマスターパスワードが違います', $('pwCurrent'));
-    else err.textContent = '変更できませんでした（' + errText(e2) + '）';
+    if (e2?.code === ERR.BAD_PASSWORD) fail(t('いまのマスターパスワードが違います'), $('pwCurrent'));
+    else err.textContent = t('変更できませんでした（{why}）', { why: errText(e2) });
   } finally {
     setBusy(btn, false);
   }
@@ -280,7 +292,7 @@ export function closeSettings() {
 export function initSettings() {
   try {
     const m = chrome.runtime.getManifest();
-    $('setVersion').textContent = `akari v${m.version} · 暗号化して、このブラウザの中だけに保存します`;
+    $('setVersion').textContent = `akari v${m.version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
   } catch { /* ignore */ }
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
@@ -294,9 +306,11 @@ export function initSettings() {
       if (key === 'autoLockMinutes') showNeverForm(false);
       setSetting(key, b.dataset.value);
     });
-    // a radio group: arrows choose; landing on しない only moves focus (it asks for the password on Enter)
+    // a radio group: arrows choose; landing on しない only moves focus (it asks for the password on Enter),
+    // and so do the languages (choosing one reloads the popup)
     arrowNav(group, 'button[data-value]', {
       onMove: (b) => {
+        if (key === 'language') return;
         if (key === 'autoLockMinutes' && Number(b.dataset.value) === NEVER_LOCK) return;
         b.click();
       },

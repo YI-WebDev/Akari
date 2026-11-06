@@ -806,7 +806,10 @@ svg { display: block; }
 }
 .chips button:hover { border-color: rgba(255, 214, 186, .2); color: var(--text); }
 .chips button[aria-checked="true"] { background: rgba(255, 122, 69, .14); border-color: var(--accent); color: var(--accent-ink); }
-.chips .chip-apart { margin-left: 8px; }
+/* chips split into sets (the durations, then the special choices): a set that does not fit wraps whole,
+   starting at the left edge like the first line, never one chip alone and indented */
+.chips:has(> .chip-set) { column-gap: 12px; }
+.chip-set { display: flex; flex-wrap: wrap; gap: 4px; }
 .chips .chip-danger { color: var(--danger); }
 .chips .chip-danger:hover { border-color: var(--danger-border); color: var(--danger); }
 /* しない while its password form is open: chosen, not yet set */

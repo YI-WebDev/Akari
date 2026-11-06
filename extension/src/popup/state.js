@@ -179,13 +179,13 @@ export async function call(type, payload) {
 
 export function errText(e) {
   switch (e?.code) {
-    case ERR.BAD_PASSWORD: return 'パスワードが違います';
-    case ERR.LOCKED: return 'ロックされています';
-    case ERR.NOT_FOUND: return 'アイテムが見つかりません';
-    case ERR.INVALID: return '入力内容を確認してください';
-    case ERR.DOMAIN_MISMATCH: return 'このサイトのアイテムではありません';
-    case ERR.NOT_EMPTY: return '保管庫の中身が変わりました。もう一度選んでください';
-    default: return 'エラーが発生しました';
+    case ERR.BAD_PASSWORD: return t('パスワードが違います');
+    case ERR.LOCKED: return t('ロックされています');
+    case ERR.NOT_FOUND: return t('アイテムが見つかりません');
+    case ERR.INVALID: return t('入力内容を確認してください');
+    case ERR.DOMAIN_MISMATCH: return t('このサイトのアイテムではありません');
+    case ERR.NOT_EMPTY: return t('保管庫の中身が変わりました。もう一度選んでください');
+    default: return t('エラーが発生しました');
   }
 }
 
@@ -349,6 +349,7 @@ export function mergeSaved(saved, prev) {
 }
 
 /* ── clipboard ── */
+// i18n keys: translated when the toast is shown (t() at render time)
 const COPY_LABEL = { user: 'ユーザー名', pass: 'パスワード', totp: '認証コード', gen: '生成したパスワード' };
 
 /**
@@ -359,20 +360,20 @@ export async function copyText(field, value, { label = null, secret = null } = {
   try {
     await navigator.clipboard.writeText(value);
   } catch {
-    toastError('コピーできませんでした');
+    toastError(t('コピーできませんでした'));
     return false;
   }
   const secs = Number(S.settings.clipboardClearSeconds) || 0;
   const sensitive = secret ?? field !== 'user';
-  const done = label != null ? t('copy.done', { label }, '{label}をコピーしました') : COPY_LABEL[field] + 'をコピーしました';
+  const done = t('copy.done', { label: label != null ? label : t(COPY_LABEL[field]) }, '{label}をコピーしました');
   let sub = null;
   if (sensitive && secs > 0) {
     try {
       await call(MSG.CLIPBOARD_SCHEDULE_CLEAR, { seconds: secs });
-      sub = `${secs}秒後にクリップボードから自動で消去します`;
+      sub = t('{n}秒後にクリップボードから自動で消去します', { n: secs });
     } catch {
       // copied, but nothing will clear it — say so instead of promising
-      toastError(done, '自動消去を設定できませんでした');
+      toastError(done, t('自動消去を設定できませんでした'));
       return true;
     }
   }

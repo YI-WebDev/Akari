@@ -4,6 +4,8 @@
 import { send } from '../shared/api.js';
 import { AkariError } from '../shared/errors.js';
 import { MSG } from '../shared/messages.js';
+import { t, getLocale } from '../shared/i18n.js';
+import { useLanguage } from '../shared/locale.js';
 
 const PORT_PREFIX = 'akari-passkey:';
 // Approve stays disabled this long after the window appears or regains focus, so a
@@ -44,11 +46,11 @@ function ago(ms) {
   const min = 60_000;
   const hour = 60 * min;
   const day = 24 * hour;
-  if (d < min) return 'たった今';
-  if (d < hour) return Math.floor(d / min) + '分前';
-  if (d < day) return Math.floor(d / hour) + '時間前';
-  if (d < 30 * day) return Math.floor(d / day) + '日前';
-  return new Date(ms).toLocaleDateString('ja-JP');
+  if (d < min) return t('たった今');
+  if (d < hour) return t('{n}分前', { n: Math.floor(d / min) });
+  if (d < day) return t('{n}時間前', { n: Math.floor(d / hour) });
+  if (d < 30 * day) return t('{n}日前', { n: Math.floor(d / day) });
+  return new Date(ms).toLocaleDateString(getLocale() === 'en' ? 'en' : 'ja-JP');
 }
 
 function show(name) {
@@ -57,7 +59,7 @@ function show(name) {
   for (const s of screens) s.hidden = s.dataset.screen !== name;
   if (name === 'expired') $('stDot').dataset.state = 'off';
   if (changed) rearm();
-  const titles = { create: 'パスキーを保存', get: 'パスキーでサインイン', locked: 'Akari をひらく' };
+  const titles = { create: t('パスキーを保存'), get: t('パスキーでサインイン'), locked: t('Akari をひらく') };
   document.title = (titles[name] ? titles[name] + ' — ' : '') + 'Akari';
 }
 
@@ -132,7 +134,7 @@ function uvError(message) {
 /** Prove the master password for this request. Resolves true when verified. */
 async function verifyUv() {
   const input = uvForm().querySelector('.uv-pw');
-  if (!input.value) { uvError('パスワードを入力してください'); return false; }
+  if (!input.value) { uvError(t('パスワードを入力してください')); return false; }
   setBusy(true);
   try {
     await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword: input.value });
@@ -142,7 +144,7 @@ async function verifyUv() {
   } catch (e) {
     const code = e instanceof AkariError ? e.code : '';
     if (code === 'NOT_FOUND') show('expired');
-    else uvError(code === 'BAD_PASSWORD' ? 'パスワードが違います' : '確認できませんでした');
+    else uvError(code === 'BAD_PASSWORD' ? t('パスワードが違います') : t('確認できませんでした'));
     return false;
   } finally {
     setBusy(false);
@@ -150,6 +152,15 @@ async function verifyUv() {
 }
 
 // ---------- rendering ----------
+
+/**
+ * Rewrite the sentence around `site` (an rp id span) from `template`, whose `{site}` marks
+ * where the span goes: word order differs by language. The span keeps its textContent.
+ */
+function withSite(site, template) {
+  const [before, after = ''] = t(template).split('{site}');
+  site.parentElement.replaceChildren(...[before, site, after].filter((n) => n !== ''));
+}
 
 /** Status bar and `$ passkey …` lines: the request's origin / rpId (textContent only). */
 function renderChrome() {
@@ -167,8 +178,8 @@ function bootLine(key, value) {
 
 function renderLocked() {
   $('lockedSub').textContent = info.kind === 'create'
-    ? info.rpId + ' のパスキーを保存するには、マスターパスワードを入力してください'
-    : info.rpId + ' にサインインするには、マスターパスワードを入力してください';
+    ? t('{site} のパスキーを保存するには、マスターパスワードを入力してください', { site: info.rpId })
+    : t('{site} にサインインするには、マスターパスワードを入力してください', { site: info.rpId });
   $('pwHint').textContent = '';
   $('pwHint').classList.remove('error');
   $('pwBox').classList.remove('error');
@@ -183,7 +194,7 @@ function renderCreate() {
   tile.style.setProperty('--hue', hueOf(info.rpId));
   $('cRpId').textContent = info.rpId;
   $('cOrigin').textContent = info.rpName && info.rpName !== info.rpId ? info.rpName + ' · ' + info.origin : info.origin;
-  $('cUserDisplay').textContent = info.user.displayName || info.user.name || '（名前なし）';
+  $('cUserDisplay').textContent = info.user.displayName || info.user.name || t('（名前なし）');
   $('cUserName').textContent = info.user.displayName && info.user.name ? info.user.name : '';
 
   const list = $('vaultList');
@@ -203,13 +214,14 @@ function renderCreate() {
 
   $('excludedNotice').hidden = !info.excluded;
   $('vaultField').hidden = !!info.excluded;
-  $('createLabel').textContent = info.excluded ? '閉じる' : '保存する';
+  $('createLabel').textContent = info.excluded ? t('閉じる') : t('保存する');
   show('create');
   renderUv();
 }
 
 function renderGet() {
   $('gRpId').textContent = info.rpId;
+  withSite($('gRpId'), '{site} に使うアカウントを選んでください');
   $('gOrigin').textContent = info.origin;
   const list = $('accountList');
   list.replaceChildren();
@@ -220,26 +232,27 @@ function renderGet() {
     input.name = 'account';
     input.value = c.credentialId;
     input.checked = i === 0;
-    const name = c.userDisplayName || c.userName || '（名前なし）';
+    const name = c.userDisplayName || c.userName || t('（名前なし）');
     const tile = el('span', 'tile', initial(name));
     tile.style.setProperty('--hue', hueOf(c.userName || name));
     const col = el('div', 'col');
     const used = ago(c.lastUsedAt);
     const meta = [c.userDisplayName && c.userName ? c.userName : null,
-      used ? '最終使用 ' + used : '未使用', c.itemTitle || null].filter(Boolean).join(' · ');
+      used ? t('最終使用 {when}', { when: used }) : t('未使用'), c.itemTitle || null].filter(Boolean).join(' · ');
     col.append(el('div', 'name', name), el('div', 'meta', meta));
     const caret = el('span', 'caret', '›');
     caret.setAttribute('aria-hidden', 'true');
     label.append(input, caret, tile, col);
     list.append(label);
   });
-  $('gCount').textContent = info.candidates.length + ' 件';
+  $('gCount').textContent = t('{n} 件', { n: info.candidates.length });
   show('get');
   renderUv();
 }
 
 function renderEmpty() {
   $('eRpId').textContent = info.rpId;
+  withSite($('eRpId'), '{site} のパスキーは Akari に保存されていません');
   show('empty');
 }
 
@@ -278,7 +291,7 @@ async function respond(payload) {
     const code = e instanceof AkariError ? e.code : '';
     if (code === 'LOCKED' || code === 'UV_REQUIRED') await load();
     else if (code === 'NOT_FOUND') show('expired');
-    else toast('Akari から返事がありませんでした。もう一度押してください');
+    else toast(t('Akari から返事がありませんでした。もう一度押してください'));
   } finally {
     setBusy(false);
   }
@@ -305,7 +318,7 @@ async function primary() {
     }
     case 'get': {
       const credentialId = document.querySelector('input[name="account"]:checked')?.value;
-      if (!credentialId) { toast('アカウントを選んでください'); return; }
+      if (!credentialId) { toast(t('アカウントを選んでください')); return; }
       if (needsUv() && !(await verifyUv())) return;
       respond({ approve: true, credentialId });
       return;
@@ -325,7 +338,7 @@ async function unlock(event) {
   const box = $('pwBox');
   const masterPassword = input.value;
   if (!masterPassword) {
-    hint.textContent = 'パスワードを入力してください';
+    hint.textContent = t('パスワードを入力してください');
     hint.classList.add('error');
     box.classList.add('error');
     shake(box);
@@ -335,22 +348,22 @@ async function unlock(event) {
   $('goBtn').classList.add('busy');
   hint.classList.remove('error');
   box.classList.remove('error');
-  hint.textContent = '鍵を準備しています…';
+  hint.textContent = t('鍵を準備しています…');
   try {
     await send(MSG.VAULT_UNLOCK, { masterPassword });
-    bootLine('保管庫を解除', 'PBKDF2 · AES-256-GCM');
+    bootLine(t('保管庫を解除'), 'PBKDF2 · AES-256-GCM');
     // Unlocking here is a fresh proof for this request (sets user verification).
     const verified = await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword }).then(() => true, () => false);
-    if (verified) bootLine('本人確認', 'マスターパスワード');
+    if (verified) bootLine(t('本人確認'), t('マスターパスワード'));
     input.value = '';
     await new Promise((r) => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 380)); // the log lines are read before the screen changes
     setBusy(false);
     await load();
   } catch (e) {
     const code = e instanceof AkariError ? e.code : '';
-    hint.textContent = code === 'BAD_PASSWORD' ? 'パスワードが違います'
-      : code === 'NOT_INITIALIZED' ? 'Akari のセットアップがまだ済んでいません'
-        : '解除できませんでした。もう一度入力してください';
+    hint.textContent = code === 'BAD_PASSWORD' ? t('パスワードが違います')
+      : code === 'NOT_INITIALIZED' ? t('Akari のセットアップがまだ済んでいません')
+        : t('解除できませんでした。もう一度入力してください');
     hint.classList.add('error');
     box.classList.add('error');
     shake(box);
@@ -406,4 +419,16 @@ try {
   // extension context gone; the next action reports the request as expired
 }
 
-load();
+/** The 言語 setting first (and the page's static text with it), then the request. */
+async function start() {
+  let settings = null;
+  try {
+    settings = await send(MSG.SETTINGS_GET);
+  } catch {
+    // no answer: follow the browser's language
+  }
+  useLanguage(settings?.language || 'auto', document.documentElement); // <title> too
+  load();
+}
+
+start();

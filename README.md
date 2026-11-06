@@ -39,6 +39,7 @@
 | **インポート** | 1Password・Bitwarden・Proton Pass・Chrome など 17 のアプリ、CSV、PGP 暗号化ファイル |
 | **エクスポート** | 暗号化バックアップ・CSV・JSON（Bitwarden 形式）・PGP 暗号化（中身は CSV か JSON） |
 | **自動ロック** | 1〜60 分 / ブラウザを閉じたとき / しない |
+| **表示言語** | 日本語・英語を設定で切り替え（自動はブラウザの言語に合わせる） |
 
 ## 安全性
 
@@ -57,5 +58,3 @@ npm run e2e                         # インストール済みの Chrome で E2E
 node tests/ui/extension-smoke.mjs   # ポップアップを実際のサービスワーカーにつないで操作
 node tests/ui/screenshot.mjs        # 画面のスクリーンショット（tests/ui/screenshots/）
 ```
-
-アイテムの種類は `extension/src/shared/item-types.js` の定義から、検証・取り込み・書き出し・画面まで作られます。画面の文言は表示言語の切り替えに備えて `extension/src/shared/i18n.js` の `t()` を通します。

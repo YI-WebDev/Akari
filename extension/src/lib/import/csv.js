@@ -2,6 +2,7 @@
 // UTF-8 BOM. The delimiter (, ; tab) is guessed from the header line.
 
 import { ImportError } from './model.js';
+import { t } from '../../shared/i18n.js';
 
 // Real exports are far smaller; the caps keep crafted files from freezing the popup.
 export const MAX_COLUMNS = 256;
@@ -26,13 +27,13 @@ export function parseCsv(input, delimiter = detectDelimiter(input)) {
   const endRow = () => {
     endField();
     if (row.length > 1 || row[0] !== '') {
-      if (rows.length >= MAX_ROWS) throw new ImportError('UNSUPPORTED', `CSV の行が多すぎます（${MAX_ROWS.toLocaleString()} 行まで）`);
+      if (rows.length >= MAX_ROWS) throw new ImportError('UNSUPPORTED', t('CSV の行が多すぎます（{max} 行まで）', { max: MAX_ROWS.toLocaleString() }));
       rows.push(row);
     }
     row = [];
   };
   const endField = () => {
-    if (row.length >= MAX_COLUMNS) throw new ImportError('UNSUPPORTED', `CSV の列が多すぎます（${MAX_COLUMNS} 列まで）`);
+    if (row.length >= MAX_COLUMNS) throw new ImportError('UNSUPPORTED', t('CSV の列が多すぎます（{max} 列まで）', { max: MAX_COLUMNS }));
     row.push(field);
     field = '';
   };
