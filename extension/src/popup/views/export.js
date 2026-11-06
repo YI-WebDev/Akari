@@ -9,13 +9,14 @@ import { call, errText, liveToken, live } from '../state.js';
 import { h, clear } from './dom.js';
 import { yyyymmdd } from './format.js';
 import { shake, rise } from './fx.js';
-import { cmdLine, logLine, setTrail, arrowNav, setRoving, setBusy, goButton, downloadFile, safeFileName } from './io.js';
+import { cmdLine, logLine, setTrail, arrowNav, setRoving, setBusy, goButton, downloadFile, safeFileName, sentenceWith } from './io.js';
+import { t } from '../../shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const PGP_MIN = 8;
 
 // `id` is what vault/exportPlain takes (the JSON is Bitwarden's format, which most managers read);
-// `arg` is what the command line shows.
+// `arg` is what the command line shows. name / desc / title are shown through t().
 export const FORMATS = Object.freeze([
   { id: 'akari', arg: 'akari', name: 'Akari バックアップ', desc: '暗号化・Akari で読み込める', ext: 'json', plain: false },
   { id: 'csv', arg: 'csv', name: 'CSV', desc: 'Chrome などで読み込める・平文', ext: 'csv', plain: true },
@@ -63,22 +64,22 @@ export function openExport({ focus = true } = {}) {
   setTrail(null);
   const page = $('exportPage');
 
-  const list = h('div', { class: 'fmt-list', role: 'radiogroup', 'aria-label': '形式', 'data-f': '' });
+  const list = h('div', { class: 'fmt-list', role: 'radiogroup', 'aria-label': t('形式'), 'data-f': '' });
   for (const f of FORMATS) {
     list.append(h('button', {
       class: 'fmt', type: 'button', role: 'radio', dataset: { fmt: f.id }, 'aria-describedby': `fmtDesc-${f.id}`,
-      title: f.title || null, onclick: () => select(f.id),
+      title: f.title ? t(f.title) : null, onclick: () => select(f.id),
     },
     h('span', { class: 'fmt-mark', 'aria-hidden': 'true' }),
-    h('span', { class: 'fmt-name' }, f.name),
-    h('span', { id: `fmtDesc-${f.id}`, class: 'fmt-desc' + (f.plain ? ' plain' : '') }, f.desc),
+    h('span', { class: 'fmt-name' }, t(f.name)),
+    h('span', { id: `fmtDesc-${f.id}`, class: 'fmt-desc' + (f.plain ? ' plain' : '') }, t(f.desc)),
     h('span', { class: 'fmt-ext', 'aria-hidden': 'true' }, '.' + f.ext)));
   }
   arrowNav(list, '.fmt', { onMove: (b) => select(b.dataset.fmt) });
 
-  const [master, masterField] = field('expMaster', '確認のため', 'マスターパスワード', 'current-password');
-  const [pass, passField] = field('expPass', `${PGP_MIN} 文字以上`, 'PGP のパスフレーズ', 'new-password');
-  const [pass2, pass2Field] = field('expPass2', 'もう一度', 'PGP のパスフレーズ（確認）', 'new-password');
+  const [master, masterField] = field('expMaster', t('確認のため'), t('マスターパスワード'), 'current-password');
+  const [pass, passField] = field('expPass', t('{n} 文字以上', { n: PGP_MIN }), t('PGP のパスフレーズ'), 'new-password');
+  const [pass2, pass2Field] = field('expPass2', t('もう一度'), t('PGP のパスフレーズ（確認）'), 'new-password');
   const innerPick = h('div', { id: 'expInner', class: 'chips', role: 'radiogroup', 'aria-labelledby': 'expInnerK' },
     ...INNER.map((id) => h('button', { type: 'button', role: 'radio', dataset: { inner: id }, onclick: () => setInner(id) }, formatOf(id).name)));
   arrowNav(innerPick, 'button', { onMove: (b) => b.click() });
@@ -86,15 +87,15 @@ export function openExport({ focus = true } = {}) {
     h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'), h('div', { class: 'io-alert-text' }));
   const note = h('p', { class: 'io-note' });
   const err = h('div', { class: 'field-err', role: 'alert' });
-  const goBtn = goButton('書き出す', { type: 'submit' });
+  const goBtn = goButton(t('書き出す'), { type: 'submit' });
   const log = h('div', { class: 'io-log', 'aria-live': 'polite' });
   const plainRow = h('div', { class: 'io-row io-row-wide' },
-    h('label', { class: 'io-k', for: 'expMaster' }, 'マスターパスワード'), masterField);
+    h('label', { class: 'io-k', for: 'expMaster' }, t('マスターパスワード')), masterField);
   const innerRow = h('div', { class: 'io-row io-row-wide', hidden: true },
-    h('span', { id: 'expInnerK', class: 'io-k' }, '中身'), innerPick);
+    h('span', { id: 'expInnerK', class: 'io-k' }, t('中身')), innerPick);
   const pgpRow = h('div', { class: 'io-row io-row-wide', hidden: true },
-    h('label', { class: 'io-k', for: 'expPass' }, 'PGP パスフレーズ'), h('div', { class: 'io-pair' }, passField, pass2Field));
-  const form = h('form', { class: 'io-form', novalidate: true, 'aria-label': 'エクスポート', 'data-f': '' },
+    h('label', { class: 'io-k', for: 'expPass' }, t('PGP パスフレーズ')), h('div', { class: 'io-pair' }, passField, pass2Field));
+  const form = h('form', { class: 'io-form', novalidate: true, 'aria-label': t('エクスポート'), 'data-f': '' },
     plainRow, innerRow, pgpRow, h('div', { class: 'io-foot' }, err, goBtn));
   form.addEventListener('submit', doExport);
   form.addEventListener('input', () => { if (!busy) els.err.textContent = ''; });
@@ -146,10 +147,10 @@ function sync() {
   els.warn.classList.toggle('safe', pgp);
   els.warn.querySelector('.bang').textContent = pgp ? '✓' : '!';
   els.warn.querySelector('.io-alert-text').textContent = pgp
-    ? `PGP のパスフレーズで暗号化して保存します（.${p.ext}.pgp）。gpg など OpenPGP に対応したアプリで開けます。パスフレーズを忘れると開けません。`
-    : 'このファイルは暗号化されません。開けばだれでもパスワードを読めます。使い終わったら削除してください。';
-  els.note.textContent = 'Akari のマスターパスワードで暗号化されたまま書き出します。読み込むときも、書き出したときのマスターパスワードを使います。';
-  els.go.querySelector('.go-label').textContent = pgp ? '暗号化して書き出す' : f.plain ? '平文で書き出す' : '書き出す';
+    ? t('PGP のパスフレーズで暗号化して保存します（.{ext}.pgp）。gpg など OpenPGP に対応したアプリで開けます。パスフレーズを忘れると開けません。', { ext: p.ext })
+    : t('このファイルは暗号化されません。開けばだれでもパスワードを読めます。使い終わったら削除してください。');
+  els.note.textContent = t('Akari のマスターパスワードで暗号化されたまま書き出します。読み込むときも、書き出したときのマスターパスワードを使います。');
+  els.go.querySelector('.go-label').textContent = pgp ? t('暗号化して書き出す') : f.plain ? t('平文で書き出す') : t('書き出す');
   // a plaintext file is the riskiest thing this page makes: its button says so in red, like ロックしない
   els.go.classList.toggle('danger', f.plain);
 }
@@ -165,15 +166,15 @@ function wipeInputs() {
 }
 
 function done(name, count, { plain }) {
-  const v = count != null ? `${name} · ${count} 件` : name;
-  const lines = [logLine('ok', plain ? '平文で書き出しました' : '書き出しました', v)];
+  const v = count != null ? t('{name} · {n} 件', { name, n: count }) : name;
+  const lines = [logLine('ok', plain ? t('平文で書き出しました') : t('書き出しました'), v)];
   if (plain) {
     els.warn.hidden = true;
     lines.push(h('div', { class: 'io-alert', role: 'note' },
       h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'),
       h('div', null,
-        h('div', { class: 'io-alert-title' }, '書き出したファイル「', h('b', null, name), '」は、使い終わったら削除してください。'),
-        h('div', null, '暗号化されていないので、開けばだれでもパスワードを読めます。ごみ箱に入れた場合は、ごみ箱も空にしてください。'))));
+        h('div', { class: 'io-alert-title' }, ...sentenceWith(t('書き出したファイル「{name}」は、使い終わったら削除してください。'), 'name', h('b', null, name))),
+        h('div', null, t('暗号化されていないので、開けばだれでもパスワードを読めます。ごみ箱に入れた場合は、ごみ箱も空にしてください。')))));
   }
   els.log.replaceChildren(...lines);
 }
@@ -187,20 +188,20 @@ async function doExport(e) {
   if (f.id === 'akari') return exportBackup();
 
   const masterPassword = els.master.value;
-  if (!masterPassword) return fail('マスターパスワードを入力してください', els.masterField, els.master);
+  if (!masterPassword) return fail(t('マスターパスワードを入力してください'), els.masterField, els.master);
   const encrypt = withPgp();
   const out = payload();
   let passphrase = '';
   if (encrypt) {
     passphrase = els.pass.value;
-    if (passphrase.length < PGP_MIN) return fail(`パスフレーズは ${PGP_MIN} 文字以上にしてください`, els.passField, els.pass);
-    if (passphrase !== els.pass2.value) return fail('確認用のパスフレーズが一致しません', els.pass2Field, els.pass2);
+    if (passphrase.length < PGP_MIN) return fail(t('パスフレーズは {n} 文字以上にしてください', { n: PGP_MIN }), els.passField, els.pass);
+    if (passphrase !== els.pass2.value) return fail(t('確認用のパスフレーズが一致しません'), els.pass2Field, els.pass2);
   }
   const my = run;
   const token = liveToken();
   busy = true;
   setBusy(els.go, true);
-  els.log.replaceChildren(logLine('run', encrypt ? '書き出して暗号化中' : '書き出し中', encrypt ? `${out.name} → PGP` : out.name));
+  els.log.replaceChildren(logLine('run', encrypt ? t('書き出して暗号化中') : t('書き出し中'), encrypt ? `${out.name} → PGP` : out.name));
   let text = null;
   try {
     let res;
@@ -209,8 +210,8 @@ async function doExport(e) {
     } catch (e2) {
       if (my !== run || !live(token)) return;
       els.log.replaceChildren();
-      if (e2?.code === ERR.BAD_PASSWORD) { fail('マスターパスワードが違います', els.masterField, els.master); els.master.select(); }
-      else fail('書き出せませんでした（' + errText(e2) + '）');
+      if (e2?.code === ERR.BAD_PASSWORD) { fail(t('マスターパスワードが違います'), els.masterField, els.master); els.master.select(); }
+      else fail(t('書き出せませんでした（{why}）', { why: errText(e2) }));
       return;
     }
     if (my !== run || !live(token)) return;
@@ -225,7 +226,7 @@ async function doExport(e) {
       } catch {
         if (my !== run || !live(token)) return;
         els.log.replaceChildren();
-        fail('PGP で暗号化できませんでした。ファイルは保存していません');
+        fail(t('PGP で暗号化できませんでした。ファイルは保存していません'));
         return;
       }
       if (my !== run || !live(token)) return;
@@ -251,7 +252,7 @@ async function exportBackup() {
   const token = liveToken();
   busy = true;
   setBusy(els.go, true);
-  els.log.replaceChildren(logLine('run', '書き出し中', 'Akari バックアップ'));
+  els.log.replaceChildren(logLine('run', t('書き出し中'), t('Akari バックアップ')));
   try {
     const res = await call(MSG.VAULT_EXPORT);
     if (my !== run || !live(token)) return;
@@ -262,7 +263,7 @@ async function exportBackup() {
   } catch (e) {
     if (my !== run || !live(token)) return;
     els.log.replaceChildren();
-    fail('書き出せませんでした（' + errText(e) + '）');
+    fail(t('書き出せませんでした（{why}）', { why: errText(e) }));
   } finally {
     if (my === run) {
       busy = false;

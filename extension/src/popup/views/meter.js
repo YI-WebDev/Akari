@@ -1,6 +1,7 @@
 // The 12-segment strength meter of design 1a. Fill follows the bits (capped at 110),
 // the colour follows the level. Segments light up left to right with an 18 ms stagger.
 
+import { t } from '../../shared/i18n.js';
 import { h } from './dom.js';
 
 export const SEGS = 12;
@@ -32,7 +33,7 @@ export function setMeter(meter, { bits = 0, level = 0, label = '—' } = {}, { t
   if (!meter) return;
   const segs = ensureSegs(meter);
   const fill = segFill(bits);
-  meter.querySelector('.lv-label').textContent = text ?? (bits > 0 ? `${bits}bit · ${label}` : '—');
+  meter.querySelector('.lv-label').textContent = text ?? (bits > 0 ? `${bits}bit · ${t(label)}` : '—');
   const apply = () => {
     meter.dataset.lv = String(bits > 0 ? level : 0);
     for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i < fill);

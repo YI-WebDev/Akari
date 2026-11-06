@@ -1,10 +1,13 @@
 // Display helpers: list grouping, Japanese relative dates, tile letters/colours.
 
 import { hostnameOf } from '../../shared/domain.js';
+import { t } from '../../shared/i18n.js';
 
 const DAY = 86400000;
 
+// list group headings, as i18n keys: shown through groupName() (t() at render time)
 export const GROUPS = ['今日', '今週', '先週', '先月', 'それ以前', '未使用'];
+export const groupName = (g) => t(GROUPS[g]);
 
 export function startOfDay(ts) {
   const d = new Date(ts);
@@ -26,16 +29,16 @@ export function groupIndex(ts, now = Date.now()) {
 export function relTime(ts, now = Date.now()) {
   if (!ts) return '—';
   const s = Math.max(0, (now - ts) / 1000);
-  if (s < 60) return 'たった今';
-  if (s < 3600) return `${Math.floor(s / 60)}分前`;
+  if (s < 60) return t('たった今');
+  if (s < 3600) return t('{n}分前', { n: Math.floor(s / 60) });
   const today = startOfDay(now);
-  if (ts >= today) return `${Math.floor(s / 3600)}時間前`;
+  if (ts >= today) return t('{n}時間前', { n: Math.floor(s / 3600) });
   const days = Math.round((today - startOfDay(ts)) / DAY);
-  if (days <= 1) return '昨日';
-  if (days < 14) return `${days}日前`;
-  if (days < 30) return `${Math.floor(days / 7)}週間前`;
-  if (days < 365) return `${Math.floor(days / 30)}か月前`;
-  return `${Math.floor(days / 365)}年前`;
+  if (days <= 1) return t('昨日');
+  if (days < 14) return t('{n}日前', { n: days });
+  if (days < 30) return t('{n}週間前', { n: Math.floor(days / 7) });
+  if (days < 365) return t('{n}か月前', { n: Math.floor(days / 30) });
+  return t('{n}年前', { n: Math.floor(days / 365) });
 }
 
 export function formatDate(ts) {

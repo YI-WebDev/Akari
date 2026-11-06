@@ -2,6 +2,7 @@
 // the code is re-decoded with a scramble whenever it changes).
 
 import { generateTotp } from '../../lib/totp.js';
+import { t } from '../../shared/i18n.js';
 import { h } from './dom.js';
 import { formatCode } from './format.js';
 import { scramble, cancelScramble, DIGITS } from './fx.js';
@@ -49,7 +50,7 @@ export function totpView(config) {
       refresh(now, !first);
     }
     rem.textContent = `${ri}s`;
-    rem.setAttribute('aria-label', `残り ${ri} 秒`);
+    rem.setAttribute('aria-label', t('残り {n} 秒', { n: ri }));
     const on = Math.ceil((left / period) * TICKS);
     if (on !== lastOn) {
       lastOn = on;

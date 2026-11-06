@@ -6,6 +6,7 @@
 // fit no template key (and custom fields of logins) become extra fields.
 
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
 import { hasTemplate, fieldLabel } from '../../../shared/item-types.js';
 import { L, fromEntries, LABEL_RULES } from './_fields.js';
@@ -13,7 +14,7 @@ import { toDate, toMonth, monthOf } from './_values.js';
 
 const LOGIN = 'login', PASSWORD = 'password', NOTE = 'note';
 
-/** 1pux categoryUuid → Akari type id, or the Japanese name of a kind that is kept as a note. */
+/** 1pux categoryUuid → Akari type id, or the Japanese name of a kind that is kept as a note (translated when reported). */
 const CATEGORIES = {
   '001': LOGIN, '002': 'card', '003': NOTE, '004': 'identity', '005': PASSWORD,
   '006': 'ドキュメント', '100': 'softwareLicense', '101': 'bankAccount', '102': 'database',
@@ -180,9 +181,9 @@ function emit(run, kind, p) {
 }
 
 function finish(run) {
-  const warnings = Object.entries(run.converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (run.attachments) warnings.push(`添付ファイル・ドキュメントの中身 ${run.attachments} 件は読み込まれません`);
-  if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はカスタムフィールドに残しました`);
+  const warnings = Object.entries(run.converted).map(([k, n]) => t('{kind} {n} 件をセキュアノートとして読み込みました', { kind: t(k), n }));
+  if (run.attachments) warnings.push(t('添付ファイル・ドキュメントの中身 {n} 件は読み込まれません', { n: run.attachments }));
+  if (run.badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: run.badTotp }));
   return { items: run.items, skipped: run.skipped, warnings };
 }
 
@@ -205,7 +206,7 @@ function puxFieldEntries(f, run, splitAddress) {
     case 'reference': return [];
     case 'file':
       run.attachments++;
-      return one(`（添付ファイル: ${str(x.fileName) || '名前なし'}）`);
+      return one(str(x.fileName) ? t('（添付ファイル: {name}）', { name: str(x.fileName) }) : t('（添付ファイル: 名前なし）'));
     case 'sshKey': {
       if (typeof x !== 'object') return one(x, true);
       const m = x.metadata || {};
@@ -272,7 +273,7 @@ function from1puxItem(run, item) {
 
 function parse1puxData(run, data) {
   if (!data || !Array.isArray(data.accounts)) {
-    throw new ImportError('INVALID_FORMAT', '1Password の export.data の形式が正しくありません');
+    throw new ImportError('INVALID_FORMAT', t('1Password の export.data の形式が正しくありません'));
   }
   for (const account of data.accounts) {
     for (const vault of Array.isArray(account?.vaults) ? account.vaults : []) {
@@ -376,7 +377,7 @@ export async function parse(file) {
     const entries = readZip(file.bytes);
     const data = findEntry(entries, 'export.data');
     if (data) {
-      parse1puxData(run, parseJson(bytesToText(await data.bytes()), '1Password（export.data）'));
+      parse1puxData(run, parseJson(bytesToText(await data.bytes()), t('1Password（export.data）')));
       // Attachment bodies live under files/; documents and file fields were also counted per item.
       run.attachments = Math.max(run.attachments, entries.filter((e) => /^files\//i.test(e.name)).length);
       return finish(run);
@@ -386,7 +387,7 @@ export async function parse(file) {
       parse1pifText(run, bytesToText(await pif.bytes()));
       return finish(run);
     }
-    throw new ImportError('INVALID_FORMAT', '1Password の書き出しファイル（1PUX）ではありません。ZIP に export.data が見つかりませんでした');
+    throw new ImportError('INVALID_FORMAT', t('1Password の書き出しファイル（1PUX）ではありません。ZIP に export.data が見つかりませんでした'));
   }
   const text = bytesToText(file.bytes);
   if (PIF_SEPARATOR.test(text)) {
@@ -395,9 +396,9 @@ export async function parse(file) {
     const json = parseJson(text, '1Password');
     if (Array.isArray(json?.accounts)) parse1puxData(run, json); // a bare export.data
     else if (json && typeof json === 'object' && 'typeName' in json) from1pifRecord(run, json); // single 1pif record
-    else throw new ImportError('INVALID_FORMAT', '1Password の書き出しファイルではありません');
+    else throw new ImportError('INVALID_FORMAT', t('1Password の書き出しファイルではありません'));
   } else {
-    throw new ImportError('INVALID_FORMAT', '1Password の書き出しファイル（1PUX / 1PIF）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('1Password の書き出しファイル（1PUX / 1PIF）ではありません'));
   }
   return finish(run);
 }

@@ -5,9 +5,10 @@
 // the identity template's field uids and, for the rest, the (possibly translated) labels.
 
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { L, fromEntries, LABEL_RULES } from './_fields.js';
 
-/** Enpass category → Japanese name of a kind kept as a secure note (no matching Akari type). */
+/** Enpass category → Japanese name of a kind kept as a secure note (no matching Akari type; translated when reported). */
 const KINDS = {
   creditcard: 'クレジットカード', identity: '個人情報', finance: '金融情報', license: 'ライセンス',
   travel: '旅行', computer: 'コンピューター', misc: 'その他', document: 'ドキュメント',
@@ -65,7 +66,7 @@ const toExtra = (e) => ({ label: e.label, value: e.value, secret: e.secret });
 export async function parse(file) {
   const json = parseJson(bytesToText(file.bytes), 'Enpass');
   if (!json || typeof json !== 'object' || !Array.isArray(json.items)) {
-    throw new ImportError('INVALID_FORMAT', 'Enpass の書き出しファイル（JSON）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('Enpass の書き出しファイル（JSON）ではありません'));
   }
   const items = [];
   const converted = {};
@@ -124,8 +125,8 @@ export async function parse(file) {
     items.push({ ...base, type: 'note', note: fieldsToNote(fields.map((f) => [str(f.label) || f.type, f.value]), it.note) });
   }
 
-  const warnings = Object.entries(converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (attachments) warnings.push(`添付ファイル ${attachments} 件は読み込まれません`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
+  const warnings = Object.entries(converted).map(([k, n]) => t('{kind} {n} 件をセキュアノートとして読み込みました', { kind: t(k), n }));
+  if (attachments) warnings.push(t('添付ファイル {n} 件は読み込まれません', { n: attachments }));
+  if (badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: badTotp }));
   return { items, skipped, warnings };
 }

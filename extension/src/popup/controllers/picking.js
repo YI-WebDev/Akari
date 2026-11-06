@@ -1,6 +1,7 @@
 // Selection mode (delete several): checking rows, ranges with Shift, select all, and the delete.
 
 import { MSG, ERR } from '../../shared/messages.js';
+import { t } from '../../shared/i18n.js';
 import {
   S, emit, call, errText, visibleItems, removeItems, liveToken, live, setPickMode, setPicked, togglePicked, setSel,
 } from '../state.js';
@@ -117,12 +118,12 @@ export async function deletePicked() {
     setSel(rest[Math.min(Math.max(first, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
     renderList({ animate: true });
     renderDetail({ animate: true });
-    toast(`${Number(res?.deleted) || ids.length} 件を削除しました`);
+    toast(t('{n} 件を削除しました', { n: Number(res?.deleted) || ids.length }));
   } catch (e) {
     if (!live(token)) return;
     resetPicker();
     renderPicker();
-    toastError('削除できませんでした', errText(e));
+    toastError(t('削除できませんでした'), errText(e));
     if (e?.code === ERR.NOT_FOUND) emit('reload'); // deleted elsewhere meanwhile: show what is left
   }
 }

@@ -1,5 +1,7 @@
 // TOTP (RFC 6238) / HOTP (RFC 4226) and otpauth:// URI handling.
 
+import { t } from '../shared/i18n.js';
+
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const ALGORITHMS = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
 
@@ -24,7 +26,7 @@ export function base32Decode(str) {
   let o = 0;
   for (let i = 0; i < s.length; i++) {
     const v = B32.indexOf(s[i]);
-    if (v < 0) throw new Error('秘密鍵に使えない文字が含まれています');
+    if (v < 0) throw new Error(t('秘密鍵に使えない文字が含まれています'));
     acc = (acc << 5) | v;
     bits += 5;
     if (bits >= 8) {
@@ -56,7 +58,7 @@ export function base32Encode(bytes) {
 
 function algorithmOf(name) {
   const key = String(name || 'SHA1').toUpperCase().replace(/-/g, '');
-  if (!ALGORITHMS[key]) throw new Error('未対応のアルゴリズムです: ' + name);
+  if (!ALGORITHMS[key]) throw new Error(t('未対応のアルゴリズムです: {name}', { name }));
   return key;
 }
 
@@ -69,17 +71,17 @@ export function parseOtpauthUri(uri) {
   try {
     url = new URL(String(uri ?? '').trim());
   } catch {
-    throw new Error('otpauth:// から始まる URI ではありません');
+    throw new Error(t('otpauth:// から始まる URI ではありません'));
   }
-  if (url.protocol !== 'otpauth:') throw new Error('otpauth:// から始まる URI ではありません');
+  if (url.protocol !== 'otpauth:') throw new Error(t('otpauth:// から始まる URI ではありません'));
   const type = url.hostname.toLowerCase();
-  if (type === 'hotp') throw new Error('カウンター方式（HOTP）には対応していません');
-  if (type !== 'totp') throw new Error('時間ベース（TOTP）の URI ではありません');
+  if (type === 'hotp') throw new Error(t('カウンター方式（HOTP）には対応していません'));
+  if (type !== 'totp') throw new Error(t('時間ベース（TOTP）の URI ではありません'));
 
   const params = url.searchParams;
   const secret = normalizeSecret(params.get('secret'));
-  if (!secret) throw new Error('URI に秘密鍵（secret）が含まれていません');
-  if (!isValidSecret(secret)) throw new Error('秘密鍵の形式が正しくありません');
+  if (!secret) throw new Error(t('URI に秘密鍵（secret）が含まれていません'));
+  if (!isValidSecret(secret)) throw new Error(t('秘密鍵の形式が正しくありません'));
 
   let label = '';
   try {
@@ -96,9 +98,9 @@ export function parseOtpauthUri(uri) {
   label = label.trim();
 
   const digits = params.has('digits') ? Number(params.get('digits')) : 6;
-  if (digits !== 6 && digits !== 8) throw new Error('桁数は 6 または 8 のみ対応しています');
+  if (digits !== 6 && digits !== 8) throw new Error(t('桁数は 6 または 8 のみ対応しています'));
   const period = params.has('period') ? Number(params.get('period')) : 30;
-  if (!Number.isInteger(period) || period < 1 || period > 300) throw new Error('更新間隔（period）は 1〜300 秒のみ対応しています');
+  if (!Number.isInteger(period) || period < 1 || period > 300) throw new Error(t('更新間隔（period）は 1〜300 秒のみ対応しています'));
 
   return { secret, algorithm: algorithmOf(params.get('algorithm')), digits, period, issuer, label };
 }

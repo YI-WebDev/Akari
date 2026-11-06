@@ -12,6 +12,7 @@
 // (English or Japanese, as written by packages/pass/components/Item/Custom/Custom.templates.ts).
 
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
 import { csvToObjects } from '../csv.js';
 import { decodeMsgpack } from '../msgpack.js';
@@ -19,7 +20,7 @@ import { fromB64, toB64url, concat } from '../../../shared/bytes.js';
 import { L, typed, fromEntries, LABEL_RULES } from './_fields.js';
 import { toDate, wifiSecurity } from './_values.js';
 
-/** Japanese names of kinds that are kept as secure notes. */
+/** Japanese names of kinds that are kept as secure notes (translated when reported). */
 const KINDS = {
   creditCard: 'クレジットカード', identity: '個人情報', alias: 'メールエイリアス', wifi: 'Wi-Fi',
   sshKey: 'SSH キー', custom: 'カスタムアイテム',
@@ -37,7 +38,7 @@ const LABELS = {
   workPhoneNumber: '勤務先の電話', workEmail: '勤務先のメール', personalWebsite: '個人のウェブサイト',
   xHandle: 'X', linkedin: 'LinkedIn', reddit: 'Reddit', facebook: 'Facebook', yahoo: 'Yahoo', instagram: 'Instagram',
 };
-const label = (k) => L('proton.' + k, LABELS[k] || k);
+const label = (k) => (LABELS[k] ? L('proton.' + k, LABELS[k]) : k); // an unknown key keeps the file's own name
 const SECRET_KEYS = new Set(['socialSecurityNumber', 'passportNumber', 'licenseNumber', 'verificationCode', 'pin', 'password', 'privateKey']);
 
 /** Proton identity content key → identity template key. */
@@ -345,10 +346,10 @@ function custom(entries) {
 
 function fromJson(run, json) {
   if (json?.encrypted === true) {
-    throw new ImportError('UNSUPPORTED', '暗号化された Proton Pass の書き出しは、PGP 暗号化（.pgp）か暗号化なしで書き出したファイルを選んでください');
+    throw new ImportError('UNSUPPORTED', t('暗号化された Proton Pass の書き出しは、PGP 暗号化（.pgp）か暗号化なしで書き出したファイルを選んでください'));
   }
   if (!json || typeof json !== 'object' || !json.vaults || typeof json.vaults !== 'object') {
-    throw new ImportError('INVALID_FORMAT', 'Proton Pass の書き出しファイル（data.json）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('Proton Pass の書き出しファイル（data.json）ではありません'));
   }
   for (const vault of Object.values(json.vaults)) {
     for (const it of Array.isArray(vault?.items) ? vault.items : []) {
@@ -410,7 +411,7 @@ function fromJson(run, json) {
 function fromCsv(run, text) {
   const { headers, records } = csvToObjects(text);
   if (!headers.includes('type') || !headers.includes('name')) {
-    throw new ImportError('INVALID_FORMAT', 'Proton Pass の書き出しファイル（CSV）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('Proton Pass の書き出しファイル（CSV）ではありません'));
   }
   for (const rec of records) {
     const type = str(rec.type);
@@ -447,8 +448,8 @@ export async function parse(file, ctx = {}) {
       json = parseJson(bytesToText(await data.bytes()), 'Proton Pass');
     } else {
       const pgp = findEntry(entries, 'Proton Pass/data.pgp', 'data.pgp');
-      if (!pgp) throw new ImportError('INVALID_FORMAT', 'Proton Pass の ZIP に data.json が見つかりませんでした');
-      if (!ctx.password) throw new ImportError('NEEDS_PASSWORD', 'PGP で暗号化された Proton Pass の書き出しです。パスフレーズを入力してください');
+      if (!pgp) throw new ImportError('INVALID_FORMAT', t('Proton Pass の ZIP に data.json が見つかりませんでした'));
+      if (!ctx.password) throw new ImportError('NEEDS_PASSWORD', t('PGP で暗号化された Proton Pass の書き出しです。パスフレーズを入力してください'));
       const { decryptPgp } = await import('../../pgp.js');
       json = parseJson(bytesToText(await decryptPgp(await pgp.bytes(), ctx.password)), 'Proton Pass');
     }
@@ -459,9 +460,9 @@ export async function parse(file, ctx = {}) {
     if (/^\s*\{/.test(text)) fromJson(run, parseJson(text, 'Proton Pass'));
     else fromCsv(run, text);
   }
-  const warnings = Object.entries(run.converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (run.badPasskeys) warnings.push(`パスキー ${run.badPasskeys} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした`);
-  if (run.attachments) warnings.push(`添付ファイル ${run.attachments} 件は読み込まれません`);
-  if (run.badTotp) warnings.push(`読み取れない TOTP 設定 ${run.badTotp} 件はカスタムフィールドに残しました`);
+  const warnings = Object.entries(run.converted).map(([k, n]) => t('{kind} {n} 件をセキュアノートとして読み込みました', { kind: t(k), n }));
+  if (run.badPasskeys) warnings.push(t('パスキー {n} 件は Akari が対応していない形式（P-256 以外など）のため読み込めませんでした', { n: run.badPasskeys }));
+  if (run.attachments) warnings.push(t('添付ファイル {n} 件は読み込まれません', { n: run.attachments }));
+  if (run.badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: run.badTotp }));
   return { items: run.items, skipped: run.skipped, warnings };
 }

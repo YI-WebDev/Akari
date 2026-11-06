@@ -6,6 +6,7 @@
 // Folders and shared folders are ignored.
 
 import { ImportError, fieldsToNote, parseOtp, bytesToText, parseJson } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { personName } from '../../../shared/item-types.js';
 import { L, fromEntries, LABEL_RULES, looksSecret } from './_fields.js';
 
@@ -16,7 +17,7 @@ const address = (p) => [
 
 /**
  * Keeper record $type → login / note, [Akari type, rules] (template key ← entry ids, see
- * entriesOf), or the Japanese name of a kind kept as a secure note.
+ * entriesOf), or the Japanese name of a kind kept as a secure note (translated when reported).
  */
 const TYPES = {
   login: 'login', general: 'login', encryptedNotes: 'note',
@@ -97,7 +98,7 @@ function fieldLabel(key) {
   if (!key.startsWith('$')) return { type: '', raw: key, label: key, custom: true };
   const [type, raw] = key.slice(1).split(':');
   const label = Object.hasOwn(BUILTIN_LABELS, str(raw)) ? L(`keeper.${raw}`, BUILTIN_LABELS[raw])
-    : str(raw) || L(`keeper.${type}`, FIELD_LABELS[type] || type);
+    : str(raw) || (FIELD_LABELS[type] ? L(`keeper.${type}`, FIELD_LABELS[type]) : type); // unknown: the file's own text
   return { type, raw: str(raw), label, custom: !!str(raw) };
 }
 
@@ -136,7 +137,7 @@ function entriesOf(key, v, out, splitName, depth = 0) {
   } else {
     for (const [k, x] of Object.entries(v)) {
       out.push({
-        id: [...ids.map((id) => `${id}.${k}`)], label: L(`keeper.${k}`, SUB_LABELS[k] || k),
+        id: [...ids.map((id) => `${id}.${k}`)], label: SUB_LABELS[k] ? L(`keeper.${k}`, SUB_LABELS[k]) : k,
         value: fieldValue(x, k), secret: secret || SECRET_SUBS.has(k),
       });
     }
@@ -147,7 +148,7 @@ function entriesOf(key, v, out, splitName, depth = 0) {
 export async function parse(file) {
   const json = parseJson(bytesToText(file.bytes), 'Keeper');
   if (!json || typeof json !== 'object' || !Array.isArray(json.records)) {
-    throw new ImportError('INVALID_FORMAT', 'Keeper の書き出しファイル（JSON）ではありません');
+    throw new ImportError('INVALID_FORMAT', t('Keeper の書き出しファイル（JSON）ではありません'));
   }
   const items = [];
   const converted = {};
@@ -203,7 +204,7 @@ export async function parse(file) {
     }
   }
 
-  const warnings = Object.entries(converted).map(([k, n]) => `${k} ${n} 件をセキュアノートとして読み込みました`);
-  if (badTotp) warnings.push(`読み取れない TOTP 設定 ${badTotp} 件はカスタムフィールドに残しました`);
+  const warnings = Object.entries(converted).map(([k, n]) => t('{kind} {n} 件をセキュアノートとして読み込みました', { kind: t(k), n }));
+  if (badTotp) warnings.push(t('読み取れない TOTP 設定 {n} 件はカスタムフィールドに残しました', { n: badTotp }));
   return { items, skipped, warnings };
 }

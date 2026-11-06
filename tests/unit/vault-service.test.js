@@ -334,12 +334,14 @@ test('auto-lock: alarm armed on unlock, re-armed by activity (throttled), fires 
 
 test('settings: defaults, validation, autoLockMinutes re-arms (0 = no alarm)', async () => {
   const { call, chrome, clock } = await setupUnlocked();
-  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 15, clipboardClearSeconds: 30 });
-  for (const patch of [{ autoLockMinutes: 7 }, { theme: 'terminal' }, { clipboardClearSeconds: 5 }, { bogus: 1 }, { constructor: 1 }, null]) {
+  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 15, clipboardClearSeconds: 30, language: 'auto' });
+  for (const patch of [{ autoLockMinutes: 7 }, { theme: 'terminal' }, { clipboardClearSeconds: 5 }, { language: 'fr' }, { language: 1 }, { bogus: 1 }, { constructor: 1 }, null]) {
     await assert.rejects(call(MSG.SETTINGS_SET, { patch }), { code: 'INVALID' }, JSON.stringify(patch));
   }
   const s = await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: 5 } });
-  assert.deepEqual(s, { autoLockMinutes: 5, clipboardClearSeconds: 30 });
+  assert.deepEqual(s, { autoLockMinutes: 5, clipboardClearSeconds: 30, language: 'auto' });
+  assert.equal((await call(MSG.SETTINGS_SET, { patch: { language: 'en' } })).language, 'en');
+  await call(MSG.SETTINGS_SET, { patch: { language: 'auto' } });
   assert.deepEqual(chrome.storage.local.map.get(SETTINGS_KEY), s);
   assert.deepEqual(chrome.alarms.map.get(AUTOLOCK_ALARM), { delayInMinutes: 5 });
   clock.t += 1;
@@ -354,9 +356,9 @@ test('settings: the retired theme key in old stored settings is dropped silently
   const chrome = fakeChrome();
   await chrome.storage.local.set({ [SETTINGS_KEY]: { autoLockMinutes: 30, theme: 'soft', clipboardClearSeconds: 10 } });
   const { call } = await setupUnlocked({ chrome });
-  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 30, clipboardClearSeconds: 10 });
+  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 30, clipboardClearSeconds: 10, language: 'auto' });
   const s = await call(MSG.SETTINGS_SET, { patch: { clipboardClearSeconds: 60 } });
-  assert.deepEqual(s, { autoLockMinutes: 30, clipboardClearSeconds: 60 });
+  assert.deepEqual(s, { autoLockMinutes: 30, clipboardClearSeconds: 60, language: 'auto' });
   assert.deepEqual(chrome.storage.local.map.get(SETTINGS_KEY), s, 'theme is not written back');
 });
 

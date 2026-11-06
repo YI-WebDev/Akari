@@ -144,6 +144,23 @@
     <!-- the settings list's command line: it follows the last change (views/settings.js) -->
     <div id="setCmdLine" class="io-cmd set-cmd" aria-hidden="true"><span class="ps">$ </span><span id="setCmd">akari config</span><span class="cursor"></span></div>
     <div id="setMain" class="set-scroll">
+      <section class="set-group" aria-labelledby="setGenHead">
+        <h2 id="setGenHead" class="set-head">一般</h2>
+        <div class="set-box">
+        <div class="set-row">
+          <!-- in both languages: whoever cannot read the current one still finds it -->
+          <div id="langLabel" class="set-label">言語 · Language</div>
+          <div class="set-body">
+            <div class="chips" role="radiogroup" aria-labelledby="langLabel" aria-describedby="langHint" data-setting="language">
+              <button type="button" role="radio" data-value="auto">自動</button>
+              <button type="button" role="radio" data-value="ja" lang="ja">日本語</button>
+              <button type="button" role="radio" data-value="en" lang="en">English</button>
+            </div>
+            <p id="langHint" class="set-hint"></p>
+          </div>
+        </div>
+        </div>
+      </section>
       <section class="set-group" aria-labelledby="setSecHead">
         <h2 id="setSecHead" class="set-head">セキュリティ</h2>
         <div class="set-box">
@@ -151,13 +168,17 @@
           <div id="lockLabel" class="set-label">自動ロック</div>
           <div class="set-body">
             <div class="chips" role="radiogroup" aria-labelledby="lockLabel" aria-describedby="lockHint" data-setting="autoLockMinutes">
-              <button type="button" role="radio" data-value="1">1分</button>
-              <button type="button" role="radio" data-value="5">5分</button>
-              <button type="button" role="radio" data-value="15">15分</button>
-              <button type="button" role="radio" data-value="30">30分</button>
-              <button type="button" role="radio" data-value="60">60分</button>
-              <button type="button" role="radio" data-value="0" class="chip-apart">ブラウザを閉じたとき</button>
-              <button type="button" role="radio" data-value="-1" class="chip-apart chip-danger">しない</button>
+              <span class="chip-set">
+                <button type="button" role="radio" data-value="1">1分</button>
+                <button type="button" role="radio" data-value="5">5分</button>
+                <button type="button" role="radio" data-value="15">15分</button>
+                <button type="button" role="radio" data-value="30">30分</button>
+                <button type="button" role="radio" data-value="60">60分</button>
+              </span>
+              <span class="chip-set">
+                <button type="button" role="radio" data-value="0">ブラウザを閉じたとき</button>
+                <button type="button" role="radio" data-value="-1" class="chip-danger">しない</button>
+              </span>
             </div>
             <p id="lockHint" class="set-hint"></p>
             <!-- "しない" (NEVER_LOCK) is confirmed here with the master password -->
@@ -175,10 +196,14 @@
           <div id="clipLabel" class="set-label">クリップボード消去</div>
           <div class="set-body">
             <div class="chips" role="radiogroup" aria-labelledby="clipLabel" aria-describedby="clipHint" data-setting="clipboardClearSeconds">
-              <button type="button" role="radio" data-value="10">10秒</button>
-              <button type="button" role="radio" data-value="30">30秒</button>
-              <button type="button" role="radio" data-value="60">60秒</button>
-              <button type="button" role="radio" data-value="0" class="chip-apart">しない</button>
+              <span class="chip-set">
+                <button type="button" role="radio" data-value="10">10秒</button>
+                <button type="button" role="radio" data-value="30">30秒</button>
+                <button type="button" role="radio" data-value="60">60秒</button>
+              </span>
+              <span class="chip-set">
+                <button type="button" role="radio" data-value="0" data-i18n="settings.clipOff">しない</button>
+              </span>
             </div>
             <p id="clipHint" class="set-hint"></p>
           </div>

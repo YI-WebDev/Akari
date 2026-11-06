@@ -38,7 +38,9 @@
     NOTE_USERNAME: 'autofill/noteUsername',
     DO_FILL: 'autofill/doFill',
   };
-  const LOCKED_TEXT = 'Akari はロックされています — ツールバーのアイコンから解除してください';
+  // In-page UI text (i18n-page.js); the Japanese source text if that script is missing.
+  const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
+  const lockedText = () => t('Akari はロックされています — ツールバーのアイコンから解除してください');
 
   const isTop = window === window.top;
   const ac = new AbortController();
@@ -367,7 +369,7 @@
     // Key hints below the rows (the first row stays right under the field), then the close button.
     const foot = el('div', 'foot');
     foot.append(el('span', 'mark', '灯'), el('span', 'grow'));
-    const keys = field.rows.length ? [['↑↓', '選択'], ['⏎', '入力']] : [];
+    const keys = field.rows.length ? [['↑↓', t('選択')], ['⏎', t('入力')]] : [];
     for (const [key, label] of keys) {
       const hint = el('span');
       hint.append(el('span', 'k', key), label);
@@ -375,8 +377,8 @@
     }
     const close = el('button', 'x x-sm', '×');
     close.type = 'button';
-    close.title = '閉じる (esc)';
-    close.setAttribute('aria-label', '閉じる');
+    close.title = t('閉じる (esc)');
+    close.setAttribute('aria-label', t('閉じる'));
     close.addEventListener('click', (e) => {
       if (e.isTrusted) closeMenu();
     });
@@ -392,7 +394,7 @@
   function openMenu() {
     const s = field.state;
     if (!s) return;
-    if (s.locked) renderMenu([], LOCKED_TEXT);
+    if (s.locked) renderMenu([], lockedText());
     else renderMenu(s.items);
   }
 
@@ -401,7 +403,7 @@
     closeMenu();
     const res = await send(M.REQUEST_FILL, { itemId });
     if (!res.ok) {
-      if (field.root) renderMenu([], res.code === 'LOCKED' ? LOCKED_TEXT : 'このサイトでは使えません');
+      if (field.root) renderMenu([], res.code === 'LOCKED' ? lockedText() : t('このサイトでは使えません'));
       return;
     }
     // Credentials live only in this stack frame; the page sees them once they are in the inputs.
@@ -486,15 +488,15 @@
     logo.tabIndex = -1;
     head.append(
       logo,
-      el('div', 'ttl', action === 'update' ? 'パスワードを更新しますか？' : 'Akari に保存しますか？'),
-      el('span', 'tag', action === 'update' ? '更新' : '新規'),
+      el('div', 'ttl', action === 'update' ? t('パスワードを更新しますか？') : t('Akari に保存しますか？')),
+      el('span', 'tag', action === 'update' ? t('更新') : t('新規')),
     );
     const who = el('div', 'who', [siteHost, username].filter(Boolean).join(' · '));
     const msg = el('div', 'msg');
     msg.hidden = true;
     const btns = el('div', 'btns');
-    const save = el('button', 'btn primary', action === 'update' ? '更新' : '保存');
-    const skip = el('button', 'btn ghost', '今回はしない');
+    const save = el('button', 'btn primary', action === 'update' ? t('更新') : t('保存'));
+    const skip = el('button', 'btn ghost', t('今回はしない'));
     save.type = skip.type = 'button';
     btns.append(skip, save);
     const body = el('div', 'body');
@@ -516,14 +518,14 @@
       const res = await send(M.CONFIRM_SAVE, { decision: 'save' });
       if (res.ok && res.data.saved !== false) {
         const done = el('div', 'done');
-        done.append(el('span', 'ok', '[ ok ]'), el('span', '', '保存しました'));
+        done.append(el('span', 'ok', '[ ok ]'), el('span', '', t('保存しました')));
         card.replaceChildren(done);
         setTimeout(() => bar.host === host && hideSaveBar(), 1500);
         return;
       }
       if (res.ok) return hideSaveBar(); // candidate expired meanwhile
       save.disabled = skip.disabled = false;
-      note(res.code === 'LOCKED' ? LOCKED_TEXT : '保存できませんでした');
+      note(res.code === 'LOCKED' ? lockedText() : t('保存できませんでした'));
     });
     const dismiss = () => {
       send(M.CONFIRM_SAVE, { decision: 'dismiss' });

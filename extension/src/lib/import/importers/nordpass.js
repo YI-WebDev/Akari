@@ -61,7 +61,8 @@ const customFields = (raw) => {
 };
 
 export async function parse(file) {
-  const { records } = readCsv(file, 'NordPass', accepts, 'name, url, username, password と type や folder などの');
+  const { records } = readCsv(file, accepts,
+    t('NordPass の CSV ではないようです（name, url, username, password と type や folder などの列が見つかりません）'));
   const warnings = [];
   let foldered = false;
   const out = collect(records, (r) => {
@@ -113,6 +114,6 @@ export async function parse(file) {
       extra: [...pairs.filter(([, v]) => String(v ?? '').trim()).map(([l, v, s]) => entry(l, v, s)), ...tail],
     };
   }, warnings);
-  if (foldered) warnings.push('フォルダーの情報は取り込まれません');
+  if (foldered) warnings.push(t('フォルダーの情報は取り込まれません'));
   return out;
 }

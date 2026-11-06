@@ -3,6 +3,7 @@
 // decrypted (readVaultData); the next write stores the migrated data.
 
 import { DEFAULT_VAULTS } from '../../shared/messages.js';
+import { t } from '../../shared/i18n.js';
 import { invalid, isObject } from './common.js';
 import { stripLegacyLoginKeys } from './items.js';
 
@@ -26,7 +27,8 @@ const MIGRATIONS = [
 ];
 
 export function defaultData(nowMs = Date.now()) {
-  return { schema: DATA_SCHEMA, vaults: DEFAULT_VAULTS.map((v) => ({ ...v })), items: [], updatedAt: nowMs };
+  const vaults = DEFAULT_VAULTS.map((v) => ({ ...v, name: t(`vault.default.${v.id}`, null, v.name) }));
+  return { schema: DATA_SCHEMA, vaults, items: [], updatedAt: nowMs };
 }
 
 export function checkData(data) {

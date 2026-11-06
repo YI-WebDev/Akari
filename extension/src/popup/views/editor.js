@@ -43,11 +43,11 @@ function parseTotpInput(text, { title, username }) {
   };
   if (/^otpauth:/i.test(s)) {
     const cfg = parseOtpauthUri(s); // throws with a Japanese message
-    if (!cfg?.secret) throw new Error('URI に秘密鍵（secret）が含まれていません');
+    if (!cfg?.secret) throw new Error(t('URI に秘密鍵（secret）が含まれていません'));
     return { ...cfg, issuer: cap(cfg.issuer), label: cap(cfg.label) };
   }
   const secret = normalizeSecret(s);
-  if (!isValidSecret(secret)) throw new Error('秘密鍵の形式が正しくありません（Base32 の英字と 2〜7 の数字）');
+  if (!isValidSecret(secret)) throw new Error(t('秘密鍵の形式が正しくありません（Base32 の英字と 2〜7 の数字）'));
   return { secret, algorithm: 'SHA1', digits: 6, period: 30, issuer: cap(title), label: cap(username) };
 }
 
@@ -133,8 +133,8 @@ function setReveal(on) {
   const eye = E.els.eye;
   eye.classList.toggle('on', on);
   eye.setAttribute('aria-pressed', String(on));
-  eye.setAttribute('aria-label', on ? 'パスワードを隠す' : 'パスワードを表示');
-  eye.title = on ? '隠す' : '表示';
+  eye.setAttribute('aria-label', on ? t('パスワードを隠す') : t('パスワードを表示'));
+  eye.title = on ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示');
   eye.replaceChildren(icon(on ? 'eyeOff' : 'eye', 14));
 }
 
@@ -147,12 +147,13 @@ function renderTotp() {
   if (E.totp) {
     const tv = totpView(E.totp);
     E.totpView = tv;
-    const meta = [E.totp.issuer, E.totp.label].filter(Boolean).join(' · ') || `${E.totp.digits || 6} 桁 · ${E.totp.period || 30} 秒`;
+    const meta = [E.totp.issuer, E.totp.label].filter(Boolean).join(' · ')
+      || t('{digits} 桁 · {period} 秒', { digits: E.totp.digits || 6, period: E.totp.period || 30 });
     tv.col.append(h('span', { class: 'ed-totp-meta', title: meta }, meta));
     const row = h('div', { class: 'ed-totp' },
       tv.col,
       h('button', {
-        class: 'ibtn', type: 'button', title: '認証コードを外す', 'aria-label': '認証コードを外す',
+        class: 'ibtn', type: 'button', title: t('認証コードを外す'), 'aria-label': t('認証コードを外す'),
         onclick: () => { E.totp = null; markDirty(); renderTotp(); E.els.totpInput?.focus(); },
       }, icon('x', 11, 3)));
     tv.start(row);
@@ -161,7 +162,7 @@ function renderTotp() {
     return;
   }
   const input = h('input', {
-    id: 'edTotp', type: 'text', placeholder: '秘密鍵 または otpauth:// URI', autocomplete: 'off', spellcheck: 'false',
+    id: 'edTotp', type: 'text', placeholder: t('秘密鍵 または otpauth:// URI'), autocomplete: 'off', spellcheck: 'false',
   });
   const tryParse = (quiet) => {
     const v = input.value.trim();
@@ -172,7 +173,7 @@ function renderTotp() {
       renderTotp();
       return true;
     } catch (err) {
-      if (!quiet) setErr('totp', err?.message || '秘密鍵または URI の形式が正しくありません');
+      if (!quiet) setErr('totp', err?.message || t('秘密鍵または URI の形式が正しくありません'));
       return false;
     }
   };
@@ -186,8 +187,8 @@ function renderTotp() {
   E.els.totpInput = input;
   E.els.tryTotp = tryParse;
   const wrap = h('div', { class: 'field mono' }, input);
-  const scan = h('button', { class: 'btn-line btn-sm', type: 'button', title: '表示中のタブの QR コードを読み取る' },
-    icon('qr', 12), 'QR を読み取る', h('span', { class: 'spinner' }));
+  const scan = h('button', { class: 'btn-line btn-sm', type: 'button', title: t('表示中のタブの QR コードを読み取る') },
+    icon('qr', 12), t('QR を読み取る'), h('span', { class: 'spinner' }));
   scan.addEventListener('click', () => scanQr(scan));
   box.append(wrap, h('div', { class: 'ed-totp-tools' }, scan));
 }
@@ -204,19 +205,19 @@ async function scanQr(btn) {
       if (E !== mine) return;
       text = await decodeQrFromDataUrl(dataUrl);
     } catch {
-      throw new Error('このタブは読み取れませんでした');
+      throw new Error(t('このタブは読み取れませんでした'));
     }
     if (E !== mine) return; // editor closed, replaced or locked meanwhile
-    if (!text) throw new Error('このタブに QR コードが見つかりませんでした');
-    if (!/^otpauth:\/\//i.test(text)) throw new Error('認証アプリ用の QR コードではありません');
+    if (!text) throw new Error(t('このタブに QR コードが見つかりませんでした'));
+    if (!/^otpauth:\/\//i.test(text)) throw new Error(t('認証アプリ用の QR コードではありません'));
     let cfg;
-    try { cfg = parseTotpInput(text, {}); } catch (err) { throw new Error(err?.message || 'QR コードの内容を読み取れませんでした'); }
+    try { cfg = parseTotpInput(text, {}); } catch (err) { throw new Error(err?.message || t('QR コードの内容を読み取れませんでした')); }
     E.totp = cfg;
     if (!E.els.title.value.trim() && cfg.issuer) { E.els.title.value = cfg.issuer; updateHead(); }
     if (E.els.username && !E.els.username.value.trim() && cfg.label) E.els.username.value = cfg.label;
     markDirty();
     renderTotp();
-    toast('QR コードを読み取りました', [cfg.issuer, cfg.label].filter(Boolean).join(' · ') || null);
+    toast(t('QR コードを読み取りました'), [cfg.issuer, cfg.label].filter(Boolean).join(' · ') || null);
   } catch (e) {
     if (E === mine) setErr('totp', e.message);
   } finally {
@@ -469,7 +470,7 @@ function extrasBox(list) {
 /* ───────── vault, head, foot ───────── */
 
 function vaultPicker() {
-  const group = h('div', { class: 'vault-pick', role: 'radiogroup', 'aria-label': '保管庫' });
+  const group = h('div', { class: 'vault-pick', role: 'radiogroup', 'aria-label': t('vaults.label', null, '保管庫') });
   const render = () => {
     clear(group);
     for (const v of S.vaults) {
@@ -481,7 +482,7 @@ function vaultPicker() {
     }
   };
   render();
-  return h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, '保管庫'), h('div', { class: 'ed-ctl' }, group));
+  return h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, t('vaults.label', null, '保管庫')), h('div', { class: 'ed-ctl' }, group));
 }
 
 /** "[個人] ログイン", as in the detail head. */
@@ -495,14 +496,14 @@ function footIdle() {
   const foot = E.els.foot;
   clear(foot);
   if (E.original) {
-    foot.append(h('button', { class: 'btn-text danger', type: 'button', onclick: confirmDelete }, '削除'));
+    foot.append(h('button', { class: 'btn-text danger', type: 'button', onclick: confirmDelete }, t('削除')));
   }
   foot.append(h('span', { class: 'grow' }),
-    h('button', { class: 'btn-line', type: 'button', onclick: () => requestClose() }, 'キャンセル'),
+    h('button', { class: 'btn-line', type: 'button', onclick: () => requestClose() }, t('キャンセル')),
     E.els.save);
 }
 
-function footConfirm(text, yesLabel, onYes, noLabel = 'やめる') {
+function footConfirm(text, yesLabel, onYes, noLabel = t('やめる')) {
   const foot = E.els.foot;
   clear(foot);
   const yes = h('button', { class: 'btn-mini danger', type: 'button' }, yesLabel);
@@ -515,8 +516,8 @@ function footConfirm(text, yesLabel, onYes, noLabel = 'やめる') {
 
 function confirmDelete() {
   const pk = E.original?.passkeys?.length || 0;
-  const ask = pk ? `パスキー ${pk} 件も消えます。元に戻せません` : '削除しますか？元に戻せません';
-  footConfirm(ask, '削除する', async (btn) => {
+  const ask = pk ? t('パスキー {n} 件も消えます。元に戻せません', { n: pk }) : t('削除しますか？元に戻せません');
+  footConfirm(ask, t('削除する'), async (btn) => {
     const mine = E;
     if (!mine || mine.busy) return;
     mine.busy = true;
@@ -531,7 +532,7 @@ function confirmDelete() {
       if (E !== mine) return;
       mine.busy = false;
       btn.disabled = false;
-      toastError('削除できませんでした', errText(e));
+      toastError(t('削除できませんでした'), errText(e));
     }
   });
 }
@@ -550,7 +551,7 @@ export function requestClose(then) {
   };
   if (!E.dirty) { done(); return; }
   shake(E.els.foot);
-  footConfirm('変更を破棄しますか？', '破棄する', done, '編集を続ける');
+  footConfirm(t('変更を破棄しますか？'), t('破棄する'), done, t('編集を続ける'));
 }
 
 /* ───────── save ───────── */
@@ -579,7 +580,7 @@ function collect() {
   const firstBad = () => problems.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))[0];
 
   if (E.type === 'note' || (!E.templated && E.type !== 'login')) {
-    if (!title) bad('title', 'タイトルを入力してください', els.title);
+    if (!title) bad('title', t('タイトルを入力してください'), els.title);
     if (problems.length) return { firstBad: firstBad() };
     return { value: { title, note, vault: E.vault, fav: E.fav, extra } };
   }
@@ -601,9 +602,9 @@ function collect() {
   }
 
   const url = withScheme(els.url.value); // "localhost:3000" → "https://localhost:3000"
-  if (url && !safeHttpUrl(url)) bad('url', 'http(s) の URL を入力してください', els.url);
+  if (url && !safeHttpUrl(url)) bad('url', t('http(s) の URL を入力してください'), els.url);
   const finalTitle = title || (url && safeHttpUrl(url) ? siteOf(url) : '');
-  if (!finalTitle) bad('title', 'タイトルかウェブサイトを入力してください', els.title);
+  if (!finalTitle) bad('title', t('タイトルかウェブサイトを入力してください'), els.title);
   if (!E.totp && els.totpInput?.value.trim() && !els.tryTotp(false)) problems.push(els.totpInput);
   if (problems.length) return { firstBad: firstBad() };
   return {
@@ -640,7 +641,7 @@ async function save(e) {
     if (E !== mine) return;
     mine.busy = false;
     mine.els.save.classList.remove('busy');
-    toastError('保存できませんでした', errText(err));
+    toastError(t('保存できませんでした'), errText(err));
   }
 }
 
@@ -667,7 +668,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   els.tile = h('span', { class: 'tile lg', 'aria-hidden': 'true' });
   els.sub = h('div', { class: 'd-meta' }, kindLabel());
   const fav = h('button', {
-    class: 'ibtn boxed fav', type: 'button', title: 'お気に入り', 'aria-label': 'お気に入り', 'aria-pressed': String(E.fav),
+    class: 'ibtn boxed fav', type: 'button', title: t('お気に入り'), 'aria-label': t('お気に入り'), 'aria-pressed': String(E.fav),
   }, icon('star', 14));
   fav.addEventListener('click', () => {
     E.fav = !E.fav;
@@ -679,23 +680,26 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     ? t('editor.edit', { type: typeLabel(kind) }, '{type}を編集')
     : t('editor.new', { type: typeLabel(kind) }, '新規{type}');
 
-  const titlePh = kind === 'note' ? '例: Wi-Fi のパスワード' : kind === 'login' ? '例: github.com' : '';
+  const titlePh = kind === 'note' ? t('例: Wi-Fi のパスワード') : kind === 'login' ? t('例: github.com') : '';
   els.title = h('input', { id: 'edTitle', type: 'text', value: src.title || '', placeholder: titlePh, autocomplete: 'off', maxlength: 200 });
   els.title.addEventListener('input', updateHead);
-  els.note = h('textarea', { id: 'edNote', rows: kind === 'note' ? 7 : 3, placeholder: kind === 'note' ? 'ここに書いた内容は暗号化して保存されます' : '', spellcheck: 'false' });
+  els.note = h('textarea', { id: 'edNote', rows: kind === 'note' ? 7 : 3, placeholder: kind === 'note' ? t('ここに書いた内容は暗号化して保存されます') : '', spellcheck: 'false' });
   els.note.value = src.note || '';
-  const noteRow = h('div', { class: 'ed-row' }, h('label', { for: 'edNote' }, 'メモ'), h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, els.note)));
+  const noteRow = h('div', { class: 'ed-row' }, h('label', { for: 'edNote' }, t('メモ')), h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, els.note)));
 
-  const main = h('div', { class: 'box', dataset: { f: '' } }, inputField('title', 'タイトル', els.title));
+  const main = h('div', { class: 'box', dataset: { f: '' } }, inputField('title', t('タイトル'), els.title));
   const meta = h('div', { class: 'box', dataset: { f: '' } }, vaultPicker());
 
   if (kind === 'login') {
     els.url = h('input', { id: 'edUrl', type: 'text', value: src.url || '', placeholder: 'https://example.com/login', autocomplete: 'off', spellcheck: 'false' });
-    els.username = h('input', { id: 'edUser', type: 'text', value: src.username || '', placeholder: 'メールアドレスやユーザー名', autocomplete: 'off', spellcheck: 'false' });
+    els.username = h('input', { id: 'edUser', type: 'text', value: src.username || '', placeholder: t('メールアドレスやユーザー名'), autocomplete: 'off', spellcheck: 'false' });
     els.password = h('input', { id: 'edPw', type: 'password', value: src.password || '', autocomplete: 'new-password', spellcheck: 'false' });
     els.password.addEventListener('input', updateMeter);
-    els.eye = h('button', { class: 'ibtn', type: 'button', title: '表示', 'aria-label': 'パスワードを表示', 'aria-pressed': 'false', onclick: () => setReveal(!E.reveal) }, icon('eye', 14));
-    const gen = h('button', { class: 'ibtn', type: 'button', title: 'パスワード生成', 'aria-label': 'パスワード生成' }, icon('regen', 14));
+    els.eye = h('button', {
+      class: 'ibtn', type: 'button', title: t('detail.show', null, '表示'), 'aria-label': t('パスワードを表示'), 'aria-pressed': 'false', onclick: () => setReveal(!E.reveal),
+    }, icon('eye', 14));
+    const genLabel = t('editor.generate', null, 'パスワード生成');
+    const gen = h('button', { class: 'ibtn', type: 'button', title: genLabel, 'aria-label': genLabel }, icon('regen', 14));
     gen.addEventListener('click', () => emit('openGen', {
       source: 'editor',
       title: els.title.value.trim(),
@@ -713,9 +717,9 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     E.errs.totp = h('div', { class: 'field-err', role: 'alert' });
     main.append(
       inputField('url', 'URL', els.url),
-      inputField('username', 'ユーザー名', els.username),
-      inputField('password', 'パスワード', els.password, [els.eye, gen], [els.meter]),
-      h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, '認証コード'), h('div', { class: 'ed-ctl' }, els.totpBox, E.errs.totp)),
+      inputField('username', t('ユーザー名'), els.username),
+      inputField('password', t('パスワード'), els.password, [els.eye, gen], [els.meter]),
+      h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, t('認証コード')), h('div', { class: 'ed-ctl' }, els.totpBox, E.errs.totp)),
     );
     meta.append(noteRow);
   } else if (templated) {
@@ -735,7 +739,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
       h('div', { class: 'd-titles' }, h('div', { class: 'ed-heading' }, heading), els.sub), fav),
     main, extrasBox(Array.isArray(original?.extra) ? original.extra : []), meta);
 
-  els.save = h('button', { class: 'btn-primary', type: 'submit' }, h('span', { class: 'go-label' }, '保存'), h('span', { class: 'spinner' }));
+  els.save = h('button', { class: 'btn-primary', type: 'submit' }, h('span', { class: 'go-label' }, t('保存')), h('span', { class: 'spinner' }));
   els.foot = h('div', { class: 'ed-foot' });
   const form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading, dataset: { type: kind } }, scroll, els.foot);
   form.addEventListener('submit', save);

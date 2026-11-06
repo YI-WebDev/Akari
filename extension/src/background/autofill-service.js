@@ -162,7 +162,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id, frameIds: [0] },
-          files: ['src/content/shadow-ui.js', 'src/content/autofill.js'],
+          files: ['src/content/i18n-page.js', 'src/content/shadow-ui.js', 'src/content/autofill.js'],
         });
         return await attempt();
       } catch {

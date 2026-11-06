@@ -42,6 +42,9 @@ export function clear(el) {
   return el;
 }
 
+/** A translated text whose "\n" are line breaks: ['line 1', <br>, 'line 2']. */
+export const brLines = (text) => String(text).split('\n').flatMap((s, i) => (i ? [h('br'), s] : [s]));
+
 // Static icon geometry (from the design). [tag, attrs] tuples.
 const ICONS = {
   check: [['path', { d: 'M20 6 9 17l-5-5' }]],

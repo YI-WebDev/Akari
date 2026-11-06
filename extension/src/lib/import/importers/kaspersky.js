@@ -19,6 +19,7 @@
 // are appended to the note.
 
 import { ImportError, bytesToText, makeImported } from '../model.js';
+import { t } from '../../../shared/i18n.js';
 import { entry } from './_csv.js';
 
 const HEADING = /^(websites|applications|notes)$/i;
@@ -115,7 +116,7 @@ export async function parse(file) {
   }
   if (!recognised) {
     throw new ImportError('INVALID_FORMAT',
-      'Kaspersky の TXT ではないようです（Websites / Applications / Notes の項目が見つかりません）');
+      t('Kaspersky の TXT ではないようです（Websites / Applications / Notes の項目が見つかりません）'));
   }
   return { items, skipped, warnings: [] };
 }

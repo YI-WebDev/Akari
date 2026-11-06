@@ -12,7 +12,7 @@ import {
   S, emit, call, setSel, itemById, vaultById, strengthOf, reuseOf, isWeak, copyText, forSave, replaceItem, mergeSaved, errText,
   liveToken, live,
 } from '../state.js';
-import { h, clear, icon, copyGlyph } from './dom.js';
+import { h, clear, icon, copyGlyph, brLines } from './dom.js';
 import {
   vaultColor, relTime, formatDate, safeHttpUrl, hueOf, formatIsoDate, daysUntil, digitsOnly, groupDigits,
 } from './format.js';
@@ -38,7 +38,7 @@ export function stopDetail() {
 const masked = (pw) => '•'.repeat(Math.min(pw.length, 16));
 
 function copyButton(field, getValue, label, opts) {
-  const aria = opts ? t('detail.copyField', { label }, '{label}をコピー') : label + 'をコピー';
+  const aria = t('detail.copyField', { label }, '{label}をコピー');
   const btn = h('button', { class: 'ibtn', type: 'button', title: t('detail.copy', null, 'コピー'), 'aria-label': aria }, copyGlyph(false));
   btn.addEventListener('click', async () => {
     const v = getValue();
@@ -70,7 +70,7 @@ function breakable(text) {
 function head(it) {
   const v = vaultById(it.vault);
   const fav = h('button', {
-    class: 'ibtn fav', type: 'button', title: 'お気に入り', 'aria-label': 'お気に入り', 'aria-pressed': String(!!it.fav),
+    class: 'ibtn fav', type: 'button', title: t('お気に入り'), 'aria-label': t('お気に入り'), 'aria-pressed': String(!!it.fav),
   }, icon('star', 14));
   fav.addEventListener('click', () => toggleFav(it.id, fav));
   const href = it.type === 'login' ? safeHttpUrl(it.url) : '';
@@ -79,17 +79,17 @@ function head(it) {
   const meta = [
     h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
     h('span', { class: 'd-type' }, typeLabel(it.type)),
-    login && it.totp?.secret ? badge('2FA', '認証コード（2FA）あり') : null,
-    login && it.passkeys?.length ? badge(`パスキー ${it.passkeys.length}`, 'このサイトのパスキー') : null,
+    login && it.totp?.secret ? badge('2FA', t('認証コード（2FA）あり')) : null,
+    login && it.passkeys?.length ? badge(t('パスキー {n}', { n: it.passkeys.length }), t('このサイトのパスキー')) : null,
   ];
   return h('div', { class: 'd-head', dataset: { f: '' } },
     tileEl(it, 'lg'),
-    h('div', { class: 'd-title', title: it.title || '' }, breakable(it.title || '(無題)')),
-    h('div', { class: 'd-acts', role: 'group', 'aria-label': '操作' },
-      h('button', { class: 'ibtn', type: 'button', title: '編集', 'aria-label': '編集', onclick: () => emit('edit', it.id) }, icon('pencil', 13)),
+    h('div', { class: 'd-title', title: it.title || '' }, breakable(it.title || t('(無題)'))),
+    h('div', { class: 'd-acts', role: 'group', 'aria-label': t('操作') },
+      h('button', { class: 'ibtn', type: 'button', title: t('編集'), 'aria-label': t('編集'), onclick: () => emit('edit', it.id) }, icon('pencil', 13)),
       fav,
       href ? h('a', {
-        class: 'ibtn', href, target: '_blank', rel: 'noreferrer noopener', title: 'サイトを開く', 'aria-label': 'サイトを開く',
+        class: 'ibtn', href, target: '_blank', rel: 'noreferrer noopener', title: t('サイトを開く'), 'aria-label': t('サイトを開く'),
         onclick: (e) => openUrl(e, href),
       }, icon('external', 13)) : null),
     h('div', { class: 'd-meta' }, meta));
@@ -115,7 +115,7 @@ async function toggleFav(id, btn) {
     if (!live(token)) return;
     btn.setAttribute('aria-pressed', String(!next));
     btn.replaceChildren(icon('star', 14));
-    toastError('保存できませんでした', errText(e));
+    toastError(t('保存できませんでした'), errText(e));
   } finally {
     delete btn.dataset.busy;
     btn.removeAttribute('aria-busy');
@@ -125,15 +125,18 @@ async function toggleFav(id, btn) {
 function warnText(it) {
   const n = reuseOf(it);
   const weak = strengthOf(it.password).level <= 1;
-  if (n > 0) return `${weak ? '弱いパスワードです' : '使い回しのパスワードです'}。ほかの ${n} 件のサイトでも使われています。`;
-  return '短く推測されやすいパスワードです。';
+  if (n > 0) {
+    return weak ? t('弱いパスワードです。ほかの {n} 件のサイトでも使われています。', { n })
+      : t('使い回しのパスワードです。ほかの {n} 件のサイトでも使われています。', { n });
+  }
+  return t('短く推測されやすいパスワードです。');
 }
 
 function weakBox(it) {
   return h('div', { class: 'weak', dataset: { f: '' }, role: 'note' },
     h('span', { class: 'weak-bang', 'aria-hidden': 'true' }, '!'),
     h('span', { class: 'weak-text' }, warnText(it)),
-    h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, '強化する', icon('arrowRight', 11, 2.6)));
+    h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, t('強化する'), icon('arrowRight', 11, 2.6)));
 }
 
 // ---- a password change on the site ----------------------------------------------------
@@ -157,12 +160,12 @@ async function settlePending(id, action, btns) {
       emit('passwordUpdated', id, { password: next, ...strengthOf(next) });
     } else {
       renderDetail({ animate: true });
-      toast('保留中のパスワードを破棄しました', '今のパスワードはそのままです');
+      toast(t('保留中のパスワードを破棄しました'), t('今のパスワードはそのままです'));
     }
   } catch (e) {
     if (!live(token)) return;
     btns.forEach((b) => { b.disabled = false; });
-    toastError(action === 'confirm' ? '確定できませんでした' : '破棄できませんでした', errText(e));
+    toastError(action === 'confirm' ? t('確定できませんでした') : t('破棄できませんでした'), errText(e));
   }
 }
 
@@ -170,32 +173,32 @@ function pendingBox(it) {
   const site = it.type === 'login' ? safeHttpUrl(it.url) : '';
   const acts = h('div', { class: 'pend-acts' });
   const idle = () => {
-    const confirm = h('button', { class: 'btn-mini primary', type: 'button' }, icon('check', 11, 3), '確定する');
-    const drop = h('button', { class: 'btn-mini', type: 'button', onclick: askDrop }, '取り消す');
+    const confirm = h('button', { class: 'btn-mini primary', type: 'button' }, icon('check', 11, 3), t('確定する'));
+    const drop = h('button', { class: 'btn-mini', type: 'button', onclick: askDrop }, t('取り消す'));
     confirm.addEventListener('click', () => settlePending(it.id, 'confirm', [confirm, drop]));
     clear(acts);
     acts.append(
-      copyButton('pending', () => itemById(it.id)?.pendingPassword?.password, '新しいパスワード', { label: '新しいパスワード', secret: true }),
+      copyButton('pending', () => itemById(it.id)?.pendingPassword?.password, t('新しいパスワード'), { label: t('新しいパスワード'), secret: true }),
       site ? h('button', {
         class: 'btn-mini', type: 'button', title: site,
         onclick: () => chrome.tabs.create({ url: site }),
-      }, 'サイトで変更', icon('external', 10)) : null,
+      }, t('サイトで変更'), icon('external', 10)) : null,
       h('span', { class: 'grow' }), drop, confirm);
   };
   // Dropping it after the site took it would lock the user out: ask first.
   function askDrop() {
-    const yes = h('button', { class: 'btn-mini danger', type: 'button' }, '破棄する');
+    const yes = h('button', { class: 'btn-mini danger', type: 'button' }, t('破棄する'));
     yes.addEventListener('click', () => settlePending(it.id, 'discard', [yes]));
     clear(acts);
-    acts.append(h('span', { class: 'pend-q grow' }, 'サイトで変更済みなら「確定」を。破棄しますか？'), yes,
-      h('button', { class: 'btn-mini', type: 'button', onclick: idle }, '戻る'));
+    acts.append(h('span', { class: 'pend-q grow' }, t('サイトで変更済みなら「確定」を。破棄しますか？')), yes,
+      h('button', { class: 'btn-mini', type: 'button', onclick: idle }, t('戻る')));
     yes.focus();
   }
   idle();
   return h('div', { class: 'pend', dataset: { f: '' }, role: 'status' },
-    h('div', { class: 'pend-head' }, icon('clock', 13), h('span', { class: 'grow' }, '新しいパスワードを保留中'),
+    h('div', { class: 'pend-head' }, icon('clock', 13), h('span', { class: 'grow' }, t('新しいパスワードを保留中')),
       h('span', { class: 'pend-date' }, relTime(it.pendingPassword.createdAt))),
-    h('div', { class: 'pend-text' }, 'サイトでパスワードを変更できたら「確定」を押してください。それまで自動入力は今のパスワードを使います。'),
+    h('div', { class: 'pend-text' }, t('サイトでパスワードを変更できたら「確定」を押してください。それまで自動入力は今のパスワードを使います。')),
     acts);
 }
 
@@ -203,9 +206,9 @@ function pendingBox(it) {
 function historyBlock(it) {
   const list = it.passwordHistory || [];
   if (!list.length) return [];
-  const box = h('div', { class: 'box hist', role: 'list', 'aria-label': '以前のパスワード', hidden: true });
+  const box = h('div', { class: 'box hist', role: 'list', 'aria-label': t('detail.history', null, '以前のパスワード'), hidden: true });
   const head = h('button', { class: 'sect sect-btn', type: 'button', 'aria-expanded': 'false', dataset: { f: '' } },
-    icon('chevRight', 11), h('span', null, '以前のパスワード'), h('span', { class: 'sect-line' }), h('span', null, String(list.length)));
+    icon('chevRight', 11), h('span', null, t('detail.history', null, '以前のパスワード')), h('span', { class: 'sect-line' }), h('span', null, String(list.length)));
   head.addEventListener('click', () => {
     const open = head.getAttribute('aria-expanded') !== 'true';
     head.setAttribute('aria-expanded', String(open));
@@ -218,7 +221,9 @@ function historyBlock(it) {
 function historyRow(it, entry) {
   const text = h('span', { class: 'hist-pw' }, masked(entry.password));
   let shown = false;
-  const eye = h('button', { class: 'ibtn', type: 'button', title: '表示', 'aria-label': '以前のパスワードを表示', 'aria-pressed': 'false' }, icon('eye', 13));
+  const eye = h('button', {
+    class: 'ibtn', type: 'button', title: t('detail.show', null, '表示'), 'aria-label': t('以前のパスワードを表示'), 'aria-pressed': 'false',
+  }, icon('eye', 13));
   eye.addEventListener('click', () => {
     shown = !shown;
     text.textContent = shown ? entry.password : masked(entry.password);
@@ -226,11 +231,11 @@ function historyRow(it, entry) {
     eye.setAttribute('aria-pressed', String(shown));
     eye.replaceChildren(icon(shown ? 'eyeOff' : 'eye', 13));
   });
-  const back = h('button', { class: 'btn-mini', type: 'button', title: 'このパスワードに戻す（今のパスワードは履歴に残ります）' }, '戻す');
+  const back = h('button', { class: 'btn-mini', type: 'button', title: t('このパスワードに戻す（今のパスワードは履歴に残ります）') }, t('戻す'));
   back.addEventListener('click', () => restorePassword(it.id, entry.password, back));
   return h('div', { class: 'hist-row', role: 'listitem' },
-    h('div', { class: 'hist-text' }, text, h('span', { class: 'hist-date' }, `${formatDate(entry.changedAt)} まで使用`)),
-    h('span', { class: 'f-btns' }, eye, copyButton('history', () => entry.password, '以前のパスワード', { label: '以前のパスワード', secret: true }), back));
+    h('div', { class: 'hist-text' }, text, h('span', { class: 'hist-date' }, t('{date} まで使用', { date: formatDate(entry.changedAt) }))),
+    h('span', { class: 'f-btns' }, eye, copyButton('history', () => entry.password, t('以前のパスワード'), { label: t('以前のパスワード'), secret: true }), back));
 }
 
 async function restorePassword(id, password, btn) {
@@ -244,19 +249,19 @@ async function restorePassword(id, password, btn) {
     replaceItem(mergeSaved(res?.item, cur));
     emit('listChanged');
     renderDetail({ animate: true });
-    toast('以前のパスワードに戻しました', '戻す前のパスワードは履歴に残しました');
+    toast(t('以前のパスワードに戻しました'), t('戻す前のパスワードは履歴に残しました'));
   } catch (e) {
     if (!live(token)) return;
     btn.disabled = false;
-    toastError('戻せませんでした', errText(e));
+    toastError(t('戻せませんでした'), errText(e));
   }
 }
 
 function userRow(it) {
   return h('div', { class: 'f-row' },
-    h('span', { class: 'f-label' }, 'ユーザー名'),
+    h('span', { class: 'f-label' }, t('ユーザー名')),
     h('span', { class: 'f-value' + (it.username ? '' : ' empty-val') }, it.username || '—'),
-    it.username ? copyButton('user', () => itemById(it.id)?.username, 'ユーザー名') : h('span'));
+    it.username ? copyButton('user', () => itemById(it.id)?.username, t('ユーザー名')) : h('span'));
 }
 
 function setReveal(on) {
@@ -266,8 +271,8 @@ function setReveal(on) {
   const { pwText, eye } = view.els;
   eye.classList.toggle('on', on);
   eye.setAttribute('aria-pressed', String(on));
-  eye.setAttribute('aria-label', on ? 'パスワードを隠す' : 'パスワードを表示');
-  eye.title = on ? '隠す' : '表示';
+  eye.setAttribute('aria-label', on ? t('パスワードを隠す') : t('パスワードを表示'));
+  eye.title = on ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示');
   eye.replaceChildren(icon(on ? 'eyeOff' : 'eye', 14));
   pwText.classList.toggle('revealed', on);
   if (on) scramble('pass', pwText, pw, 520);
@@ -281,32 +286,32 @@ function passwordRow(it, animate) {
   const pw = it.password || '';
   if (!pw) {
     return h('div', { class: 'f-row' },
-      h('span', { class: 'f-label' }, 'パスワード'), h('span', { class: 'f-value empty-val' }, '—'), h('span'));
+      h('span', { class: 'f-label' }, t('パスワード')), h('span', { class: 'f-value empty-val' }, '—'), h('span'));
   }
-  const pwText = h('span', { class: 'pw-text' + (view.reveal ? ' revealed' : ''), 'aria-label': 'パスワード' }, view.reveal ? pw : masked(pw));
+  const pwText = h('span', { class: 'pw-text' + (view.reveal ? ' revealed' : ''), 'aria-label': t('パスワード') }, view.reveal ? pw : masked(pw));
   const meter = meterEl();
   setMeter(meter, strengthOf(pw), { animate });
   const eye = h('button', {
-    class: 'ibtn' + (view.reveal ? ' on' : ''), type: 'button', title: view.reveal ? '隠す' : '表示',
-    'aria-label': view.reveal ? 'パスワードを隠す' : 'パスワードを表示', 'aria-pressed': String(view.reveal),
+    class: 'ibtn' + (view.reveal ? ' on' : ''), type: 'button', title: view.reveal ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示'),
+    'aria-label': view.reveal ? t('パスワードを隠す') : t('パスワードを表示'), 'aria-pressed': String(view.reveal),
     onclick: () => setReveal(!view.reveal),
   }, icon(view.reveal ? 'eyeOff' : 'eye', 14));
   view.els.pwText = pwText;
   view.els.eye = eye;
   view.els.meter = meter;
   return h('div', { class: 'f-row top' },
-    h('span', { class: 'f-label' }, 'パスワード'),
+    h('span', { class: 'f-label' }, t('パスワード')),
     h('div', { class: 'pw-col' }, pwText, meter),
-    h('div', { class: 'f-btns pw-btns' }, eye, copyButton('pass', () => itemById(it.id)?.password, 'パスワード')));
+    h('div', { class: 'f-btns pw-btns' }, eye, copyButton('pass', () => itemById(it.id)?.password, t('パスワード'))));
 }
 
 function totpRow(it) {
   const tv = totpView(it.totp);
   view.totp = tv;
   const row = h('div', { class: 'f-row totp-row' },
-    h('span', { class: 'f-label' }, '認証コード'),
+    h('span', { class: 'f-label' }, t('認証コード')),
     tv.col,
-    copyButton('totp', () => tv.current(), '認証コード'));
+    copyButton('totp', () => tv.current(), t('認証コード')));
   tv.start(row);
   return row;
 }
@@ -341,7 +346,7 @@ function websitesRow(it) {
 }
 
 function noteRow(note) {
-  return h('div', { class: 'f-row wide top' }, h('span', { class: 'f-label' }, 'メモ'), h('div', { class: 'f-note' }, note));
+  return h('div', { class: 'f-row wide top' }, h('span', { class: 'f-label' }, t('メモ')), h('div', { class: 'f-note' }, note));
 }
 
 /* ───────── templated fields ───────── */
@@ -515,8 +520,8 @@ function cardLine(it) {
 
 function passkeysBlock(it) {
   const count = h('span');
-  const box = h('div', { class: 'box', role: 'list', 'aria-label': 'パスキー' });
-  const sect = h('div', { class: 'sect', dataset: { f: '' } }, h('span', null, 'パスキー'), h('span', { class: 'sect-line' }), count);
+  const box = h('div', { class: 'box', role: 'list', 'aria-label': t('detail.passkeys', null, 'パスキー') });
+  const sect = h('div', { class: 'sect', dataset: { f: '' } }, h('span', null, t('detail.passkeys', null, 'パスキー')), h('span', { class: 'sect-line' }), count);
   const wrap = [sect, h('div', { dataset: { f: '' } }, box)];
   const render = () => {
     const pks = itemById(it.id)?.passkeys || [];
@@ -530,12 +535,12 @@ function passkeysBlock(it) {
 }
 
 function passkeyEl(itemId, pk, rerender) {
-  const name = pk.userName || pk.userDisplayName || '(名前なし)';
+  const name = pk.userName || pk.userDisplayName || t('(名前なし)');
   const actions = h('span', { class: 'pk-actions' });
   const idle = () => {
     clear(actions);
     actions.append(h('button', {
-      class: 'ibtn', type: 'button', title: 'パスキーを削除', 'aria-label': `${name} のパスキーを削除`, onclick: confirm,
+      class: 'ibtn', type: 'button', title: t('パスキーを削除'), 'aria-label': t('{name} のパスキーを削除', { name }), onclick: confirm,
     }, icon('trash', 13)));
   };
   async function remove(btn) {
@@ -547,19 +552,19 @@ function passkeyEl(itemId, pk, rerender) {
       const cur = itemById(itemId);
       if (cur) replaceItem({ ...cur, passkeys: (cur.passkeys || []).filter((p) => p.credentialId !== pk.credentialId) });
       rerender();
-      toast('パスキーを削除しました', `${pk.rpId} · ${name}`);
+      toast(t('パスキーを削除しました'), `${pk.rpId} · ${name}`);
     } catch (e) {
       if (!live(token)) return;
       btn.disabled = false;
-      toastError('パスキーを削除できませんでした', errText(e));
+      toastError(t('パスキーを削除できませんでした'), errText(e));
     }
   }
   function confirm() {
     clear(actions);
-    const yes = h('button', { class: 'btn-mini danger', type: 'button' }, '削除する');
+    const yes = h('button', { class: 'btn-mini danger', type: 'button' }, t('削除する'));
     yes.addEventListener('click', () => remove(yes));
     actions.append(h('span', { class: 'pk-confirm' }, h('span', { class: 'pk-q', 'aria-hidden': 'true' }, '?'), yes,
-      h('button', { class: 'btn-mini', type: 'button', onclick: idle }, 'やめる')));
+      h('button', { class: 'btn-mini', type: 'button', onclick: idle }, t('やめる'))));
     yes.focus();
   }
   idle();
@@ -567,37 +572,38 @@ function passkeyEl(itemId, pk, rerender) {
     h('span', { class: 'pk-ico', 'aria-hidden': 'true' }, icon('passkey', 15)),
     h('span', { class: 'pk-text' },
       h('span', { class: 'pk-user' }, name),
-      h('span', { class: 'pk-meta' }, `${pk.rpId} · 作成 ${formatDate(pk.createdAt)}`)),
+      h('span', { class: 'pk-meta' }, t('{rp} · 作成 {date}', { rp: pk.rpId, date: formatDate(pk.createdAt) }))),
     actions);
 }
 
 function stats(it) {
   const cell = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'stat-k' }, k), h('div', { class: 'stat-v' }, v));
   if (it.type !== 'login') {
-    return h('div', { class: 'stats two', dataset: { f: '' } }, cell('更新', formatDate(it.updatedAt)), cell('作成', formatDate(it.createdAt)));
+    return h('div', { class: 'stats two', dataset: { f: '' } },
+      cell(t('detail.updated', null, '更新'), formatDate(it.updatedAt)), cell(t('detail.created', null, '作成'), formatDate(it.createdAt)));
   }
   return h('div', { class: 'stats', dataset: { f: '' } },
-    cell('最終自動入力', relTime(it.lastUsedAt)),
-    cell('更新', formatDate(it.updatedAt)),
-    cell('作成', formatDate(it.createdAt)));
+    cell(t('最終自動入力'), relTime(it.lastUsedAt)),
+    cell(t('detail.updated', null, '更新'), formatDate(it.updatedAt)),
+    cell(t('detail.created', null, '作成'), formatDate(it.createdAt)));
 }
 
 function emptyDetail() {
   if (S.items.length) {
-    return h('div', { class: 'hint-line' }, 'アイテムを選ぶと', h('br'), 'ここに詳細が表示されます');
+    return h('div', { class: 'hint-line' }, brLines(t('アイテムを選ぶと\nここに詳細が表示されます')));
   }
   const cmd = (ico, label, key, ev, arg) => h('button', { class: 'cmd', type: 'button', onclick: () => emit(ev, arg) },
     icon(ico, 14), h('span', { class: 'grow' }, label), h('span', { class: 'cmd-key', 'aria-hidden': 'true' }, key));
   return h('div', { class: 'welcome' },
     h('div', { class: 'welcome-head' },
-      h('div', { class: 'welcome-name' }, '保管庫は空です'),
-      h('div', { class: 'welcome-sub' }, 'Chrome やほかのパスワードマネージャーから移すか、ひとつずつ追加します。')),
+      h('div', { class: 'welcome-name' }, t('保管庫は空です')),
+      h('div', { class: 'welcome-sub' }, t('Chrome やほかのパスワードマネージャーから移すか、ひとつずつ追加します。'))),
     h('div', null, h('button', { class: 'btn-primary', type: 'button', onclick: () => emit('openImport') },
-      icon('import', 13), 'ほかのアプリから読み込む')),
+      icon('import', 13), t('ほかのアプリから読み込む'))),
     h('div', { class: 'cmds' },
-      cmd('key', '新規ログイン', 'L', 'newLogin'),
-      cmd('note', 'セキュアノート', 'N', 'newNote'),
-      cmd('regen', 'パスワード生成', 'G', 'openGen', {})),
+      cmd('key', t('新規ログイン'), 'L', 'newLogin'),
+      cmd('note', t('セキュアノート'), 'N', 'newNote'),
+      cmd('regen', t('パスワード生成'), 'G', 'openGen', {})),
     h('div', { class: 'hint-line' }, t('detail.welcomeHint', null, 'カードや ID なども ＋ メニューから追加できます')));
 }
 
@@ -663,5 +669,5 @@ export async function showPasswordUpdated(id, { password, label, bits }) {
   scramble('pass', view.els.pwText, password, 1000);
   await wait(650);
   if (!live(token) || view?.id !== id) return;
-  toast(`${it?.title || ''} のパスワードを更新しました`, `強度: ${label} · ${bits} bit`);
+  toast(t('{title} のパスワードを更新しました', { title: it?.title || '' }), t('強度: {label} · {bits} bit', { label: t(label), bits }));
 }

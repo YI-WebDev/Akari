@@ -20,6 +20,7 @@
       <option>https://github.com/login</option><option>https://accounts.google.com/</option>
       <option>https://www.amazon.co.jp/</option><option>chrome://newtab/</option>
     </select></label>
+    <label>言語 <select name="lang"><option>auto</option><option>ja</option><option>en</option></select></label>
     <label><input type="checkbox" name="empty"> 空の保管庫</label>
     <button type="submit">再読み込み</button>
   </form>
@@ -38,7 +39,7 @@
   }
   async function load() {
     const cfg = {
-      state: ctl.state.value, tabUrl: ctl.tab.value, empty: ctl.empty.checked, delay: 1,
+      state: ctl.state.value, tabUrl: ctl.tab.value, empty: ctl.empty.checked, delay: 1, lang: ctl.lang.value,
     };
     const html = await (await fetch('/extension/src/popup/popup.html', { cache: 'no-store' })).text();
     const inject = '<base href="/extension/src/popup/">'

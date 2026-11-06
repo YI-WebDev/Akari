@@ -32,6 +32,17 @@ export function logLine(state, k, v = '') {
   return line;
 }
 
+/**
+ * A translated sentence with an element in place of its `{key}` placeholder, as children for h():
+ * sentenceWith('ファイル「{name}」を…', 'name', h('b', null, name)).
+ */
+export function sentenceWith(text, key, el) {
+  const mark = `{${key}}`;
+  const i = text.indexOf(mark);
+  if (i < 0) return [text, el];
+  return [text.slice(0, i) || null, el, text.slice(i + mark.length) || null];
+}
+
 /** The step trail in the sheet head: done › current › upcoming. Hidden when `steps` is empty. */
 export function setTrail(steps, current) {
   const ol = $('setTrail');
