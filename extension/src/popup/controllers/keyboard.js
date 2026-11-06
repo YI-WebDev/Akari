@@ -5,7 +5,7 @@ import { typeOf, hasTemplate, fieldLabel } from '../../shared/item-types.js';
 import { S, visibleItems, itemById, copyText } from '../state.js';
 import { editorOpen, requestClose } from '../views/editor.js';
 import { closeGenerator, isGenOpen } from '../views/generator.js';
-import { closeSettings, isSettingsOpen } from '../views/settings.js';
+import { escapeSettings, isSettingsOpen } from '../views/settings.js';
 import { closeHealth, isHealthOpen } from '../views/health.js';
 import { gateOpen } from '../views/lock.js';
 import { askDelete, pickerConfirming, resetPicker, renderPicker } from '../views/picker.js';
@@ -25,7 +25,7 @@ export function onKey(e) {
 
   if (e.key === 'Escape') {
     if (isGenOpen()) { closeGenerator(); e.preventDefault(); return; }
-    if (isSettingsOpen()) { closeSettings(); e.preventDefault(); return; }
+    if (isSettingsOpen()) { escapeSettings(); e.preventDefault(); return; }
     if (isHealthOpen()) { closeHealth(); e.preventDefault(); return; }
     if (menuOpen()) {
       const which = openMenuKey();

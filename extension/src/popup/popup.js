@@ -24,7 +24,7 @@ import { initGate, showGate, setGateStatus } from './views/lock.js';
 import { initSettings, openSettings, closeSettings } from './views/settings.js';
 import { initHealth, openHealth, closeHealth } from './views/health.js';
 import {
-  renderVaultLabel, renderFilters, renderSaving, refreshList, select, setQuery, showQuery, prefillSiteQuery,
+  renderVaultLabel, renderFilters, refreshList, select, setQuery, showQuery, prefillSiteQuery,
 } from './controllers/view.js';
 import { closeMenus, openMenu, menuKeys } from './controllers/menus.js';
 import { renderPickMode, setPicking, pick, pickAll, deletePicked, resetPickAnchor } from './controllers/picking.js';
@@ -135,7 +135,7 @@ function wipeView() {
   resetPickAnchor();
   resetPicker();
   renderPickMode(); // clearSecrets left selection mode
-  renderCounts(0);
+  renderCounts();
 }
 
 async function lockService() {
@@ -240,13 +240,21 @@ function wire() {
   $('vaultMenu').addEventListener('keydown', menuKeys);
   $('plusMenu').addEventListener('keydown', menuKeys);
   $('typeMenu').addEventListener('keydown', menuKeys);
-  $('openSettings').addEventListener('click', () => { closeMenus(); openSettings(); });
+  $('openSettings').addEventListener('click', () => {
+    closeMenus();
+    $('menuBtn').focus({ preventScroll: true }); // where focus returns when the sheet closes
+    openSettings();
+  });
   $('openHealth').addEventListener('click', () => {
     closeMenus();
     $('menuBtn').focus({ preventScroll: true }); // where focus returns when the screen closes
     openHealth();
   });
-  $('manageVaults').addEventListener('click', () => { closeMenus(); openSettings({ page: 'vaults' }); });
+  $('manageVaults').addEventListener('click', () => {
+    closeMenus();
+    $('menuBtn').focus({ preventScroll: true });
+    openSettings({ page: 'vaults' });
+  });
   buildPlusMenu($('plusMenu'), { onNew: newItem, onGen: () => { closeMenus(); openGenerator({}); } });
   $('plusMenu').setAttribute('aria-label', t('menu.new', null, '新規作成'));
   $('typeMenu').setAttribute('aria-label', t('list.viewMenu', null, '表示するアイテム'));
@@ -367,7 +375,6 @@ function wire() {
   on('settingsChanged', (key) => {
     if (key === 'autoLockMinutes') ping(true);
   });
-  on('saving', renderSaving);
 
   initGenerator();
   initSettings();

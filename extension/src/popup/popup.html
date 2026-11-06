@@ -57,19 +57,6 @@
     </section>
   </main>
 
-  <footer class="status" aria-label="ステータス">
-    <span id="stSave" class="st-save" data-state="saved" title="保管庫は暗号化してこの端末に保存されています"><span class="st-dot" aria-hidden="true"></span><span id="stSaveText">保存済み</span></span>
-    <span id="stVault">保管庫: すべて</span>
-    <span id="stCount">0 件</span>
-    <span class="grow"></span>
-    <span class="st-key st-main"><kbd>/</kbd>検索</span>
-    <span class="st-key st-main"><kbd>↑↓</kbd>移動</span>
-    <span class="st-key st-main"><kbd>⏎</kbd>コピー</span>
-    <span class="st-key st-pick"><kbd>space</kbd>選択</span>
-    <span class="st-key st-pick"><kbd>del</kbd>削除</span>
-    <span class="st-key st-pick"><kbd>esc</kbd>やめる</span>
-  </footer>
-
   <div id="catcher" class="catcher"></div>
 
   <div id="vaultMenu" class="menu menu-vault" role="menu" aria-label="保管庫">
@@ -148,92 +135,99 @@
 
   <section id="setSheet" class="sheet settings" data-page="main" role="dialog" aria-modal="true" aria-labelledby="setTitle" aria-hidden="true">
     <div class="sheet-head">
-      <button id="setBack" class="kbd-btn set-back" type="button" title="戻る" aria-label="戻る" hidden>&lt;</button>
+      <button id="setBack" class="icon-btn set-back" type="button" title="戻る (esc / alt+←)" aria-label="戻る" hidden><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
       <span id="setTitle" class="sheet-title">設定</span>
-      <span id="setSub" class="sheet-sub">akari config</span>
       <span class="grow"></span>
       <ol id="setTrail" class="trail" aria-label="手順" hidden></ol>
-      <button class="icon-btn sheet-close" type="button" data-close title="閉じる (esc)" aria-label="閉じる"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <button class="icon-btn sheet-close" type="button" data-close title="閉じる" aria-label="閉じる"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
+    <!-- the settings list's command line: it follows the last change (views/settings.js) -->
+    <div id="setCmdLine" class="io-cmd set-cmd" aria-hidden="true"><span class="ps">$ </span><span id="setCmd">akari config</span><span class="cursor"></span></div>
     <div id="setMain" class="set-scroll">
-      <div class="set-row">
-        <div class="set-label">自動ロック</div>
-        <div class="set-body">
-          <div class="chips" role="radiogroup" aria-label="自動ロック" data-setting="autoLockMinutes">
-            <button type="button" role="radio" data-value="1">1分</button>
-            <button type="button" role="radio" data-value="5">5分</button>
-            <button type="button" role="radio" data-value="15">15分</button>
-            <button type="button" role="radio" data-value="30">30分</button>
-            <button type="button" role="radio" data-value="60">60分</button>
-            <button type="button" role="radio" data-value="0">ブラウザを閉じたとき</button>
-            <button type="button" role="radio" data-value="-1">しない</button>
+      <section class="set-group" aria-labelledby="setSecHead">
+        <h2 id="setSecHead" class="set-head">セキュリティ</h2>
+        <div class="set-box">
+        <div class="set-row">
+          <div id="lockLabel" class="set-label">自動ロック</div>
+          <div class="set-body">
+            <div class="chips" role="radiogroup" aria-labelledby="lockLabel" aria-describedby="lockHint" data-setting="autoLockMinutes">
+              <button type="button" role="radio" data-value="1">1分</button>
+              <button type="button" role="radio" data-value="5">5分</button>
+              <button type="button" role="radio" data-value="15">15分</button>
+              <button type="button" role="radio" data-value="30">30分</button>
+              <button type="button" role="radio" data-value="60">60分</button>
+              <button type="button" role="radio" data-value="0" class="chip-apart">ブラウザを閉じたとき</button>
+              <button type="button" role="radio" data-value="-1" class="chip-apart chip-danger">しない</button>
+            </div>
+            <p id="lockHint" class="set-hint"></p>
+            <!-- "しない" (NEVER_LOCK) is confirmed here with the master password -->
+            <form id="neverForm" class="set-form never-form" hidden novalidate>
+              <p id="neverWarn" class="set-warn"></p>
+              <div class="set-field">
+                <label for="neverPw">マスターパスワード</label>
+                <div class="field"><input id="neverPw" type="password" aria-describedby="neverWarn" autocomplete="current-password"></div>
+              </div>
+              <div class="form-foot"><span id="neverErr" class="field-err" role="alert"></span><button id="neverCancel" class="btn-text" type="button">キャンセル</button><button id="neverSubmit" class="btn-primary btn-sm danger" type="submit"><span class="go-label">ロックしない</span><span class="spinner" aria-hidden="true"></span></button></div>
+            </form>
           </div>
-          <!-- "しない" (NEVER_LOCK) is confirmed here with the master password -->
-          <form id="neverForm" class="set-form never-form" hidden novalidate>
-            <p id="neverWarn" class="set-warn"></p>
-            <div class="field"><input id="neverPw" type="password" placeholder="マスターパスワード" aria-label="マスターパスワード" autocomplete="current-password"></div>
-            <div class="form-foot"><span id="neverErr" class="field-err" role="alert"></span><button id="neverCancel" class="btn-text" type="button">キャンセル</button><button id="neverSubmit" class="btn-primary btn-sm danger" type="submit">ロックしない</button></div>
-          </form>
         </div>
-      </div>
-      <div class="set-row">
-        <div class="set-label">クリップボード消去</div>
-        <div class="chips" role="radiogroup" aria-label="クリップボードの消去" data-setting="clipboardClearSeconds">
-          <button type="button" role="radio" data-value="10">10秒</button>
-          <button type="button" role="radio" data-value="30">30秒</button>
-          <button type="button" role="radio" data-value="60">60秒</button>
-          <button type="button" role="radio" data-value="0">しない</button>
+        <div class="set-row">
+          <div id="clipLabel" class="set-label">クリップボード消去</div>
+          <div class="set-body">
+            <div class="chips" role="radiogroup" aria-labelledby="clipLabel" aria-describedby="clipHint" data-setting="clipboardClearSeconds">
+              <button type="button" role="radio" data-value="10">10秒</button>
+              <button type="button" role="radio" data-value="30">30秒</button>
+              <button type="button" role="radio" data-value="60">60秒</button>
+              <button type="button" role="radio" data-value="0" class="chip-apart">しない</button>
+            </div>
+            <p id="clipHint" class="set-hint"></p>
+          </div>
         </div>
-      </div>
-      <div class="set-row">
-        <div class="set-label">マスターパスワード</div>
-        <div class="set-body">
-          <button id="pwToggle" class="set-expander" type="button" aria-expanded="false" aria-controls="pwForm" aria-label="マスターパスワードを変更する">
-            <span class="exp-mark" aria-hidden="true"></span>変更する
+        <div class="set-row">
+          <div class="set-label">マスターパスワード</div>
+          <div class="set-body">
+            <button id="pwToggle" class="set-expander" type="button" aria-expanded="false" aria-controls="pwForm" aria-label="マスターパスワードを変更する">
+              <span class="exp-mark" aria-hidden="true"></span>変更する
+            </button>
+            <form id="pwForm" class="set-form pw-form" hidden novalidate>
+              <div class="set-field">
+                <label for="pwCurrent">いまのパスワード</label>
+                <div class="field"><input id="pwCurrent" type="password" autocomplete="current-password"></div>
+              </div>
+              <div class="set-field">
+                <label for="pwNext">新しいパスワード</label>
+                <div class="field"><input id="pwNext" type="password" placeholder="10 文字以上" autocomplete="new-password"></div>
+              </div>
+              <div id="pwMeter" class="meter set-meter" data-lv="0"><div id="pwSegs" class="segs"></div><span id="pwLv" class="lv-label">—</span></div>
+              <div class="set-field">
+                <label for="pwConfirm">もう一度</label>
+                <div class="field"><input id="pwConfirm" type="password" autocomplete="new-password"></div>
+              </div>
+              <ul class="setup-checks set-checks" aria-label="条件">
+                <li id="pwChkLen">10 文字以上</li><li id="pwChkLv">強度「普通」以上</li><li id="pwChkMatch">2 回とも同じ</li>
+              </ul>
+              <p class="set-note">忘れると、だれにも復元できません。前に書き出した Akari バックアップは、書き出したときのパスワードで開きます。</p>
+              <div class="form-foot"><span id="pwErr" class="field-err" role="alert"></span><button id="pwSubmit" class="btn-primary btn-sm" type="submit"><span class="go-label">パスワードを変更</span><span class="spinner" aria-hidden="true"></span></button></div>
+            </form>
+          </div>
+        </div>
+        </div>
+      </section>
+      <section class="set-group" aria-labelledby="setDataHead">
+        <h2 id="setDataHead" class="set-head">データ</h2>
+        <div class="set-box set-cmds">
+          <button id="vaultsOpen" class="set-cmd-row" type="button">
+            <span class="sc-name">保管庫</span><span class="sc-desc">作成・名前と色の変更・削除</span><span class="sc-arrow" aria-hidden="true">›</span>
           </button>
-          <form id="pwForm" class="set-form" hidden novalidate>
-            <div class="field"><input id="pwCurrent" type="password" placeholder="いまのマスターパスワード" aria-label="いまのマスターパスワード" autocomplete="current-password"></div>
-            <div class="field"><input id="pwNext" type="password" placeholder="新しいマスターパスワード（10文字以上）" aria-label="新しいマスターパスワード" autocomplete="new-password"></div>
-            <div id="pwMeter" class="meter" data-lv="0"><div id="pwSegs" class="segs"></div><span id="pwLv" class="lv-label">—</span></div>
-            <div class="field"><input id="pwConfirm" type="password" placeholder="もう一度" aria-label="新しいマスターパスワード（確認）" autocomplete="new-password"></div>
-            <div class="form-foot"><span id="pwErr" class="field-err" role="alert"></span><button id="pwSubmit" class="btn-primary btn-sm" type="submit">変更する</button></div>
-          </form>
+          <button id="importOpen" class="set-cmd-row" type="button">
+            <span class="sc-name">インポート</span><span class="sc-desc">1Password・Chrome など 17 のアプリと CSV から</span><span class="sc-arrow" aria-hidden="true">›</span>
+          </button>
+          <button id="exportOpen" class="set-cmd-row" type="button">
+            <span class="sc-name">エクスポート</span><span class="sc-desc">暗号化バックアップ・CSV・JSON・PGP 暗号化</span><span class="sc-arrow" aria-hidden="true">›</span>
+          </button>
         </div>
-      </div>
-      <div class="set-row">
-        <div class="set-label">保管庫</div>
-        <div class="set-body">
-          <div class="set-actions">
-            <button id="vaultsOpen" class="btn-line set-nav" type="button" aria-haspopup="dialog">
-              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 14h3"/></svg>管理する<span class="nav-arrow" aria-hidden="true">›</span>
-            </button>
-          </div>
-          <p class="set-note">保管庫の作成・名前と色の変更・削除。</p>
-        </div>
-      </div>
-      <div class="set-row">
-        <div class="set-label">インポート</div>
-        <div class="set-body">
-          <div class="set-actions">
-            <button id="importOpen" class="btn-line set-nav" type="button" aria-haspopup="dialog">
-              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg>読み込む<span class="nav-arrow" aria-hidden="true">›</span>
-            </button>
-          </div>
-          <p class="set-note">ほかのパスワードマネージャー（1Password・Bitwarden・Chrome など 19 種類）や Akari のバックアップから。</p>
-        </div>
-      </div>
-      <div class="set-row">
-        <div class="set-label">エクスポート</div>
-        <div class="set-body">
-          <div class="set-actions">
-            <button id="exportOpen" class="btn-line set-nav" type="button" aria-haspopup="dialog">
-              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>書き出す<span class="nav-arrow" aria-hidden="true">›</span>
-            </button>
-          </div>
-          <p class="set-note">Akari バックアップ（暗号化）・CSV・Bitwarden JSON。</p>
-        </div>
-      </div>
-      <div id="setVersion" class="set-version"></div>
+        <p id="setVersion" class="set-version">暗号化して、このブラウザの中だけに保存します</p>
+      </section>
     </div>
     <div id="vaultsPage" class="set-page" role="region" aria-label="保管庫" hidden></div>
     <div id="importPage" class="set-page" role="region" aria-label="インポート" hidden></div>

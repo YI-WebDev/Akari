@@ -215,7 +215,7 @@ async function setup(e) {
   const { a, len, lv, match } = setupState();
   const st = $('setupStatus');
   if (!(len && lv && match)) {
-    status(st, !len ? '10 文字以上にしてください' : !lv ? 'もう少し推測されにくくしてください' : '2 回の入力が一致しません', { err: true });
+    status(st, !len ? '10 文字以上にしてください' : !lv ? '推測されやすいパスワードです。単語を足すか、記号や数字を混ぜてください' : '2 回の入力が一致しません', { err: true });
     shake($('setupForm'));
     return;
   }

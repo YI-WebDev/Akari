@@ -16,6 +16,7 @@ const $ = (id) => document.getElementById(id);
 
 /** Colour choices (oklch hues). The first three are the default vaults'. */
 export const VAULT_HUES = Object.freeze([55, 255, 150, 330, 200, 300, 100, 20]);
+const HUE_NAMES = { 55: '橙', 255: '青', 150: '緑', 330: '桃', 200: '水色', 300: '紫', 100: '黄緑', 20: '赤' };
 
 // mode: null (list) | 'add' | 'edit' | 'delete'; id: the vault being edited or deleted;
 // err: a message to show again after a redraw
@@ -89,7 +90,7 @@ function form(v) {
   const hues = h('div', { class: 'vm-hues', role: 'radiogroup', 'aria-label': t('vaults.color', null, '色') });
   VAULT_HUES.forEach((hue, i) => hues.append(h('button', {
     class: 'vm-hue', type: 'button', role: 'radio', dataset: { hue: String(hue) },
-    'aria-checked': String(hue === st.hue), 'aria-label': t('vaults.colorN', { n: i + 1 }, '色 {n}'),
+    'aria-checked': String(hue === st.hue), 'aria-label': t(`vaults.hue${hue}`, null, HUE_NAMES[hue] || `色 ${i + 1}`),
     vars: { '--sw': vaultColor(hue) },
     onclick: (e) => pickHue(hues, Number(e.currentTarget.dataset.hue)),
   })));
