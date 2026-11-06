@@ -149,7 +149,7 @@ export function renderViewMenu(menu, { counts, current, onPick }) {
   clear(menu);
   const lsOf = (id) => (isView(id) ? 'ls' + VIEWS[id][3] : `ls --type ${id}`);
   const cmd = cmdLine(lsOf(current));
-  const mark = (on) => h('span', { class: 'v-mark', 'aria-hidden': 'true' }, on ? '✓' : '');
+  const mark = (on) => h('span', { class: 'v-mark', 'aria-hidden': 'true' }, on ? icon('check', 10, 3) : null);
   const cell = (id, count, extraClass = '') => h('button', {
     class: ('tp-cell ' + extraClass).trim(), type: 'button', role: 'menuitemradio', 'aria-checked': String(current === id),
     dataset: { type: id, cmd: lsOf(id) },

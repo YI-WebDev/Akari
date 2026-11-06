@@ -30,19 +30,6 @@ function el(tag, className, text) {
   return node;
 }
 
-function svg(paths, size = 12) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const s = document.createElementNS(NS, 'svg');
-  s.setAttribute('width', size);
-  s.setAttribute('height', size);
-  s.setAttribute('viewBox', '0 0 24 24');
-  s.setAttribute('aria-hidden', 'true');
-  const p = document.createElementNS(NS, 'path');
-  p.setAttribute('d', paths);
-  s.append(p);
-  return s;
-}
-
 const initial = (s) => (Array.from(String(s || '').trim())[0] || '?').toUpperCase();
 
 function hueOf(s) {
@@ -86,9 +73,9 @@ function toast(message) {
 
 function shake(node) {
   node.animate(
-    [{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' },
-      { transform: 'translateX(-4px)' }, { transform: 'translateX(2px)' }, { transform: 'translateX(0)' }],
-    { duration: 380, easing: 'ease-out' },
+    [{ transform: 'translateX(0)' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' },
+      { transform: 'translateX(-2px)' }, { transform: 'translateX(0)' }],
+    { duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 260, easing: 'ease-out' },
   );
 }
 
@@ -186,7 +173,6 @@ function renderLocked() {
   $('pwHint').classList.remove('error');
   $('pwBox').classList.remove('error');
   $('bootLog').replaceChildren();
-  $('lockOrb').getAnimations().forEach((a) => a.cancel());
   show('locked');
   setTimeout(() => $('pw').focus(), 50);
 }
@@ -242,11 +228,9 @@ function renderGet() {
     const meta = [c.userDisplayName && c.userName ? c.userName : null,
       used ? '最終使用 ' + used : '未使用', c.itemTitle || null].filter(Boolean).join(' · ');
     col.append(el('div', 'name', name), el('div', 'meta', meta));
-    const check = el('span', 'check');
-    check.append(svg('M20 6 9 17l-5-5', 10));
     const caret = el('span', 'caret', '›');
     caret.setAttribute('aria-hidden', 'true');
-    label.append(input, caret, tile, col, check);
+    label.append(input, caret, tile, col);
     list.append(label);
   });
   $('gCount').textContent = info.candidates.length + ' 件';
@@ -294,7 +278,7 @@ async function respond(payload) {
     const code = e instanceof AkariError ? e.code : '';
     if (code === 'LOCKED' || code === 'UV_REQUIRED') await load();
     else if (code === 'NOT_FOUND') show('expired');
-    else toast('うまくいきませんでした。もう一度お試しください');
+    else toast('Akari から返事がありませんでした。もう一度押してください');
   } finally {
     setBusy(false);
   }
@@ -359,17 +343,14 @@ async function unlock(event) {
     const verified = await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword }).then(() => true, () => false);
     if (verified) bootLine('本人確認', 'マスターパスワード');
     input.value = '';
-    await $('lockOrb').animate(
-      [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.5)', opacity: 0 }],
-      { duration: 380, easing: 'cubic-bezier(.6,0,.2,1)', fill: 'forwards' },
-    ).finished.catch(() => {});
+    await new Promise((r) => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 380)); // the log lines are read before the screen changes
     setBusy(false);
     await load();
   } catch (e) {
     const code = e instanceof AkariError ? e.code : '';
     hint.textContent = code === 'BAD_PASSWORD' ? 'パスワードが違います'
       : code === 'NOT_INITIALIZED' ? 'Akari のセットアップがまだ済んでいません'
-        : 'ひらけませんでした';
+        : '解除できませんでした。もう一度入力してください';
     hint.classList.add('error');
     box.classList.add('error');
     shake(box);

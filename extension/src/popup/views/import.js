@@ -554,7 +554,7 @@ function renderDone(r) {
   } else {
     body = [
       cmdLine(`akari import --from ${r.source} ${quote(r.name)} --vault ${r.vault}`),
-      h('div', { class: 'io-log io-result', role: 'status', 'data-f': '' }, logLine('ok', resultText(r), `→ ${vaultName}`)),
+      h('div', { class: 'io-log io-result', role: 'status', 'data-f': '' }, logLine('ok', resultText(r), `保管庫: ${vaultName}`)),
       h('div', { class: 'io-alert', role: 'note', 'data-f': '' },
         h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'),
         h('div', null,

@@ -45,6 +45,8 @@ export function clear(el) {
 // Static icon geometry (from the design). [tag, attrs] tuples.
 const ICONS = {
   check: [['path', { d: 'M20 6 9 17l-5-5' }]],
+  import: [['path', { d: 'M12 20V9M7 14l5-5 5 5M5 4h14' }]],
+  arrowRight: [['path', { d: 'M5 12h14M13 6l6 6-6 6' }]],
   x: [['path', { d: 'M18 6 6 18M6 6l12 12' }]],
   star: [['path', { d: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z' }]],
   rows: [['path', { d: 'M4 6h16M4 12h16M4 18h10' }]],

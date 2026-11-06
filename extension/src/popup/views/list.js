@@ -8,7 +8,6 @@ import {
 } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { GROUPS, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
-import { stagger } from './fx.js';
 import { isView, viewName, viewIcon } from './type-menu.js';
 
 const $ = (id) => document.getElementById(id);
@@ -112,9 +111,7 @@ function afCard(it) {
   setAfState(S.af.state);
   return h('div', { class: 'af', dataset: { row: '' } },
     h('div', { class: 'af-head' },
-      h('span', { class: 'af-pulse', 'aria-hidden': 'true' }),
-      h('span', null, '現在のタブ'),
-      h('span', { class: 'af-arrow', 'aria-hidden': 'true' }, '→'),
+      h('span', { class: 'af-label' }, '現在のタブ'),
       h('span', { class: 'af-site' }, S.af.site)),
     h('div', { class: 'af-row' },
       tileEl(it, 'sm'),
@@ -127,8 +124,7 @@ const emptyBox = (lines) => h('div', { class: 'empty' }, h('div', { class: 'empt
 function emptyHero() {
   return h('div', { class: 'empty-hero' },
     h('div', { class: 'empty-n' }, '0 件'),
-    h('div', { class: 'empty-msg' }, '保管庫は空です。', h('br'), 'ログインやメモを追加すると', h('br'), 'ここに並びます'),
-    h('button', { class: 'btn-primary btn-sm', type: 'button', onclick: () => emit('newLogin') }, icon('plus', 12, 2.8), '新規ログイン'));
+    h('div', { class: 'empty-msg' }, 'ログインやメモを追加すると', h('br'), 'ここに並びます'));
 }
 
 function emptyMessage(q) {
@@ -190,7 +186,7 @@ export function renderViewButton(counts = viewCounts()) {
 export function renderCounts(visibleCount, now = Date.now()) {
   renderViewButton(viewCounts(now));
   const v = vaultById(S.vault);
-  $('stVault').textContent = `vault: ${S.vault === 'all' || !v ? 'すべて' : v.name}`;
+  $('stVault').textContent = `保管庫: ${S.vault === 'all' || !v ? 'すべて' : v.name}`;
   $('stCount').textContent = `${visibleCount} 件`;
 }
 
@@ -216,23 +212,23 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   }
   if (!S.items.length) {
     L.append(emptyHero());
-    if (animate) stagger(L, '.empty-hero > *');
     return;
   }
   if (!vis.length) {
     L.append(emptyMessage(q));
     return;
   }
+  // the site put in the search box on open is not something the user typed: no highlight for it
+  const hq = siteOnly ? '' : q;
   if (S.sort === 'az') {
-    L.append(groupEl('A → Z', vis.length));
-    for (const it of vis) L.append(rowEl(it, q));
+    L.append(groupEl('A–Z', vis.length));
+    for (const it of vis) L.append(rowEl(it, hq));
   } else {
-    appendGroups(L, vis, q, vis.map((it) => groupIndex(it.lastUsedAt, now)), (g) => GROUPS[g]);
+    appendGroups(L, vis, hq, vis.map((it) => groupIndex(it.lastUsedAt, now)), (g) => GROUPS[g]);
   }
   L.setAttribute('aria-activedescendant', S.sel ? 'row-' + S.sel : '');
   if (keepScroll && !animate) L.scrollTop = top;
   else L.scrollTop = 0;
-  if (animate) stagger(L);
 }
 
 /** Rows under a heading per run of equal keys (vis is sorted so equal keys are adjacent). */

@@ -53,6 +53,7 @@ export function resetGenerator() {
   ctx = NO_CTX;
   restoreFocus = null;
   clear($('genChars'));
+  $('genChars').removeAttribute('aria-busy');
   $('genChars').removeAttribute('aria-label');
   setMeter($('genMeter'), {});
 }
@@ -112,9 +113,16 @@ function generate() {
   bits = Math.round(r.bits);
 }
 
+/** Decode the password into the output; #genChars is aria-busy until it has settled. */
+function decode(ms) {
+  const box = $('genChars');
+  box.setAttribute('aria-busy', 'true');
+  scrambleWith('gen', pw, ms, renderChars, undefined, () => box.removeAttribute('aria-busy'));
+}
+
 function regen(ms = 440) {
   generate();
-  scrambleWith('gen', pw, ms, renderChars);
+  decode(ms);
   renderStrength();
   spin($('genRegen').querySelector('svg'));
 }
@@ -135,7 +143,7 @@ function setValue(v, animate) {
   cancelScramble('gen');
   generate();
   renderStrength();
-  if (animate) scrambleWith('gen', pw, 320, renderChars);
+  if (animate) decode(320);
   else renderChars(pw);
 }
 
@@ -153,7 +161,7 @@ export function openGenerator({ target = null, source = null, onUse = null, titl
   clearTimeout(wipeTimer);
   ctx = { target: item ? item.id : null, source, onUse, title };
   const chip = $('genChip');
-  const chipText = item ? `→ ${item.title}` : source === 'editor' ? `→ ${title || '新規ログイン'}` : '';
+  const chipText = item ? item.title : source === 'editor' ? title || '新規ログイン' : '';
   chip.textContent = chipText;
   chip.hidden = !chipText;
   $('genApply').textContent = applyLabel();
@@ -304,7 +312,7 @@ export function initGenerator() {
     if (!dragging) return;
     dragging = false;
     sl.classList.remove('drag');
-    scrambleWith('gen', pw, 320, renderChars);
+    decode(320);
   };
   sl.addEventListener('pointerup', end);
   sl.addEventListener('pointercancel', end);

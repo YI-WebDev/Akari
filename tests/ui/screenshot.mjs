@@ -82,7 +82,7 @@ const scenarios = {
     await shot(page, 'main');
     expect(await page.locator('#viewCount').textContent() === '32', 'filter count');
     expect(await page.locator('.row[aria-selected="true"] .tag').textContent() === '2FA', '2FA tag on github');
-    expect(/^vault: すべて$/.test(await page.locator('#stVault').textContent()), 'status vault');
+    expect(/^保管庫: すべて$/.test(await page.locator('#stVault').textContent()), 'status vault');
     expect(await page.locator('.ticks span').count() === 30, '30 TOTP ticks');
     expect(await page.locator('.pw-col .segs span').count() === 12, '12 meter segments');
     // reveal + copy
@@ -295,7 +295,7 @@ const scenarios = {
     await page.click('#vaultItems .menu-item:has-text("仕事")');
     await settle(page, 800);
     await shot(page, 'vault-work');
-    expect(await page.locator('#stVault').textContent() === 'vault: 仕事', 'status vault after switch');
+    expect(await page.locator('#stVault').textContent() === '保管庫: 仕事', 'status vault after switch');
     await ctx.close();
   },
   async search() {

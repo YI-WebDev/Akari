@@ -493,7 +493,7 @@
     const msg = el('div', 'msg');
     msg.hidden = true;
     const btns = el('div', 'btns');
-    const save = el('button', 'btn primary', '保存');
+    const save = el('button', 'btn primary', action === 'update' ? '更新' : '保存');
     const skip = el('button', 'btn ghost', '今回はしない');
     save.type = skip.type = 'button';
     btns.append(skip, save);

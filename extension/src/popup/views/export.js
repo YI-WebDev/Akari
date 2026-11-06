@@ -132,6 +132,8 @@ function sync() {
     : 'このファイルは暗号化されません。開けばだれでもパスワードを読めます。使い終わったら削除してください。';
   els.note.textContent = 'Akari のマスターパスワードで暗号化されたまま書き出します。読み込むときも、書き出したときのマスターパスワードを使います。';
   els.go.querySelector('.go-label').textContent = !f.plain ? '書き出す' : pgp ? '暗号化して書き出す' : '平文で書き出す';
+  // a plaintext file is the riskiest thing this page makes: its button says so in red, like ロックしない
+  els.go.classList.toggle('danger', f.plain && !pgp);
 }
 
 function fail(msg, wrap, input) {

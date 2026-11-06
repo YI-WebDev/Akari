@@ -1,4 +1,4 @@
-// Lock screen and first-run setup (design 1a): "akari_" prompt, and the boot log whose
+// Lock screen and first-run setup (design 1a): the 灯 Akari mark, and the boot log whose
 // lines appear as the real steps finish — key derivation (vault/unlock or vault/setup),
 // decryption (vault/getAll) and loading the items.
 
@@ -100,24 +100,24 @@ export function showGate(mode, { instant = false } = {}) {
     $('lockInput').disabled = false;
     $('lockField').classList.remove('err');
     status($('lockStatus'), idleHint());
-    setTimeout(() => $('lockInput').focus(), instant ? 30 : 450);
+    setTimeout(() => $('lockInput').focus(), instant ? 30 : 200);
   } else {
     $('setupPw').value = '';
     $('setupPw2').value = '';
     updateSetup();
     status($('setupStatus'), '');
-    setTimeout(() => $('setupPw').focus(), instant ? 30 : 450);
+    setTimeout(() => $('setupPw').focus(), instant ? 30 : 200);
   }
 }
 
-/** Fade the gate into the main view (design: opacity .5 s, scale 1 → 1.04), then reset it. */
+/** Fade the gate out over the main view (popup.css: .gate, .2 s), then reset it. */
 async function leave() {
   const gate = $('gate');
   hooks.enter();
   gate.classList.remove('on');
   gate.setAttribute('aria-hidden', 'true');
   syncInert();
-  await wait(reducedMotion() ? 0 : 650);
+  await wait(reducedMotion() ? 0 : 220);
   if (!gate.classList.contains('on')) bootClear();
 }
 
@@ -149,7 +149,7 @@ async function unlock(e) {
     busy = false;
     $('lockSubmit').classList.remove('busy');
     field.classList.add('err');
-    status(st, err?.code === ERR.BAD_PASSWORD ? 'パスワードが違います' : '解除できませんでした', { err: true });
+    status(st, err?.code === ERR.BAD_PASSWORD ? 'パスワードが違います' : '解除できませんでした。もう一度入力してください', { err: true });
     shake(field);
     input.select();
     input.focus();
@@ -245,7 +245,7 @@ async function setup(e) {
 export function initGate({ load, enter }) {
   hooks = { load, enter };
   try {
-    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ゼロ知識・端末内で暗号化される保管庫`;
+    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · 暗号化して、このブラウザの中だけに保存します`;
   } catch { /* keep the static text */ }
   $('lockForm').addEventListener('submit', unlock);
   $('lockInput').addEventListener('input', () => {

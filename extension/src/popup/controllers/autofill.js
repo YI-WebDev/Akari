@@ -5,9 +5,8 @@ import { MSG } from '../../shared/messages.js';
 import { hostnameOf, registrableDomain } from '../../shared/domain.js';
 import { S, call, errText, itemById, replaceItem, liveToken, live, setAutofill } from '../state.js';
 import { siteOf } from '../views/format.js';
-import { burst, wait } from '../views/fx.js';
 import { toast, toastError } from '../views/toast.js';
-import { renderList, setAfState, afButtonEl, afCandidate } from '../views/list.js';
+import { renderList, setAfState, afCandidate } from '../views/list.js';
 
 export async function activeTab() {
   try {
@@ -58,19 +57,15 @@ export async function doAutofill() {
   const { tabId, site } = S.af;
   const token = liveToken();
   setAfState('run');
-  const t0 = performance.now();
   try {
     const res = await call(MSG.AUTOFILL_FILL, { tabId, itemId: target.id });
-    const left = 450 - (performance.now() - t0);
-    if (left > 0) await wait(left);
     if (!live(token)) return;
     if (!res?.filled) {
       setAfState('idle');
-      toastError('入力欄が見つかりませんでした', 'ページを確認してもう一度お試しください');
+      toastError('入力欄が見つかりませんでした', 'ログインの入力欄が表示されているページで、もう一度押してください');
       return;
     }
     setAfState('done');
-    burst(document.getElementById('app'), afButtonEl());
     toast(`${site} に自動入力しました`, 'ユーザー名とパスワードを入力');
     const local = itemById(target.id);
     if (local) replaceItem({ ...local, lastUsedAt: Date.now() });

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Akari — パスキー</title>
+  <title>Akari パスキー</title>
   <link rel="stylesheet" href="../assets/fonts/fonts.css">
   <link rel="stylesheet" href="../shared/tokens.css">
   <link rel="stylesheet" href="passkey.css">
@@ -13,7 +13,7 @@
   <div class="app">
     <header class="top">
       <span class="logo" aria-hidden="true">灯</span>
-      <span class="brand">akari<span class="blink" aria-hidden="true">_</span></span>
+      <span class="brand">Akari</span>
       <span class="chip">
         <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/></svg>
         パスキー
@@ -23,23 +23,19 @@
     <main class="main">
       <section class="screen center" data-screen="loading" aria-busy="true">
         <span class="spinner" aria-label="読み込み中"></span>
-        <span class="faint">読み込み中<span class="blink" aria-hidden="true">_</span></span>
+        <span class="faint">読み込み中…</span>
       </section>
 
       <section class="screen lock" data-screen="locked" hidden>
         <span class="scan" aria-hidden="true"></span>
         <span class="glow" aria-hidden="true"></span>
         <div class="lock-body">
-          <div class="lock-head">
-            <span class="orb" id="lockOrb" aria-hidden="true">灯</span>
-            <div>
-              <div class="lock-brand">akari<span class="blink" aria-hidden="true">_</span></div>
-              <div class="faint">ゼロ知識・端末内で暗号化される保管庫</div>
-            </div>
+          <div class="heading">
+            <h1 class="title">Akari はロックされています</h1>
+            <p class="sub" id="lockedSub"></p>
           </div>
-          <p class="sub" id="lockedSub"></p>
           <form id="unlockForm" class="unlock" autocomplete="off" novalidate>
-            <label class="label" for="pw"><span class="pr">&gt;</span> マスターパスワードを入力</label>
+            <label class="label" for="pw">マスターパスワード</label>
             <div class="unlock-row">
               <div class="pw" id="pwBox">
                 <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password" spellcheck="false">
@@ -55,7 +51,7 @@
         </div>
         <div class="foot split">
           <button type="button" class="btn" data-act="cancel" title="キャンセル (esc)"><span class="kbd x-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>キャンセル</button>
-          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+          <button type="button" class="link" data-act="fallback">ブラウザの標準の画面で続ける</button>
         </div>
       </section>
 
@@ -84,12 +80,12 @@
           </div>
         </div>
         <div class="field" id="vaultField">
-          <div class="label"><span class="pr">&gt;</span> 保存先</div>
+          <div class="label">保存先</div>
           <div class="vaults" id="vaultList" role="radiogroup" aria-label="保存先の保管庫"></div>
         </div>
         <div class="notice" id="excludedNotice" hidden><span class="bang" aria-hidden="true">!</span><span>このアカウントのパスキーは、すでに Akari に保存されています。</span></div>
         <form class="uv" data-uv hidden autocomplete="off" novalidate>
-          <div class="label"><span class="pr">&gt;</span> 本人確認 — マスターパスワードを入力してください</div>
+          <div class="label">本人確認のため、マスターパスワードを入力してください</div>
           <div class="pw pw-sm">
             <svg class="pw-icon" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
             <input type="password" class="uv-pw" placeholder="••••••••" aria-label="本人確認のためのマスターパスワード" autocomplete="current-password" spellcheck="false">
@@ -101,7 +97,7 @@
             <button type="button" class="btn" data-act="cancel" title="キャンセル (esc)"><span class="kbd x-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>キャンセル</button>
             <button type="button" class="btn primary" data-act="primary" id="createPrimary"><span class="kbd" aria-hidden="true">⏎</span><span id="createLabel">保存する</span></button>
           </div>
-          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+          <button type="button" class="link" data-act="fallback">ブラウザの標準の画面で続ける</button>
         </div>
       </section>
 
@@ -115,7 +111,7 @@
         <div class="list-head" aria-hidden="true"><span>アカウント</span><span class="rule"></span><span id="gCount"></span></div>
         <div class="accounts" id="accountList" role="radiogroup" aria-label="アカウント"></div>
         <form class="uv" data-uv hidden autocomplete="off" novalidate>
-          <div class="label"><span class="pr">&gt;</span> 本人確認 — マスターパスワードを入力してください</div>
+          <div class="label">本人確認のため、マスターパスワードを入力してください</div>
           <div class="pw pw-sm">
             <svg class="pw-icon" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
             <input type="password" class="uv-pw" placeholder="••••••••" aria-label="本人確認のためのマスターパスワード" autocomplete="current-password" spellcheck="false">
@@ -127,7 +123,7 @@
             <button type="button" class="btn" data-act="cancel" title="キャンセル (esc)"><span class="kbd x-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>キャンセル</button>
             <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>サインイン</button>
           </div>
-          <button type="button" class="link" data-act="fallback">この端末のパスキーを使う →</button>
+          <button type="button" class="link" data-act="fallback">ブラウザの標準の画面で続ける</button>
         </div>
       </section>
 
@@ -141,7 +137,7 @@
         <div class="foot">
           <div class="actions">
             <button type="button" class="btn" data-act="cancel" title="キャンセル (esc)"><span class="kbd x-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>キャンセル</button>
-            <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>この端末のパスキーを使う</button>
+            <button type="button" class="btn primary" data-act="primary"><span class="kbd" aria-hidden="true">⏎</span>ブラウザの標準の画面で続ける</button>
           </div>
         </div>
       </section>
@@ -164,9 +160,6 @@
     <footer class="status">
       <span class="dot" id="stDot" aria-hidden="true"></span>
       <span class="st-origin" id="stOrigin">—</span>
-      <span class="grow"></span>
-      <span>ES256</span>
-      <span>端末内で署名</span>
     </footer>
   </div>
 

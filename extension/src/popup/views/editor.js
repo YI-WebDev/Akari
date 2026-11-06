@@ -514,7 +514,9 @@ function footConfirm(text, yesLabel, onYes, noLabel = 'やめる') {
 }
 
 function confirmDelete() {
-  footConfirm('このアイテムを削除しますか？', '削除する', async (btn) => {
+  const pk = E.original?.passkeys?.length || 0;
+  const ask = pk ? `パスキー ${pk} 件も消えます。元に戻せません` : '削除しますか？元に戻せません';
+  footConfirm(ask, '削除する', async (btn) => {
     const mine = E;
     if (!mine || mine.busy) return;
     mine.busy = true;

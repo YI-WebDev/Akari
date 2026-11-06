@@ -287,6 +287,7 @@ function wire() {
   on('newItem', newItem);
   on('edit', (id) => openEditor({ id }));
   on('openGen', (opts) => openGenerator(opts || {}));
+  on('openImport', () => { closeMenus(); openSettings({ page: 'import' }); });
   on('listChanged', () => { if (S.phase === 'main') refreshList(); });
   // パスワード診断 handed a login over: show it in the main view, then edit it or fix its password
   on('healthAct', (id, kind) => {
