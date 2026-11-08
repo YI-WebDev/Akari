@@ -1,8 +1,3 @@
-// Renders the reference design 1a (design/Akari Terminal.dc.html via design/support.js)
-// into tests/ui/screenshots/design-*.png for side-by-side comparison with popup-*.png.
-// Needs network access for the React UMD bundles (unpkg) and Google Fonts that the design loads.
-// Usage: node tests/ui/design-shots.mjs
-
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
@@ -27,7 +22,6 @@ try {
   const shot = (name) => r.screenshot({ path: join(OUT, `design-${name}.png`) });
   await shot('main');
 
-  // weak item (amazon) selected, then the generator aimed at it
   await page.locator('[data-id="amazon"]').click();
   await page.waitForTimeout(900);
   await shot('weak');
@@ -40,7 +34,6 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  // vault menu + plus menu
   await r.hover();
   await page.locator('[data-akt] > div').first().locator('button').first().click();
   await page.waitForTimeout(600);
@@ -53,14 +46,12 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
 
-  // search with no hits
   await page.locator('[data-akt] input').first().fill('zzz');
   await page.waitForTimeout(500);
   await shot('search-empty');
   await page.locator('[data-akt] input').first().fill('');
   await page.waitForTimeout(300);
 
-  // lock screen, then the boot log while unlocking
   await page.locator('button[title="ロック"]').click();
   await page.waitForTimeout(1200);
   await shot('lock');

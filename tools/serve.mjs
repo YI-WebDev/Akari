@@ -1,7 +1,3 @@
-// Static dev server over the project root, used by the popup preview harness
-// (tests/ui/preview.html) and the icon renderer. Local only.
-// Usage: node tools/serve.mjs [port]   → http://127.0.0.1:<port>/tests/ui/preview.html
-
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, dirname, extname, normalize, sep } from 'node:path';
@@ -29,7 +25,7 @@ async function resolveFile(urlPath) {
     const s = await stat(abs);
     if (s.isFile()) return abs;
     if (s.isDirectory()) return join(abs, 'index.html');
-  } catch { /* not found */ }
+  } catch { }
   return null;
 }
 

@@ -1,4 +1,3 @@
-// Password generator. Every random choice goes through randomInt (rejection sampling, no modulo bias).
 import { randomInt } from '../shared/bytes.js';
 import WORDS from './wordlist.js';
 
@@ -7,6 +6,8 @@ const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DIGITS = '0123456789';
 const SYMBOLS = '!@#$%^&*-_=+?';
 const PHRASE_SEPARATORS = '-_.!*#';
+const TWO_DIGIT_MIN = 10;
+const TWO_DIGIT_COUNT = 90;
 
 const clampInt = (v, min, max, fallback) => {
   const n = Math.round(Number(v));
@@ -15,13 +16,6 @@ const clampInt = (v, min, max, fallback) => {
 
 const pick = (chars) => chars[randomInt(chars.length)];
 
-/**
- * @param {object} [opts]
- * @param {'random'|'phrase'} [opts.mode]
- * @param {number} [opts.length] random mode, 8-48
- * @param {number} [opts.words] phrase mode, 3-8
- * @returns {{ password: string, bits: number }} bits = entropy of the construction, rounded
- */
 export function generatePassword({
   mode = 'random',
   length = 20,
@@ -51,7 +45,6 @@ function generateRandom({ length, upper, digits, symbols, avoidAmbiguous }) {
   if (symbols) sets.push(SYMBOLS);
   const all = sets.join('');
 
-  // One character from every enabled set, the rest from the union, then Fisher-Yates.
   const chars = sets.map(pick);
   while (chars.length < length) chars.push(pick(all));
   for (let i = chars.length - 1; i > 0; i--) {
@@ -72,8 +65,8 @@ function generatePhrase({ words, upper, digits, symbols }) {
   for (let i = 1; i < parts.length; i++) password += pick(seps) + parts[i];
   let bits = words * Math.log2(WORDS.length) + (words - 1) * Math.log2(seps.length);
   if (digits) {
-    password += pick(seps) + (randomInt(90) + 10); // two digits, 10-99
-    bits += Math.log2(seps.length) + Math.log2(90);
+    password += pick(seps) + (randomInt(TWO_DIGIT_COUNT) + TWO_DIGIT_MIN);
+    bits += Math.log2(seps.length) + Math.log2(TWO_DIGIT_COUNT);
   }
   return { password, bits: Math.round(bits) };
 }

@@ -1,22 +1,3 @@
-// Passkey service: Akari answers navigator.credentials.create/get for https (and
-// localhost) top frames. Every request is checked against the sender's origin.
-//
-// While Akari is unlocked both are answered on a card in the page (webauthn-bridge.js),
-// not in a window: get returns the site's passkeys and a trusted click on one asks for
-// the assertion ('passkey/assert'); create returns what the card shows (account, vaults,
-// whether the site already has this passkey) and a trusted click on save asks for the
-// credential ('passkey/save'). Passkey autofill (mediation 'conditional') is the same get
-// card. Locked: a modal request opens the consent window (src/passkey/passkey.html) to
-// unlock, a conditional one is left to the browser. The master password is never asked
-// for in a page.
-//
-// User verification: in the consent window the UV flag is set only when the user
-// proved the master password there ('passkey/verify', which the window also calls
-// right after unlocking). The window asks for it on 'required' and 'preferred';
-// 'required' without that proof is refused here, and an approval without it
-// ('discouraged') gets UV=0. A choice on the page card counts as verified because
-// it needs an unlocked vault, which itself took the master password.
-
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import * as vaultService from './vault-service.js';
@@ -33,6 +14,8 @@ const MAX_TIMEOUT = 300_000;
 const MAX_CHALLENGE = 1024;
 const WINDOW_W = 400;
 const WINDOW_H = 520;
+
+const RETRYABLE_IN_WINDOW_CODES = ['INVALID', 'LOCKED', 'UV_REQUIRED'];
 
 const fail = (code, message) => new AkariError(code, message || code);
 
@@ -64,14 +47,11 @@ function clampTimeout(t) {
 }
 
 export function createPasskeyService({ chrome, vault }) {
-  /** reqId -> entry */
   const pending = new Map();
   const ports = new Set();
 
   const ownPageUrl = () => chrome.runtime.getURL(WINDOW_PATH);
   const touch = () => { Promise.resolve().then(() => vault.touchActivity?.()).catch(() => {}); };
-
-  // ---------- validation of content-script requests ----------
 
   function callerOrigin(sender) {
     if (!sender || sender.frameId !== 0 || !sender.tab) throw fail(ERR.SECURITY, 'top frame only');
@@ -79,7 +59,6 @@ export function createPasskeyService({ chrome, vault }) {
     if (origin === undefined) {
       try { origin = new URL(sender.url).origin; } catch { origin = 'null'; }
     }
-    // An opaque origin ('null', e.g. a CSP-sandboxed document) must not borrow the URL's origin.
     if (!origin || origin === 'null' || !isSecureOrigin(origin)) throw fail(ERR.SECURITY, 'insecure origin');
     return origin;
   }
@@ -108,10 +87,9 @@ export function createPasskeyService({ chrome, vault }) {
 
     const params = options.pubKeyCredParams;
     if (params != null && !Array.isArray(params)) throw fail(ERR.INVALID, 'pubKeyCredParams must be an array');
-    // An empty list means "ES256 and RS256" per the spec.
-    const es256 = !params || params.length === 0
+    const acceptsEs256 = !params || params.length === 0
       || params.some((p) => p && p.type === 'public-key' && p.alg === COSE_ALG_ES256);
-    if (!es256) throw fail(ERR.FALLBACK, 'ES256 not acceptable');
+    if (!acceptsEs256) throw fail(ERR.FALLBACK, 'ES256 not acceptable');
     if (options.authenticatorSelection?.authenticatorAttachment === 'cross-platform') throw fail(ERR.FALLBACK, 'security key requested');
 
     return {
@@ -137,8 +115,6 @@ export function createPasskeyService({ chrome, vault }) {
     };
   }
 
-  // ---------- vault helpers ----------
-
   function passkeysFor(data, rpId, allow = []) {
     const out = [];
     for (const item of data.items || []) {
@@ -151,6 +127,9 @@ export function createPasskeyService({ chrome, vault }) {
     return out;
   }
 
+  const hasExcludedPasskey = (data, req) => req.exclude.length > 0 && passkeysFor(data, req.rpId, req.exclude).length > 0;
+  const needsUnprovenVerification = (entry) => entry.req.userVerification === 'required' && entry.verifiedAt == null;
+
   async function readIfUnlocked() {
     if (await vault.isLocked()) return null;
     try {
@@ -160,8 +139,6 @@ export function createPasskeyService({ chrome, vault }) {
       throw e;
     }
   }
-
-  // ---------- pending requests ----------
 
   function finish(entry, error, value) {
     if (entry.done) return;
@@ -199,7 +176,7 @@ export function createPasskeyService({ chrome, vault }) {
       origin: req.origin,
       requestId: typeof msg.requestId === 'string' ? msg.requestId.slice(0, 64) : null,
       windowId: null, done: false, busy: false,
-      verifiedAt: null, // set only by a successful 'passkey/verify' for this request
+      verifiedAt: null,
     };
     const promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
     pending.set(reqId, entry);
@@ -232,15 +209,10 @@ export function createPasskeyService({ chrome, vault }) {
     return entry;
   }
 
-  // ---------- handlers ----------
-
   async function handleCreate(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseCreate(msg.options, origin), origin };
-    // Conditional create (silent passkey upgrade after a password sign-in) is left to the browser.
     if (msg.mediation === 'conditional') throw fail(ERR.FALLBACK, 'mediation not supported');
-    // An excluded credential is reported only after the user acts on the card or in the
-    // window, so pages cannot probe silently which credentials Akari holds.
     const data = await readIfUnlocked();
     if (data) {
       touch();
@@ -260,23 +232,20 @@ export function createPasskeyService({ chrome, vault }) {
       touch();
       return { inline: { rpId: req.rpId, candidates: candidatesOf(data, found) } };
     }
-    // Locked: whether Akari holds a passkey for this site is unknown until it is unlocked.
     if (msg.mediation === 'conditional') throw fail(ERR.FALLBACK, 'locked');
     return { credential: await startRequest('get', sender, msg, req) };
   }
 
-  /** The user pressed save on the page card: create the passkey the page asked for. */
   async function handleSave(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseCreate(msg.options, origin), origin };
     if (await vault.isLocked()) throw fail(ERR.LOCKED, 'unlock first');
     const data = await vault.readData();
-    if (req.exclude.length && passkeysFor(data, req.rpId, req.exclude).length) throw fail(ERR.INVALID_STATE, 'already saved');
+    if (hasExcludedPasskey(data, req)) throw fail(ERR.INVALID_STATE, 'already saved');
     touch();
     return { credential: await approveCreate({ req, verifiedAt: Date.now() }, msg.vault) };
   }
 
-  /** The user picked a passkey on the page card: sign the request the page made. */
   async function handleAssert(msg, sender) {
     const origin = callerOrigin(sender);
     const req = { ...parseGet(msg.options, origin), origin };
@@ -321,7 +290,6 @@ export function createPasskeyService({ chrome, vault }) {
 
   const vaultsOf = (data) => (data.vaults || []).map((v) => ({ id: v.id, name: v.name, hue: v.hue }));
 
-  /** What the page card and the consent window show for a registration. */
   function createInfo(data, req) {
     const vaults = vaultsOf(data);
     const existing = (data.items || []).find((it) => it.type === 'login'
@@ -336,7 +304,6 @@ export function createPasskeyService({ chrome, vault }) {
     };
   }
 
-  /** What the consent window and the page card show for each passkey, most recently used first. */
   function candidatesOf(data, found) {
     const vaultName = new Map((data.vaults || []).map((v) => [v.id, v.name]));
     return found
@@ -380,10 +347,10 @@ export function createPasskeyService({ chrome, vault }) {
       draft.items ||= [];
       const vaultIds = (draft.vaults || []).map((v) => v.id);
       const vaultId = vaultIds.includes(chosenVault) ? chosenVault : (vaultIds[0] || 'personal');
-      // A passkey with the same rpId + userHandle replaces the old one, wherever it was.
+      const isReplacedPasskey = (p) => p.rpId === req.rpId && p.userHandle === req.user.id;
       for (const it of draft.items) {
         if (Array.isArray(it.passkeys)) {
-          it.passkeys = it.passkeys.filter((p) => !(p.rpId === req.rpId && p.userHandle === req.user.id));
+          it.passkeys = it.passkeys.filter((p) => !isReplacedPasskey(p));
         }
       }
       let item = draft.items.find((it) => it.type === 'login' && it.vault === vaultId
@@ -468,27 +435,25 @@ export function createPasskeyService({ chrome, vault }) {
       touch();
       if (entry.kind === 'create') {
         const data = await vault.readData();
-        if (entry.req.exclude.length && passkeysFor(data, entry.req.rpId, entry.req.exclude).length) {
-          finish(entry, 'INVALID_STATE'); // the user confirmed the "already saved" notice
+        if (hasExcludedPasskey(data, entry.req)) {
+          finish(entry, 'INVALID_STATE');
           return {};
         }
-        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail(ERR.UV_REQUIRED, 'verify first');
+        if (needsUnprovenVerification(entry)) throw fail(ERR.UV_REQUIRED, 'verify first');
         finish(entry, null, await approveCreate(entry, msg.vault));
       } else {
-        if (entry.req.userVerification === 'required' && entry.verifiedAt == null) throw fail(ERR.UV_REQUIRED, 'verify first');
+        if (needsUnprovenVerification(entry)) throw fail(ERR.UV_REQUIRED, 'verify first');
         finish(entry, null, await approveGet(entry, msg.credentialId));
       }
       return {};
     } catch (e) {
-      if (['INVALID', 'LOCKED', 'UV_REQUIRED'].includes(e?.code)) throw e; // the window can retry
+      if (RETRYABLE_IN_WINDOW_CODES.includes(e?.code)) throw e;
       finish(entry, 'NOT_ALLOWED');
       throw e;
     } finally {
       entry.busy = false;
     }
   }
-
-  // ---------- chrome listeners ----------
 
   chrome.windows.onRemoved.addListener((windowId) => {
     for (const entry of pending.values()) {
@@ -502,7 +467,6 @@ export function createPasskeyService({ chrome, vault }) {
     }
   });
 
-  // The consent window keeps a port open and pings it, which keeps this worker alive.
   chrome.runtime.onConnect.addListener((port) => {
     if (!port.name.startsWith(PORT_PREFIX)) return;
     if (!port.sender?.url?.startsWith(ownPageUrl())) { port.disconnect(); return; }

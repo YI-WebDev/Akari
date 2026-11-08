@@ -1,15 +1,3 @@
-// Encrypted vault record, backups, and item helpers — the public API of lib/vault/.
-// Pure: no chrome.* access. Each part lives in its own module:
-//   record.js        the encrypted `akari.vault` record (KDF, wrapped key, sealed data)
-//   schema.js        the VaultData schema version, the empty vault, migrations
-//   items.js         item defaults, validation, legacy-key cleanup, the sanitized copy
-//   passwords.js     a login's password history and pending password
-//   passkeys.js      passkeys from backups and from other managers
-//   backup.js        backup files: export, import, merge
-//   import-items.js  items from another manager's export
-//   vaults.js        vaults (保管庫): create / rename / recolor / delete
-//   trash.js         the ゴミ箱: deleted items wait TRASH_DAYS before they are gone
-
 export {
   VAULT_VERSION, checkRecord, createVault, createVaultRecord, openVaultRecord, readVaultData, sealData,
 } from './vault/record.js';

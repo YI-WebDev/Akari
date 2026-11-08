@@ -1,23 +1,23 @@
-// TOTP (RFC 6238) / HOTP (RFC 4226) and otpauth:// URI handling.
-
 import { t } from '../shared/i18n.js';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const ALGORITHMS = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
+const DEFAULT_DIGITS = 6;
+const DEFAULT_PERIOD = 30;
+const MAX_PERIOD = 300;
+const MIN_SECRET_CHARS = 8;
+const CHAR_COUNTS_THAT_LEAVE_PARTIAL_BYTE = [1, 3, 6];
 
-/** Canonical base32: upper-case, no whitespace, hyphens or '=' padding. */
 export function normalizeSecret(str) {
   return String(str ?? '').replace(/[\s　=-]+/g, '').toUpperCase();
 }
 
-/** True when `str` is a usable base32 secret (>= 40 bits, whole number of bytes). */
 export function isValidSecret(str) {
   const s = normalizeSecret(str);
-  if (s.length < 8 || /[^A-Z2-7]/.test(s)) return false;
-  return ![1, 3, 6].includes(s.length % 8); // these lengths cannot encode whole bytes
+  if (s.length < MIN_SECRET_CHARS || /[^A-Z2-7]/.test(s)) return false;
+  return !CHAR_COUNTS_THAT_LEAVE_PARTIAL_BYTE.includes(s.length % 8);
 }
 
-/** RFC 4648 base32 → bytes (case-insensitive; spaces, hyphens and padding ignored). */
 export function base32Decode(str) {
   const s = normalizeSecret(str);
   const out = new Uint8Array(Math.floor((s.length * 5) / 8));
@@ -38,7 +38,6 @@ export function base32Decode(str) {
   return out;
 }
 
-/** bytes → RFC 4648 base32 (no padding). */
 export function base32Encode(bytes) {
   let out = '';
   let acc = 0;
@@ -62,10 +61,6 @@ function algorithmOf(name) {
   return key;
 }
 
-/**
- * Parse `otpauth://totp/Issuer:label?secret=…&issuer=…&algorithm=…&digits=…&period=…`.
- * Throws an Error with a Japanese message when the URI cannot be used.
- */
 export function parseOtpauthUri(uri) {
   let url;
   try {
@@ -97,17 +92,16 @@ export function parseOtpauthUri(uri) {
   }
   label = label.trim();
 
-  const digits = params.has('digits') ? Number(params.get('digits')) : 6;
+  const digits = params.has('digits') ? Number(params.get('digits')) : DEFAULT_DIGITS;
   if (digits !== 6 && digits !== 8) throw new Error(t('桁数は 6 または 8 のみ対応しています'));
-  const period = params.has('period') ? Number(params.get('period')) : 30;
-  if (!Number.isInteger(period) || period < 1 || period > 300) throw new Error(t('更新間隔（period）は 1〜300 秒のみ対応しています'));
+  const period = params.has('period') ? Number(params.get('period')) : DEFAULT_PERIOD;
+  if (!Number.isInteger(period) || period < 1 || period > MAX_PERIOD) throw new Error(t('更新間隔（period）は 1〜300 秒のみ対応しています'));
 
   return { secret, algorithm: algorithmOf(params.get('algorithm')), digits, period, issuer, label };
 }
 
-/** Build an otpauth:// URI from a TotpConfig. */
 export function buildOtpauthUri(config) {
-  const { secret, algorithm = 'SHA1', digits = 6, period = 30, issuer = '', label = '' } = config;
+  const { secret, algorithm = 'SHA1', digits = DEFAULT_DIGITS, period = DEFAULT_PERIOD, issuer = '', label = '' } = config;
   const path = issuer ? `${encodeURIComponent(issuer)}:${encodeURIComponent(label)}` : encodeURIComponent(label);
   const q = [`secret=${normalizeSecret(secret)}`];
   if (issuer) q.push(`issuer=${encodeURIComponent(issuer)}`);
@@ -115,9 +109,8 @@ export function buildOtpauthUri(config) {
   return `otpauth://totp/${path}?${q.join('&')}`;
 }
 
-/** HOTP (RFC 4226) for an explicit counter. */
 export async function generateHotp(config, counter) {
-  const { secret, algorithm = 'SHA1', digits = 6 } = config;
+  const { secret, algorithm = 'SHA1', digits = DEFAULT_DIGITS } = config;
   const key = await crypto.subtle.importKey(
     'raw',
     base32Decode(secret),
@@ -129,19 +122,17 @@ export async function generateHotp(config, counter) {
   msg.setUint32(0, Math.floor(counter / 2 ** 32));
   msg.setUint32(4, counter >>> 0);
   const h = new Uint8Array(await crypto.subtle.sign('HMAC', key, msg.buffer));
-  const off = h[h.length - 1] & 0x0f; // dynamic truncation
+  const off = h[h.length - 1] & 0x0f;
   const bin = ((h[off] & 0x7f) << 24) | (h[off + 1] << 16) | (h[off + 2] << 8) | h[off + 3];
   return String(bin % 10 ** digits).padStart(digits, '0');
 }
 
-/** TOTP code (RFC 6238) for the given time. */
 export async function generateTotp(config, nowMs = Date.now()) {
-  const period = config.period || 30;
+  const period = config.period || DEFAULT_PERIOD;
   return generateHotp(config, Math.floor(nowMs / 1000 / period));
 }
 
-/** Whole seconds until the current code changes (1..period). */
 export function remainingSeconds(config, nowMs = Date.now()) {
-  const period = config.period || 30;
+  const period = config.period || DEFAULT_PERIOD;
   return period - (Math.floor(nowMs / 1000) % period);
 }

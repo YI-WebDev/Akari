@@ -1,10 +1,3 @@
-// NordPass CSV:
-// name,url,additional_urls,username,password,note,cardholdername,cardnumber,cvc,pin,expirydate,
-// zipcode,folder,full_name,phone_number,email,address1,address2,city,country,state,type[,custom_fields]
-// type: password -> login; credit_card -> card; identity -> identity; note -> secure note;
-// folder -> skipped (just a folder entry). additional_urls and custom_fields are JSON lists; both
-// become custom fields, as does any column that has no place in the item's type.
-
 import { t } from '../../../shared/i18n.js';
 import { fieldLabel } from '../../../shared/item-types.js';
 import { collect, entry, fits, readCsv, routeToTemplate } from './_csv.js';
@@ -15,8 +8,7 @@ const SHAPE = {
 };
 export const accepts = (headers) => fits(headers, SHAPE);
 
-// column, [type, template key] it fills on a card / identity row (its label comes from there), secret?
-const COLUMNS = [
+const CARD_AND_IDENTITY_COLUMNS = [
   ['cardholdername', ['card', 'cardholder'], false],
   ['cardnumber', ['card', 'number'], true],
   ['cvc', ['card', 'cvv'], true],
@@ -49,6 +41,7 @@ const extraUrls = (raw) => {
   return (list ? list.map(String) : [s]).filter(Boolean).map((u) => entry(t('import.label.additionalUrl', null, '追加の URL'), u, false));
 };
 
+const NON_LOGIN_TYPES = ['note', 'secure_note', 'credit_card', 'identity'];
 const HIDDEN = new Set(['hidden', 'password', 'secret']);
 const customFields = (raw) => {
   const s = String(raw ?? '').trim();
@@ -72,17 +65,16 @@ export async function parse(file) {
 
     const title = r.name;
     const tail = [...extraUrls(r.additional_urls), ...customFields(r.custom_fields)];
-    const labelled = COLUMNS.map(([col, slot, secret]) => [
+    const columnPairs = CARD_AND_IDENTITY_COLUMNS.map(([col, slot, secret]) => [
       slot ? fieldLabel(...slot) : t('import.label.address3', null, '住所3'), r[col], secret, slot?.[1],
     ]);
     const fullName = [fieldLabel('identity', 'fullName'), r.full_name, false, 'fullName'];
 
     const isLogin = type === 'password'
-      || (!['note', 'secure_note', 'credit_card', 'identity'].includes(type)
+      || (!NON_LOGIN_TYPES.includes(type)
         && !!(String(r.password ?? '').trim() || String(r.username ?? '').trim() || String(r.url ?? '').trim()));
     if (isLogin) {
-      // Card / identity columns are normally empty on a login row; keep them if not.
-      const extra = [...labelled, fullName]
+      const extra = [...columnPairs, fullName]
         .filter(([, v]) => String(v ?? '').trim()).map(([l, v, s]) => entry(l, v, s));
       return {
         title,
@@ -100,8 +92,8 @@ export async function parse(file) {
       [t('import.label.url', null, 'URL'), r.url, false],
       [t('import.label.username', null, 'ユーザー名'), r.username, false],
       [t('import.label.password', null, 'パスワード'), r.password, true],
-      ...labelled,
-      fullName, // an identity's full_name is kept as written (identity.fullName); elsewhere it is a custom field
+      ...columnPairs,
+      fullName,
     ];
     if (isCard || isIdentity) {
       const { fields, extra } = routeToTemplate(isCard ? 'card' : 'identity', pairs);

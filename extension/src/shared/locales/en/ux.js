@@ -1,9 +1,4 @@
-// English for the ゴミ箱, the toast's 元に戻す, the theme setting, the lock screen's password
-// toggle and Caps Lock warning, and the search operators. Keys are the Japanese source text (or a
-// dotted key used with a Japanese fallback); values are the English. Japanese needs no entry.
-
 export default {
-  // ≡ menu and the ゴミ箱 sheet (popup/views/trash.js)
   'ゴミ箱': 'Trash',
   'ゴミ箱のアイテム': 'Items in the trash',
   'ゴミ箱を空にする': 'Empty trash',
@@ -24,7 +19,6 @@ export default {
   'trash.purged': 'Deleted for good: {n}',
   'trash.restoreFailed': 'Could not restore',
 
-  // deleting: the confirmations, the toast and 元に戻す (popup.js onTrashed / onRestored)
   'trash.ask': 'Move to the trash? You can restore it for 30 days',
   'trash.askN': 'Move the selected items ({n}) to the trash? You can restore them for 30 days',
   'trash.askPasskeys': 'Passkeys ({n}) go to the trash too. While they are there, you cannot sign in to their sites with them',
@@ -39,11 +33,9 @@ export default {
   'vaults.trashedN': 'Moved to the trash: {n}',
   'vaults.toTrash': 'Move to trash',
 
-  // search operators (popup/search.js)
   '絞り込み: type:login · has:totp · is:weak · vault:名前': 'Filter: type:login · has:totp · is:weak · vault:name',
   'list.loose': 'Close to “{q}”',
 
-  // テーマ (popup/views/settings.js, shared/theme.js)
   'テーマ': 'Theme',
   'ダーク': 'Dark',
   'ライト': 'Light',
@@ -51,6 +43,5 @@ export default {
   'settings.themeLight': 'The lamp on light paper. The menus on web pages follow too',
   'settings.themeAuto': 'Follows your OS (now {mode})',
 
-  // the lock screen (popup/views/lock.js)
   'Caps Lock がオンです': 'Caps Lock is on',
 };

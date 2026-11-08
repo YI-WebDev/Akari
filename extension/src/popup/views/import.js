@@ -1,10 +1,3 @@
-// インポート page of the settings sheet (PLAN.md §7.4):
-// 読み込み元 → ファイル (→ パスワード / パスフレーズ) → 確認 → 完了.
-// Another manager's export is parsed here in the popup (lib/import); only the normalised
-// items go to the service worker (vault/importItems). The file bytes and the parsed items
-// live in this module alone and are dropped when the page or the sheet closes, or the vault locks.
-// The Akari backup keeps its own path: file + the backup's master password → vault/import.
-
 import { MSG, ERR } from '../../shared/messages.js';
 import { S, emit, call, errText, liveToken, live } from '../state.js';
 import { h, clear, svgEl } from './dom.js';
@@ -20,16 +13,15 @@ const MAX_BYTES = 64 * MB;
 const BACKUP_MAX = 20 * MB;
 const COLS = 4;
 const LEAD = () => t('別のパスワードマネージャーから移行するには、そのアプリでデータを書き出してから、ここで読み込みます。読み込んだら、書き出したファイルは削除してください。');
-// name: shown through t() (source names from lib/import too)
 const AKARI = Object.freeze({ id: 'akari', name: 'Akari バックアップ', exts: ['json'], own: true });
 const STEPS = () => [t('読み込み元'), t('ファイル'), t('確認'), t('完了')];
 const STEPS_BACKUP = () => [t('読み込み元'), t('ファイル'), t('完了')];
 
-let lib = null; // { SOURCES, parseImport, isPgp } — lib/import, loaded when the page first opens
+let lib = null;
 let st = fresh();
-let run = 0; // bumped on every step change / new file / reset: async results of an older run are dropped
+let run = 0;
 let hooks = { close: () => {} };
-let lastId = null; // the source picked last, focused again on the source list
+let lastId = null;
 
 function fresh() {
   return { step: 'source', source: null, file: null, needs: null, parsed: null, vault: null, busy: false, els: {} };
@@ -51,14 +43,11 @@ const quote = (s) => (/[\s'"]/.test(s) ? `'${String(s).replace(/'/g, '')}'` : s)
 const isImportError = (e) => e?.name === 'ImportError' && typeof e.code === 'string';
 const steps = () => (st.source?.own ? STEPS_BACKUP : STEPS)();
 
-/* ── memory ── */
-
 function wipeFile() {
   st.file?.bytes?.fill(0);
   st.file = null;
 }
 
-/** Forget the file, the parsed items and every field of the page. */
 export function resetImport() {
   run++;
   wipeFile();
@@ -67,8 +56,6 @@ export function resetImport() {
   clear($('importPage'));
   $('setSheet').classList.remove('dragging');
 }
-
-/* ── page plumbing ── */
 
 function go(step) {
   run++;
@@ -91,8 +78,6 @@ function foot(...kids) {
 
 const backBtn = () => h('button', { class: 'btn-text', type: 'button', onclick: () => importBack() }, t('戻る'));
 
-/** The sheet head's back button: one step back, or false to leave the page. */
-/** The import has finished (its result is on screen): Esc closes the sheet from here. */
 export const importDone = () => st.step === 'done';
 
 export function importBack() {
@@ -120,8 +105,6 @@ export async function openImport({ focus = true } = {}) {
   }
   renderSource({ focus });
 }
-
-/* ── 1. 読み込み元 ── */
 
 function renderSource({ focus = true } = {}) {
   go('source');
@@ -161,8 +144,6 @@ function chooseSource(s) {
   renderFile();
 }
 
-/* ── 2. ファイル (+ パスワード) ── */
-
 const upIcon = () => {
   const svg = svgEl('svg', { width: 18, height: 18, viewBox: '0 0 24 24', 'aria-hidden': 'true' });
   svg.append(svgEl('path', { d: 'M12 16V4M7 9l5-5 5 5' }), svgEl('path', { d: 'M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3' }));
@@ -185,7 +166,7 @@ function renderFile({ focus = true } = {}) {
   els.input = h('input', { id: 'impFile', type: 'file', accept: exts.join(','), 'aria-describedby': 'impDropSub' });
   els.input.addEventListener('change', () => {
     const f = els.input.files?.[0];
-    els.input.value = ''; // the File stays readable; the input no longer holds it
+    els.input.value = '';
     if (f) takeFile(f);
   });
   els.name = h('span', { class: 'drop-name' }, t('ファイルを選ぶ…'));
@@ -248,7 +229,6 @@ async function takeFile(f) {
   acceptBytes(f.name, bytes);
 }
 
-/** A file is in hand: show it, then parse it (or wait for the backup's password). */
 function acceptBytes(name, bytes) {
   const { els } = st;
   wipeFile();
@@ -303,7 +283,6 @@ async function parse(password) {
   }
 }
 
-/** The file is encrypted: ask for the PGP passphrase or the export password, then retry. */
 function askPassword(hint, { wrong = false } = {}) {
   const { els } = st;
   const pgp = lib.isPgp(st.file.bytes);
@@ -347,8 +326,6 @@ function submitPassword() {
   else parse(v);
 }
 
-/* ── Akari バックアップ ── */
-
 const BACKUP_HEAD = /^\s*\{\s*"format"\s*:\s*"akari-backup"/;
 const looksLikeBackup = (bytes) => BACKUP_HEAD.test(new TextDecoder().decode(bytes.subarray(0, 256)));
 
@@ -391,8 +368,6 @@ async function importBackup(pw) {
   }
 }
 
-/* ── drop on the source list: detect the format ── */
-
 async function dropOnSource(f) {
   if (f.size > MAX_BYTES) return fail(t('ファイルが大きすぎます（{n} MB まで）', { n: MAX_BYTES / MB }));
   const my = ++run;
@@ -423,8 +398,6 @@ async function dropOnSource(f) {
   renderFile({ focus: false });
   acceptBytes(f.name, bytes);
 }
-
-/* ── 3. 確認 ── */
 
 function countOf(items, skipped) {
   const n = { login: 0, note: 0, totp: 0, passkey: 0, skipped: Number(skipped) || 0 };
@@ -526,7 +499,7 @@ async function doImport() {
       added: Number(res?.added) || 0, duplicates: Number(res?.duplicates) || 0,
       invalid: Number(res?.invalid) || 0, passkeys: Number(res?.passkeys) || 0,
     };
-    if (my !== run) { // the page was left meanwhile: report in a toast
+    if (my !== run) {
       toast(t('{n} 件を追加しました', { n: r.added }), t('重複 {dup} · 無効 {bad} · {name} は削除してください', { dup: r.duplicates, bad: r.invalid, name }));
       return;
     }
@@ -538,8 +511,6 @@ async function doImport() {
     els.err.textContent = t('取り込めませんでした（{why}）', { why: errText(e) });
   }
 }
-
-/* ── 4. 完了 ── */
 
 export const resultText = (r) => t('{n} 件を追加 · 重複 {dup} · 無効 {bad}', { n: r.added, dup: r.duplicates, bad: r.invalid })
   + (r.passkeys ? ' · ' + t('パスキー {n}', { n: r.passkeys }) : '');
@@ -574,14 +545,11 @@ function renderDone(r) {
   close.focus({ preventScroll: true });
 }
 
-/* ── init ── */
-
 export function initImport({ close }) {
   hooks = { close };
   const sheet = $('setSheet');
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
   const accepting = () => isImportPage() && !!lib && !st.busy && (st.step === 'source' || st.step === 'file');
-  // a file dropped anywhere else must not navigate the popup away
   window.addEventListener('dragover', (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault();

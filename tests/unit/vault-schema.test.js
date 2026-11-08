@@ -1,7 +1,3 @@
-// lib/vault/schema.js and the record-format table in lib/vault/record.js: data written by older
-// versions is brought up to date when it is decrypted, newer data is refused, and only known
-// record versions open.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -10,19 +6,15 @@ import {
 } from '../../extension/src/lib/vault.js';
 import { AkariError } from '../../extension/src/shared/errors.js';
 
-const ITER = 1000; // the lowest count a record may carry; keeps the tests fast
+const ITER = 1000;
 const isInvalid = (e) => e instanceof AkariError && e.code === 'INVALID';
 
-/** VaultData as Akari wrote it before `schema` existed. */
 function legacyData() {
   return {
     vaults: [{ id: 'personal', name: '個人', hue: 55 }],
     items: [
-      // a login from before item types: no `type`
       { id: 'a', vault: 'personal', title: 'GitHub', url: 'https://github.com', username: 'u', password: 'p', totp: null, passkeys: [], extra: [], createdAt: 1, updatedAt: 1 },
-      // a note from before the type templates: empty login keys
       { id: 'b', type: 'note', vault: 'personal', title: 'メモ', note: 'n', url: '', username: '', password: '', totp: null, passkeys: [], passwordUpdatedAt: null, extra: [], createdAt: 1, updatedAt: 1 },
-      // a note that still holds a legacy value: kept, never lost
       { id: 'c', type: 'note', vault: 'personal', title: '旧メモ', note: '', url: 'https://example.com', username: '', password: '', extra: [], createdAt: 1, updatedAt: 1 },
     ],
     updatedAt: 1,
@@ -42,7 +34,7 @@ test('schema 0 → 1: type-less items become logins, notes lose their empty logi
   assert.equal(a.type, 'login');
   assert.equal(a.password, 'p');
   assert.deepEqual(Object.keys(b).sort(), ['createdAt', 'extra', 'id', 'note', 'title', 'type', 'updatedAt', 'vault']);
-  assert.equal(c.url, 'https://example.com'); // a non-empty legacy value stays
+  assert.equal(c.url, 'https://example.com');
   assert.equal('username' in c, false);
 });
 
@@ -65,7 +57,6 @@ test('ゴミ箱: one entry per id, none for a live item, and a restored login dr
     trash: [],
   };
   trashItems(data, ['a'], 10);
-  // meanwhile the site got a new passkey for u1 (Q), and an import brought the same id back once
   data.items.push({ id: 'b', type: 'login', vault: 'personal', title: 'B', passkeys: [pk('Q', 'u1')] });
   const [back] = restoreItems(data, ['a'], 20);
   assert.deepEqual(back.passkeys.map((p) => p.credentialId), ['R'], 'u1 keeps only the newer Q');
@@ -91,7 +82,7 @@ test('data from a newer Akari, or with a malformed schema, is refused', () => {
   for (const schema of [-1, 1.5, '1', null]) {
     const data = { ...defaultData(1), schema };
     if (schema === null) {
-      assert.equal(migrateData(data).schema, DATA_SCHEMA); // null reads as "no schema" = 0
+      assert.equal(migrateData(data).schema, DATA_SCHEMA, 'null reads as "no schema" = 0');
     } else {
       assert.throws(() => migrateData(data), isInvalid, String(schema));
     }

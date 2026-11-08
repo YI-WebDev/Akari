@@ -4,26 +4,22 @@ import QRCode from 'qrcode';
 import { decodeQrFromImageData, decodeQrFromDataUrl } from '../../extension/src/lib/qr.js';
 import { parseOtpauthUri } from '../../extension/src/lib/totp.js';
 
+const MID_GREY = 170;
 const URI = 'otpauth://totp/Akari:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Akari&algorithm=SHA1&digits=6&period=30';
 
-/**
- * Render text as a QR code into an RGBA buffer.
- * `canvas` pads the symbol onto a larger noisy background at (offX, offY).
- */
-function render(text, { scale = 5, quiet = 4, invert = false, canvas = null, ec = 'M' } = {}) {
+function render(text, { scale = 5, quiet = 4, invert = false, embedInCanvas = null, ec = 'M' } = {}) {
   const qr = QRCode.create(text, { errorCorrectionLevel: ec });
   const n = qr.modules.size;
   const side = (n + quiet * 2) * scale;
-  const w = canvas ? canvas.width : side;
-  const h = canvas ? canvas.height : side;
-  const ox = canvas ? canvas.x : 0;
-  const oy = canvas ? canvas.y : 0;
+  const w = embedInCanvas ? embedInCanvas.width : side;
+  const h = embedInCanvas ? embedInCanvas.height : side;
+  const ox = embedInCanvas ? embedInCanvas.x : 0;
+  const oy = embedInCanvas ? embedInCanvas.y : 0;
   const data = new Uint8ClampedArray(w * h * 4);
   const dark = invert ? 255 : 0;
   const light = invert ? 0 : 255;
   for (let i = 0; i < w * h; i++) {
-    // background: mid-grey when embedded in a larger canvas, else the light colour
-    const bg = canvas ? 170 : light;
+    const bg = embedInCanvas ? MID_GREY : light;
     data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = bg;
     data[i * 4 + 3] = 255;
   }
@@ -62,7 +58,7 @@ test('decodes a long payload and Japanese text', () => {
 });
 
 test('decodes a QR embedded off-centre in a larger image', () => {
-  const img = render(URI, { scale: 5, canvas: { width: 900, height: 600, x: 313, y: 141 } });
+  const img = render(URI, { scale: 5, embedInCanvas: { width: 900, height: 600, x: 313, y: 141 } });
   assert.equal(decodeQrFromImageData(img), URI);
 });
 

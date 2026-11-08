@@ -1,11 +1,3 @@
-// Minimal WebAuthn relying party for E2E tests: registers and signs in with
-// navigator.credentials and verifies every response with @simplewebauthn/server.
-//
-//   node tests/fixtures/webauthn-rp/server.js          (PORT=8787, HOST=127.0.0.1)
-//   import { startRpServer } from './server.js'; const rp = await startRpServer({ port: 0 });
-//
-// Open it as http://localhost:<port>/ so the RP ID is "localhost".
-
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,8 +10,8 @@ import {
 const INDEX = fileURLToPath(new URL('./index.html', import.meta.url));
 
 export async function startRpServer({ port = Number(process.env.PORT) || 8787, host = process.env.HOST || '127.0.0.1' } = {}) {
-  const users = new Map(); // username -> { id: Uint8Array, credentials: [{ id, publicKey, counter, transports }] }
-  const flows = new Map(); // flowId -> { kind, challenge, username }
+  const users = new Map();
+  const flows = new Map();
 
   const newFlow = (data) => {
     const flowId = randomBytes(12).toString('hex');

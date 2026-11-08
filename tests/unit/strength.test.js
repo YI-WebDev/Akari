@@ -22,14 +22,13 @@ test('result shape: label always matches level', () => {
 });
 
 test('thresholds follow the design: <40 弱い, <64 普通, <88 強い, else 非常に強い', () => {
-  // random-looking lowercase letters: 26-letter pool => 4.7 bits per character
   const cases = [
-    ['xkqjzvwb', 1], // 8  chars, 38 bits
-    ['xkqjzvwbmt', 2], // 10 chars, 47 bits
-    ['qpzmxnwkbvrt', 2], // 12 chars, 56 bits
-    ['qpzmxnwkbvrtjg', 3], // 14 chars, 66 bits
-    ['qpzmxnwkbvrtjgdy', 3], // 16 chars, 75 bits
-    ['qpzmxnwkbvrtjgdyhfc', 4], // 19 chars, 89 bits
+    ['xkqjzvwb', 1],
+    ['xkqjzvwbmt', 2],
+    ['qpzmxnwkbvrt', 2],
+    ['qpzmxnwkbvrtjg', 3],
+    ['qpzmxnwkbvrtjgdy', 3],
+    ['qpzmxnwkbvrtjgdyhfc', 4],
   ];
   for (const [pw, level] of cases) {
     const r = estimateStrength(pw);
@@ -61,13 +60,11 @@ test('very common passwords are 弱い, including capitalised and leetspeak vari
 });
 
 test('sequences, repeats, years and word+digits shapes are 弱い', () => {
-  const weak = [
-    'abcdefgh', 'abcdefghijkl', 'ZYXWVUTSRQ', 'mnopqrstuvwx', '987654321012', '13572468', // runs
-    'aaaaaaaaaaaa', '!!!!!!!!!!!!', 'abababababab', '123123123123', 'xyzxyzxyzxyz', 'passwordpassword', // repeats
-    'Summer2024!', 'Sunflower2024', 'Tanaka1985!', 'MyDog1999', 'hello1990', 'sunrise2001', // word + year / digits
-    '19900101', '20240101', '19851225', // dates
-    'aaa111bbb222', 'qazwsxedcrfv',
-  ];
+  const sequences = ['abcdefgh', 'abcdefghijkl', 'ZYXWVUTSRQ', 'mnopqrstuvwx', '987654321012', '13572468'];
+  const repeats = ['aaaaaaaaaaaa', '!!!!!!!!!!!!', 'abababababab', '123123123123', 'xyzxyzxyzxyz', 'passwordpassword'];
+  const wordsWithYearOrDigits = ['Summer2024!', 'Sunflower2024', 'Tanaka1985!', 'MyDog1999', 'hello1990', 'sunrise2001'];
+  const dates = ['19900101', '20240101', '19851225'];
+  const weak = [...sequences, ...repeats, ...wordsWithYearOrDigits, ...dates, 'aaa111bbb222', 'qazwsxedcrfv'];
   for (const pw of weak) {
     const r = estimateStrength(pw);
     assert.equal(r.level, 1, `${pw}: ${r.bits} bits, level ${r.level}`);
@@ -77,8 +74,7 @@ test('sequences, repeats, years and word+digits shapes are 弱い', () => {
 test('the design cap: letters followed by digits under 14 chars is at most 28 bits', () => {
   assert.ok(estimateStrength('Xkqjzvwb12').bits <= 28);
   assert.ok(estimateStrength('qjzxkwmvbtpl7').bits <= 28);
-  // 14+ chars is not capped
-  assert.ok(estimateStrength('qjzxkwmvbtplhd7').bits > 28);
+  assert.ok(estimateStrength('qjzxkwmvbtplhd7').bits > 28, '14+ chars is not capped');
 });
 
 test('genuinely random passwords are 強い or better and score higher with more length', () => {
@@ -91,16 +87,13 @@ test('genuinely random passwords are 強い or better and score higher with more
 
 test('word passphrases are scored by word count, not by character pool', () => {
   const wordBits = Math.log2(WORDS.length);
-  const sep = (n) => 3 * n; // estimator charges ~3 bits per separator
+  const separatorBits = (n) => 3 * n;
   const five = ['sora', 'kumo', 'hana', 'neko', 'tori'].join('-');
   const r5 = estimateStrength(five);
-  // 5 words + 4 separators, far below the ~170 bits the character pool would imply
-  assert.ok(r5.bits >= 5 * wordBits - 1 && r5.bits <= 5 * wordBits + sep(4) + 1, `${five}: ${r5.bits}`);
+  assert.ok(r5.bits >= 5 * wordBits - 1 && r5.bits <= 5 * wordBits + separatorBits(4) + 1, `${five}: ${r5.bits}`);
   assert.ok(r5.bits < 80);
-  // capitalised words cost a little more than lowercase ones, never less
   const capped = estimateStrength('Sora-Kumo-Hana-Neko-Tori');
   assert.ok(capped.bits >= r5.bits);
-  // more words => stronger
   const bits = [2, 3, 4, 5, 6].map((n) => estimateStrength(['sora', 'umi', 'yama', 'kaze', 'hoshi', 'tsuki'].slice(0, n).join('-')).bits);
   for (let i = 1; i < bits.length; i++) assert.ok(bits[i] > bits[i - 1], bits.join(','));
   assert.equal(estimateStrength('sora-kumo').level, 1);
@@ -111,11 +104,11 @@ test('generator output scores close to the generator\'s own entropy figure', () 
   const random = Array.from({ length: 300 }, () => generatePassword({ mode: 'random', length: 20 }));
   for (const { password } of random) assert.equal(estimateStrength(password).level, 4, password);
 
+  const ESTIMATOR_MAX_OVERSHOOT_BITS = 12;
   for (const length of [12, 16, 24, 32]) {
     for (let i = 0; i < 100; i++) {
       const { password, bits } = generatePassword({ mode: 'random', length });
-      // the estimator uses a 94-symbol pool, so it may sit a few bits above; coincidental patterns pull it down
-      assert.ok(estimateStrength(password).bits <= bits + 12, password);
+      assert.ok(estimateStrength(password).bits <= bits + ESTIMATOR_MAX_OVERSHOOT_BITS, password);
     }
   }
   for (const words of [3, 4, 5, 6, 8]) {
@@ -127,7 +120,6 @@ test('generator output scores close to the generator\'s own entropy figure', () 
     const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
     assert.ok(Math.abs(mean) <= 14, `words=${words} mean diff ${mean}`);
   }
-  // default phrase: 4 words + digits is 普通 or better
   for (let i = 0; i < 100; i++) assert.ok(estimateStrength(generatePassword({ mode: 'phrase' }).password).level >= 2);
 });
 
@@ -149,7 +141,7 @@ test('handles unusual input quickly', () => {
 
 test('fast: well under 1 ms per typical password', () => {
   const pws = Array.from({ length: 500 }, (_, i) => generatePassword({ mode: i % 2 ? 'phrase' : 'random', length: 24 }).password);
-  estimateStrength(pws[0]); // warm up
+  estimateStrength(pws[0]);
   const t0 = performance.now();
   for (const pw of pws) estimateStrength(pw);
   const per = (performance.now() - t0) / pws.length;

@@ -1,5 +1,3 @@
-// Chrome / Brave / Edge CSV: name,url,username,password,note (older exports have no note).
-
 import { t } from '../../../shared/i18n.js';
 import { collect, fits, readCsv } from './_csv.js';
 

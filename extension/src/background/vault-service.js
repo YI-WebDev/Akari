@@ -1,10 +1,3 @@
-// Vault core of the service worker: lock state, encrypted storage, item CRUD,
-// settings and auto-lock. Exports the SW-internal API of PLAN.md §3.1.
-//
-// While unlocked the raw DEK sits in chrome.storage.session (memory only, trusted
-// contexts only) so a SW restart does not force a new password prompt; the
-// decrypted VaultData is cached in memory and rebuilt lazily from that DEK.
-
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK } from '../shared/messages.js';
@@ -23,8 +16,6 @@ import { toBitwardenJson } from '../lib/export/bitwarden.js';
 export const VAULT_KEY = 'akari.vault';
 export const SETTINGS_KEY = 'akari.settings';
 export const SESSION_KEY = 'akari.session';
-// "ロックしない" only: the vault key kept in storage.local, so the vault opens again after a
-// browser restart. Removed by any lock and by choosing another auto-lock setting.
 export const KEEP_KEY = 'akari.keep';
 export const AUTOLOCK_ALARM = 'akari-autolock';
 
@@ -35,8 +26,6 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 1024;
 const MAX_IMPORT_CHARS = 20 * 1024 * 1024;
 
-// Only these keys are read back or stored; anything else in an old settings object is dropped on
-// the next read/write (an old `theme` value that is not one of today's choices reads as 'dark').
 const SETTING_RULES = {
   autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
   clipboardClearSeconds: (v) => [0, 10, 30, 60].includes(v),
@@ -47,7 +36,6 @@ const SETTING_RULES = {
 const fail = (code, message) => new AkariError(code, message);
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** Promise chain that runs jobs one at a time; a failing job does not block later ones. */
 function serialQueue() {
   let tail = Promise.resolve();
   return (fn) => {
@@ -63,13 +51,6 @@ function checkNewPassword(pw) {
   }
 }
 
-/**
- * @param {object} opts
- * @param {typeof chrome} opts.chrome  real or fake chrome namespace
- * @param {() => number} [opts.now]
- * @param {number} [opts.iterations]   PBKDF2 iterations for new/rewrapped records (tests use fewer)
- * @param {(ms: number) => Promise<void>} [opts.sleep]  unlock throttling delay
- */
 export function createVaultService({
   chrome,
   now = () => Date.now(),
@@ -79,28 +60,25 @@ export function createVaultService({
   const local = chrome.storage.local;
   const session = chrome.storage.session;
 
-  let cache = null; // { dek: CryptoKey, data: VaultData } while unlocked
-  let gen = 0; // bumped on lock/unlock; invalidates in-flight session resumes
-  let resuming = null;
-  let locking = null;
-  let failures = 0; // consecutive bad passwords (memory only)
-  let lastArm = 0;
+  let cache = null;
+  let sessionGeneration = 0;
+  let resumeInProgress = null;
+  let lockInProgress = null;
+  let consecutiveBadPasswords = 0;
+  let lastAutoLockArmAt = 0;
   const unlockedListeners = new Set();
-  const runWrite = serialQueue(); // everything that writes akari.vault
-  const runAuth = serialQueue(); // password checks, so throttling cannot be bypassed in parallel
+  const runWrite = serialQueue();
+  const runAuth = serialQueue();
   const runSettings = serialQueue();
 
   const loadRecord = async () => (await local.get(VAULT_KEY))[VAULT_KEY] ?? null;
 
-  // ---- lock state ---------------------------------------------------------
-
   async function resume() {
-    if (locking) await locking;
-    const g = gen;
+    if (lockInProgress) await lockInProgress;
+    const generationAtStart = sessionGeneration;
     let s = (await session.get(SESSION_KEY))[SESSION_KEY];
     let kept = false;
     if (!isObject(s) || typeof s.dek !== 'string') {
-      // "ロックしない": after a browser restart the session is empty; the kept key opens the vault.
       if ((await getSettings()).autoLockMinutes !== NEVER_LOCK) return null;
       s = (await local.get(KEEP_KEY))[KEEP_KEY];
       if (!isObject(s) || typeof s.dek !== 'string') return null;
@@ -116,7 +94,7 @@ export function createVaultService({
         c = null;
       }
     }
-    if (g !== gen) return cache;
+    if (generationAtStart !== sessionGeneration) return cache;
     if (!c) {
       await (kept ? local.remove(KEEP_KEY) : session.remove(SESSION_KEY));
       return null;
@@ -128,8 +106,8 @@ export function createVaultService({
 
   async function ensureUnlocked() {
     if (cache) return cache;
-    if (!resuming) resuming = resume().finally(() => { resuming = null; });
-    const c = await resuming;
+    if (!resumeInProgress) resumeInProgress = resume().finally(() => { resumeInProgress = null; });
+    const c = await resumeInProgress;
     if (!c) throw fail(ERR.LOCKED, 'Vault is locked');
     return c;
   }
@@ -145,15 +123,15 @@ export function createVaultService({
   }
 
   async function lock() {
-    gen++;
+    sessionGeneration++;
     cache = null;
     const done = Promise.all([session.remove(SESSION_KEY), local.remove(KEEP_KEY), chrome.alarms.clear(AUTOLOCK_ALARM)]);
     const mine = done.then(() => {}, () => {});
-    locking = mine;
+    lockInProgress = mine;
     try {
       await done;
     } finally {
-      if (locking === mine) locking = null;
+      if (lockInProgress === mine) lockInProgress = null;
     }
   }
 
@@ -163,27 +141,26 @@ export function createVaultService({
     raw.fill(0);
   }
 
-  /** Under "ロックしない", keep `dek` on this device too; a lock that lands meanwhile wins. */
   async function keepIfNeverLock(dek) {
     if ((await getSettings()).autoLockMinutes !== NEVER_LOCK) return;
-    const g = gen;
+    const generationAtStart = sessionGeneration;
     const raw = await exportDek(dek);
     await local.set({ [KEEP_KEY]: { dek: toB64(raw) } });
     raw.fill(0);
-    if (g !== gen) await local.remove(KEEP_KEY);
+    if (generationAtStart !== sessionGeneration) await local.remove(KEEP_KEY);
   }
 
   async function startSession(dek, data) {
-    if (locking) await locking;
-    const g = gen;
+    if (lockInProgress) await lockInProgress;
+    const generationAtStart = sessionGeneration;
     await writeSessionDek(dek);
-    if (g !== gen) { // locked while we were unlocking
+    if (generationAtStart !== sessionGeneration) {
       await session.remove(SESSION_KEY);
       throw fail(ERR.LOCKED, 'Vault was locked');
     }
-    gen++;
+    sessionGeneration++;
     cache = { dek, data };
-    failures = 0;
+    consecutiveBadPasswords = 0;
     await keepIfNeverLock(dek);
     await armAutoLock(true);
     for (const cb of unlockedListeners) {
@@ -196,45 +173,40 @@ export function createVaultService({
   }
 
   async function verifyPassword(record, password) {
-    if (failures >= FREE_UNLOCK_ATTEMPTS) {
-      await sleep(Math.min(1000 * 2 ** (failures - FREE_UNLOCK_ATTEMPTS), MAX_UNLOCK_DELAY_MS));
+    if (consecutiveBadPasswords >= FREE_UNLOCK_ATTEMPTS) {
+      await sleep(Math.min(1000 * 2 ** (consecutiveBadPasswords - FREE_UNLOCK_ATTEMPTS), MAX_UNLOCK_DELAY_MS));
     }
     try {
       const opened = await openVaultRecord(record, password);
-      failures = 0;
+      consecutiveBadPasswords = 0;
       return opened;
     } catch (e) {
-      if (e?.code === ERR.BAD_PASSWORD) failures++;
+      if (e?.code === ERR.BAD_PASSWORD) consecutiveBadPasswords++;
       throw e;
     }
   }
 
-  // ---- auto-lock ----------------------------------------------------------
-
   async function armAutoLock(force) {
     const t = now();
-    if (!force && t - lastArm < REARM_THROTTLE_MS) return;
-    lastArm = t;
+    if (!force && t - lastAutoLockArmAt < REARM_THROTTLE_MS) return;
+    lastAutoLockArmAt = t;
     const { autoLockMinutes } = await getSettings();
-    // 0 = lock only when the browser closes (storage.session is cleared then); NEVER_LOCK = not even then.
     if (autoLockMinutes > 0) await chrome.alarms.create(AUTOLOCK_ALARM, { delayInMinutes: autoLockMinutes });
     else await chrome.alarms.clear(AUTOLOCK_ALARM);
   }
 
   async function touchActivity() {
-    if (now() - lastArm < REARM_THROTTLE_MS) return;
+    if (now() - lastAutoLockArmAt < REARM_THROTTLE_MS) return;
     try {
       if (await isLocked()) return;
       await armAutoLock(false);
-    } catch { /* best effort */ }
+    } catch { }
   }
 
   function onAlarm(alarm) {
     if (alarm?.name === AUTOLOCK_ALARM) return lock().catch(() => {});
     return undefined;
   }
-
-  // ---- data ---------------------------------------------------------------
 
   async function readData() {
     const c = await ensureUnlocked();
@@ -248,10 +220,10 @@ export function createVaultService({
       if (!record) throw fail(ERR.NOT_INITIALIZED, 'Vault not set up');
       const draft = structuredClone(c.data);
       const result = await fn(draft);
-      pruneTrash(draft, now()); // what has waited TRASH_DAYS in the ゴミ箱 goes with the next write
+      pruneTrash(draft, now());
       draft.updatedAt = now();
       await local.set({ [VAULT_KEY]: await sealData(record, c.dek, draft) });
-      if (cache) cache.data = draft; // same DEK even if re-unlocked meanwhile
+      if (cache) cache.data = draft;
       return result;
     });
   }
@@ -262,8 +234,6 @@ export function createVaultService({
   }
 
   const makeItem = (partial) => makeItemAt(partial, now());
-
-  // ---- settings -----------------------------------------------------------
 
   async function getSettings() {
     const stored = (await local.get(SETTINGS_KEY))[SETTINGS_KEY];
@@ -279,8 +249,6 @@ export function createVaultService({
     for (const [key, value] of Object.entries(patch)) {
       if (!Object.hasOwn(SETTING_RULES, key) || !SETTING_RULES[key](value)) throw fail(ERR.INVALID, 'Invalid setting: ' + key);
     }
-    // Keeping the vault key on this device is the vault owner's call: an unlocked popup left
-    // open is not enough, the master password must be typed again.
     if (patch.autoLockMinutes === NEVER_LOCK && (await getSettings()).autoLockMinutes !== NEVER_LOCK) {
       await ensureUnlocked();
       if (!(await verifyMasterPassword(masterPassword))) throw fail(ERR.BAD_PASSWORD, 'Wrong master password');
@@ -298,8 +266,6 @@ export function createVaultService({
       return next;
     });
   }
-
-  // ---- operations ---------------------------------------------------------
 
   function setup(password) {
     checkNewPassword(password);
@@ -332,29 +298,24 @@ export function createVaultService({
       const record = await loadRecord();
       if (!record) throw fail(ERR.NOT_INITIALIZED, 'Vault not set up');
       await verifyPassword(record, current);
-      // Rotate everything: new salt, new DEK, data re-encrypted under it.
       await runWrite(async () => {
         const c = await ensureUnlocked();
-        const g = gen;
+        const generationAtStart = sessionGeneration;
         const { record: rotated, dek } = await createVault(next, c.data, { iterations });
         await local.set({ [VAULT_KEY]: rotated });
-        if (g !== gen) return; // locked meanwhile; the new record stands
+        if (generationAtStart !== sessionGeneration) return;
         await writeSessionDek(dek);
-        if (g !== gen) {
+        if (generationAtStart !== sessionGeneration) {
           await session.remove(SESSION_KEY);
           return;
         }
         cache = { dek, data: c.data };
-        await keepIfNeverLock(dek); // the kept key must follow the new DEK
+        await keepIfNeverLock(dek);
       });
       return {};
     });
   }
 
-  /**
-   * SW-internal user-verification re-prompt (passkeys). Works locked or unlocked;
-   * a wrong password counts toward unlock throttling.
-   */
   function verifyMasterPassword(password) {
     if (typeof password !== 'string' || !password) return Promise.resolve(false);
     return runAuth(async () => {
@@ -379,16 +340,10 @@ export function createVaultService({
     };
   }
 
-  /** The ゴミ箱 for the popup: only what its sheet shows (no secrets); 元に戻す returns the full items. */
   const trashOut = (data) => liveTrash(data, now()).map((e) => ({
     id: e.id, type: e.type ?? 'login', title: e.title ?? '', vault: e.vault, hue: e.hue, deletedAt: e.deletedAt,
   }));
 
-  /**
-   * New item (no id) or update of a stored one, for every item type. An update only touches
-   * the keys it carries: { id, fav } keeps fields/extra, a full save replaces them.
-   * Validation needs the stored item (its type; legacy note keys), so it runs inside the write.
-   */
   async function saveItem(item) {
     const saved = await mutateData((draft) => {
       const t = now();
@@ -397,13 +352,11 @@ export function createVaultService({
       if (typeof id === 'string' && id && !target) throw fail(ERR.NOT_FOUND, 'Item not found');
       const fields = validateItem(item, target);
       if (target) {
-        const { id: _id, ...edit } = fields; // eslint-disable-line no-unused-vars
+        const { id: _id, ...edit } = fields;
         const { password, ...rest } = edit;
-        // passkeys, the password history, createdAt and lastUsedAt always stay as stored: the
-        // popup never sends them (its passkeys lack privateKey).
         Object.assign(target, rest, { updatedAt: t });
         if (password !== undefined) {
-          if (target.type === 'login' || target.type === undefined) setLoginPassword(target, password, t); // keeps the old one
+          if (target.type === 'login' || target.type === undefined) setLoginPassword(target, password, t);
           else target.password = password;
         }
         stripLegacyLoginKeys(target);
@@ -424,7 +377,6 @@ export function createVaultService({
     if (!ids.every((id) => typeof id === 'string' && id)) throw fail(ERR.INVALID, 'ids must be non-empty strings');
   }
 
-  /** One item to the ゴミ箱. */
   async function deleteItem(id) {
     if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
     return mutateData((draft) => {
@@ -433,10 +385,6 @@ export function createVaultService({
     });
   }
 
-  /**
-   * Several items to the ゴミ箱 in one write (the popup's selection). Ids that are already gone
-   * (deleted from another window meanwhile) are skipped; nothing at all to delete is NOT_FOUND.
-   */
   async function deleteItems(ids) {
     checkIds(ids);
     return mutateData((draft) => {
@@ -446,7 +394,6 @@ export function createVaultService({
     });
   }
 
-  /** Back from the ゴミ箱: the restored items, as getAll would send them. */
   async function restoreFromTrash(ids) {
     checkIds(ids);
     return mutateData((draft) => {
@@ -455,7 +402,6 @@ export function createVaultService({
     });
   }
 
-  /** Out of the ゴミ箱 for good: `ids`, or everything when `all` is true. */
   async function purgeFromTrash(ids, all) {
     if (all !== true) checkIds(ids);
     return mutateData((draft) => {
@@ -465,10 +411,6 @@ export function createVaultService({
     });
   }
 
-  /**
-   * A new password waiting for the change on the site: 'set' holds it, 'confirm' makes it the
-   * login's password (the old one goes to the history), 'discard' drops it.
-   */
   async function pendingPassword(id, action, password) {
     if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
     if (!['set', 'confirm', 'discard'].includes(action)) throw fail(ERR.INVALID, 'action must be set, confirm or discard');
@@ -503,9 +445,6 @@ export function createVaultService({
     });
     return {};
   }
-
-  // ---- vaults (保管庫) ----------------------------------------------------
-  // Each answers with the whole vault list, so the popup can redraw from it.
 
   async function addVault(name, hue) {
     return mutateData((draft) => {
@@ -553,7 +492,6 @@ export function createVaultService({
     return { count };
   }
 
-  /** Items parsed from another manager's export (lib/import) → new items of one vault. */
   async function importItems(items, vaultId) {
     await ensureUnlocked();
     if (!Array.isArray(items)) throw fail(ERR.INVALID, 'items must be an array');
@@ -562,7 +500,6 @@ export function createVaultService({
     return mutateData((draft) => addImportedItems(draft, items, vaultId, now()));
   }
 
-  /** Plaintext export (CSV / Bitwarden JSON); the master password is asked again. */
   async function exportPlain(format, masterPassword) {
     if (format !== 'csv' && format !== 'bitwarden') throw fail(ERR.INVALID, 'Unknown export format');
     await ensureUnlocked();
@@ -579,8 +516,6 @@ export function createVaultService({
     const initialized = !!(await loadRecord());
     return { initialized, locked: initialized ? await isLocked() : true };
   }
-
-  // ---- message handlers (all from: 'extension') ---------------------------
 
   const table = {
     [MSG.VAULT_STATUS]: () => status(),
@@ -607,7 +542,6 @@ export function createVaultService({
     [MSG.SETTINGS_SET]: (m) => setSettings(m.patch, m.masterPassword),
     [MSG.ACTIVITY_PING]: () => ({}),
   };
-  // A successful call of these counts as user activity (re-arms auto-lock).
   const ACTIVE = new Set([
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
     MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
@@ -626,12 +560,10 @@ export function createVaultService({
   function install() {
     try {
       Promise.resolve(session.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' })).catch(() => {});
-    } catch { /* older Chrome: TRUSTED_CONTEXTS is the default anyway */ }
-    // storage.local is readable from content scripts by default (they run in web pages' processes).
-    // Akari's never read it, and with "ロックしない" it holds the vault key: extension pages and the SW only.
+    } catch { }
     try {
       Promise.resolve(local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' })).catch(() => {});
-    } catch { /* not supported: content scripts still have no reason to read it */ }
+    } catch { }
     chrome.alarms?.onAlarm?.addListener(onAlarm);
     getSettings().then((s) => applyLanguage(s.language), () => {});
   }
@@ -642,13 +574,10 @@ export function createVaultService({
   };
 }
 
-// ---- live instance (service worker) -----------------------------------------
-
 const live = globalThis.chrome?.storage?.local ? createVaultService({ chrome: globalThis.chrome }) : null;
 if (live) {
   live.install();
   for (const [type, handler] of Object.entries(live.handlers)) register(type, handler, { from: 'extension' });
-  // the in-page UI may learn the language, and nothing else of the settings
   register(MSG.SETTINGS_LANGUAGE, async () => {
     const { language, theme } = await live.getSettings();
     return { language, theme };

@@ -1,12 +1,8 @@
-// Import entry point used by the popup. Each source has its own module under
-// importers/ exporting `parse(file, ctx) → { items, skipped, warnings }`.
-
 import { ImportError, isPgp, makeImported } from './model.js';
 import { t } from '../../shared/i18n.js';
 
 export { ImportError } from './model.js';
 
-/** Order and labels follow the import screen. `exts` drives the file picker. */
 export const SOURCES = Object.freeze([
   { id: '1password', name: '1Password', exts: ['1pux', '1pif', 'zip'] },
   { id: 'apple', name: 'Apple Passwords', exts: ['csv'] },
@@ -26,10 +22,9 @@ export const SOURCES = Object.freeze([
   { id: 'roboform', name: 'Roboform', exts: ['csv'] },
   { id: 'safari', name: 'Safari', exts: ['csv'] },
   { id: 'generic', name: 'Generic CSV', exts: ['csv'] },
-  { id: 'pgp', get name() { return t('PGP 暗号化'); }, exts: ['pgp', 'gpg', 'asc'] }, // any source above, PGP-encrypted
+  { id: 'pgp', get name() { return t('PGP 暗号化'); }, exts: ['pgp', 'gpg', 'asc'] },
 ]);
 
-// Static specifiers so the modules are bundled-free and CSP-friendly ('self' only).
 const LOADERS = {
   '1password': () => import('./importers/onepassword.js'),
   apple: () => import('./importers/apple.js'),
@@ -51,19 +46,14 @@ const LOADERS = {
   generic: () => import('./importers/generic.js'),
 };
 
-/** Some sources' exports are PGP-encrypted as a whole; open them before parsing. */
 async function unwrapPgp(file, password) {
   if (!isPgp(file.bytes)) return file;
   if (!password) throw new ImportError('NEEDS_PASSWORD', t('PGP で暗号化されたファイルです。パスフレーズを入力してください'));
   const { decryptPgp } = await import('../pgp.js');
-  const bytes = await decryptPgp(file.bytes, password); // throws ImportError('BAD_PASSWORD')
+  const bytes = await decryptPgp(file.bytes, password);
   return { name: file.name.replace(/\.(pgp|gpg|asc)$/i, ''), bytes };
 }
 
-/**
- * @param {{ source: string, file: { name: string, bytes: Uint8Array }, password?: string }} req
- * @returns {Promise<{ source: string, items: object[], skipped: number, warnings: string[] }>}
- */
 export const MAX_FILE_BYTES = 64 * 2 ** 20;
 
 export async function parseImport({ source, file, password }) {

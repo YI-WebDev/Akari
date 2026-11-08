@@ -1,13 +1,3 @@
-// RoboForm CSV: Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2
-// RfFieldsV2 is one comma-separated list of 5-part groups: key,?,?,type,value ("pwd" = hidden
-// value, "-no-name-" = unnamed). "User ID$" / "Password$" / "TOTP KEY$" are the login's own
-// fields; the rest are custom fields of the login. Rows without url or credentials are Safenotes
-// (secure notes) or, when their fields include a name, e-mail, address, … , Identities (identity
-// items; fields with no slot in the template become custom fields).
-//
-// Only "First Name$", "Last Name$" and "Email$" are confirmed identity keys (from a real export);
-// the other names in IDENTITY_ALIASES are the usual RoboForm / form-autofill names.
-
 import { pick } from '../csv.js';
 import { fieldsToNote } from '../model.js';
 import { t } from '../../../shared/i18n.js';
@@ -28,17 +18,25 @@ const IDENTITY_ALIASES = {
   website: ['Website', 'Web Site', 'Home Page'],
 };
 
+const RF_GROUP_SIZE = 5;
+const RF_KEY = 0;
+const RF_TYPE = 3;
+const RF_VALUE = 4;
+const RF_HIDDEN_TYPE = 'pwd';
+const RF_LOGIN_TOTP_KEY = 'totp key$';
+const RF_LOGIN_USER_KEY = 'user id$';
+const RF_LOGIN_PASSWORD_KEY = 'password$';
+
 const labelOf = (key) => (!key || key === '-no-name-' ? t('import.label.field', null, '項目') : key.replace(/\$$/, ''));
 
-/** @returns {{ fields: [string, string, string][], rest: string }} [key, value, type] */
 function parseRfFields(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return { fields: [], rest: '' };
   const parts = s.split(',');
   const fields = [];
   let i = 0;
-  for (; i + 5 <= parts.length; i += 5) {
-    fields.push([parts[i].trim(), parts[i + 4], parts[i + 3].trim().toLowerCase()]);
+  for (; i + RF_GROUP_SIZE <= parts.length; i += RF_GROUP_SIZE) {
+    fields.push([parts[i + RF_KEY].trim(), parts[i + RF_VALUE], parts[i + RF_TYPE].trim().toLowerCase()]);
   }
   return { fields, rest: parts.slice(i).join(',').trim() };
 }
@@ -59,13 +57,13 @@ export async function parse(file) {
       ...(String(r.rf_fields ?? '').trim() ? [entry(t('import.label.roboformFields', null, 'RoboForm の項目'), r.rf_fields, false)] : []),
     ];
 
-    if (!url && !login && !pwd) {
-      const pairs = fields.map(([k, v, t]) => [labelOf(k), v, t === 'pwd' ? true : undefined]);
+    const hasNoLoginData = !url && !login && !pwd;
+    if (hasNoLoginData) {
+      const pairs = fields.map(([k, v, valueType]) => [labelOf(k), v, valueType === RF_HIDDEN_TYPE ? true : undefined]);
       const { fields: slots, extra } = routeToTemplate('identity', pairs, IDENTITY_ALIASES);
       if (Object.keys(slots).length) {
         return { type: 'identity', title: r.name, note: r.note, fields: slots, extra: [...extra, ...unparsed] };
       }
-      // Safenote (or a form we cannot place): the text stays a secure note.
       return { type: 'note', title: r.name, note: fieldsToNote(pairs, r.note), extra: unparsed };
     }
 
@@ -75,16 +73,16 @@ export async function parse(file) {
     const extra = [];
     for (const [key, value, type] of fields) {
       const k = key.toLowerCase();
-      if (k === 'totp key$') {
+      if (k === RF_LOGIN_TOTP_KEY) {
         const o = otpOf(value);
         totp = totp || o.totp;
         extra.push(...o.extra);
-      } else if (k === 'user id$' && (!username || value === username)) {
+      } else if (k === RF_LOGIN_USER_KEY && (!username || value === username)) {
         username = username || value;
-      } else if (k === 'password$' && (!password || value === password)) {
+      } else if (k === RF_LOGIN_PASSWORD_KEY && (!password || value === password)) {
         password = password || value;
       } else {
-        extra.push(entry(labelOf(key), value, type === 'pwd' ? true : undefined));
+        extra.push(entry(labelOf(key), value, type === RF_HIDDEN_TYPE ? true : undefined));
       }
     }
     return {

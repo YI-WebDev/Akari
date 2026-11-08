@@ -1,9 +1,3 @@
-// エクスポート page of the settings sheet (PLAN.md §7.4): 形式 → (マスターパスワード,
-// PGP ならパスフレーズと中身) → ダウンロード.
-// The Akari backup stays encrypted (vault/export). Plain formats come back from the service
-// worker only after it re-checks the master password (vault/exportPlain); with PGP the text is
-// encrypted here before it is saved. Text and passwords are dropped as soon as the download starts.
-
 import { MSG, ERR } from '../../shared/messages.js';
 import { call, errText, liveToken, live } from '../state.js';
 import { h, clear } from './dom.js';
@@ -15,15 +9,12 @@ import { t } from '../../shared/i18n.js';
 const $ = (id) => document.getElementById(id);
 const PGP_MIN = 8;
 
-// `id` is what vault/exportPlain takes (the JSON is Bitwarden's format, which most managers read);
-// `arg` is what the command line shows. name / desc / title are shown through t().
 export const FORMATS = Object.freeze([
   { id: 'akari', arg: 'akari', name: 'Akari バックアップ', desc: '暗号化・Akari で読み込める', ext: 'json', plain: false },
   { id: 'csv', arg: 'csv', name: 'CSV', desc: 'Chrome などで読み込める・平文', ext: 'csv', plain: true },
   { id: 'bitwarden', arg: 'json', name: 'JSON', desc: '多くのアプリで読み込める・平文・パスキーも含む', ext: 'json', plain: true, title: 'Bitwarden と同じ形式の JSON' },
   { id: 'pgp', arg: 'pgp', name: 'PGP 暗号化', desc: 'CSV か JSON をパスフレーズで暗号化', ext: 'pgp', plain: false, pgp: true },
 ]);
-/** What goes inside a PGP file. */
 const INNER = Object.freeze(['csv', 'bitwarden']);
 
 let fmt = 'akari';
@@ -35,10 +26,8 @@ let run = 0;
 const formatOf = (id) => FORMATS.find((f) => f.id === id);
 const current = () => formatOf(fmt);
 const withPgp = () => fmt === 'pgp';
-/** The format whose text is written: the chosen one, or what goes inside the PGP file. */
 const payload = () => formatOf(withPgp() ? inner : fmt);
 
-/** Forget everything typed on the page. */
 export function resetExport() {
   run++;
   busy = false;
@@ -49,7 +38,6 @@ export function resetExport() {
   clear($('exportPage'));
 }
 
-/** The sheet head's back button: the export page has a single step. */
 export const exportBack = () => false;
 
 function field(id, placeholder, label, autocomplete) {
@@ -89,19 +77,19 @@ export function openExport({ focus = true } = {}) {
   const err = h('div', { class: 'field-err', role: 'alert' });
   const goBtn = goButton(t('書き出す'), { type: 'submit' });
   const log = h('div', { class: 'io-log', 'aria-live': 'polite' });
-  const plainRow = h('div', { class: 'io-row io-row-wide' },
+  const masterRow = h('div', { class: 'io-row io-row-wide' },
     h('label', { class: 'io-k', for: 'expMaster' }, t('マスターパスワード')), masterField);
   const innerRow = h('div', { class: 'io-row io-row-wide', hidden: true },
     h('span', { id: 'expInnerK', class: 'io-k' }, t('中身')), innerPick);
   const pgpRow = h('div', { class: 'io-row io-row-wide', hidden: true },
     h('label', { class: 'io-k', for: 'expPass' }, t('PGP パスフレーズ')), h('div', { class: 'io-pair' }, passField, pass2Field));
   const form = h('form', { class: 'io-form', novalidate: true, 'aria-label': t('エクスポート'), 'data-f': '' },
-    plainRow, innerRow, pgpRow, h('div', { class: 'io-foot' }, err, goBtn));
+    masterRow, innerRow, pgpRow, h('div', { class: 'io-foot' }, err, goBtn));
   form.addEventListener('submit', doExport);
   form.addEventListener('input', () => { if (!busy) els.err.textContent = ''; });
   const cmd = cmdLine('');
 
-  els = { list, master, masterField, pass, passField, pass2, pass2Field, innerPick, warn, note, err, go: goBtn, log, plainRow, innerRow, pgpRow, cmd };
+  els = { list, master, masterField, pass, passField, pass2, pass2Field, innerPick, warn, note, err, go: goBtn, log, masterRow, innerRow, pgpRow, cmd };
   clear(page);
   page.append(cmd, list, h('div', { 'data-f': '' }, warn, note), form, log);
   page.scrollTop = 0;
@@ -126,7 +114,6 @@ function setInner(id) {
   sync();
 }
 
-/** Reflect the format in the radios, the command line, the warning and the fields. */
 function sync() {
   const f = current();
   const pgp = withPgp();
@@ -138,8 +125,8 @@ function sync() {
   innerBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.inner === inner)));
   setRoving(innerBtns, innerBtns.findIndex((b) => b.dataset.inner === inner));
   els.cmd.querySelector('.io-cmd-text').textContent = `akari export --format ${p.arg}${pgp ? ' --pgp' : ''}`;
-  const needsMaster = f.plain || pgp; // anything that leaves Akari's own encryption asks again
-  els.plainRow.hidden = !needsMaster;
+  const needsMaster = f.plain || pgp;
+  els.masterRow.hidden = !needsMaster;
   els.innerRow.hidden = !pgp;
   els.pgpRow.hidden = !pgp;
   els.warn.hidden = !needsMaster;
@@ -151,7 +138,6 @@ function sync() {
     : t('このファイルは暗号化されません。開けばだれでもパスワードを読めます。使い終わったら削除してください。');
   els.note.textContent = t('Akari のマスターパスワードで暗号化されたまま書き出します。読み込むときも、書き出したときのマスターパスワードを使います。');
   els.go.querySelector('.go-label').textContent = pgp ? t('暗号化して書き出す') : f.plain ? t('平文で書き出す') : t('書き出す');
-  // a plaintext file is the riskiest thing this page makes: its button says so in red, like ロックしない
   els.go.classList.toggle('danger', f.plain);
 }
 

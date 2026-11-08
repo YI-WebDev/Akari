@@ -1,8 +1,4 @@
-// English for the popup strings. Keys are the Japanese source text (or a dotted key used
-// with a Japanese fallback); values are the English. Japanese needs no entry.
-
 export default {
-  /* ── popup.html: header, list bar, menus ── */
   'メニュー': 'Menu',
   '保管庫を切り替え': 'Switch vault',
   'すべて': 'All',
@@ -24,13 +20,11 @@ export default {
   '設定': 'Settings',
   '種類で絞り込む': 'Filter by type',
 
-  /* ── popup.html: sheets (shared) ── */
   '閉じる (esc)': 'Close (esc)',
   '閉じる': 'Close',
   '戻る (esc / alt+←)': 'Back (esc / alt+←)',
   '戻る': 'Back',
 
-  /* ── popup.html: password generator sheet ── */
   'パスワード生成': 'Password generator',
   '再生成': 'Regenerate',
   'コピー': 'Copy',
@@ -49,7 +43,6 @@ export default {
   'Akari だけ更新': 'Update Akari only',
   'コピーして閉じる': 'Copy and close',
 
-  /* ── popup.html: settings sheet (static text; settings.js sets the rest) ── */
   '手順': 'Steps',
   '一般': 'General',
   '言語 · Language': 'Language · 言語',
@@ -62,7 +55,6 @@ export default {
   '30分': '30 min',
   '60分': '60 min',
   'ブラウザを閉じたとき': 'Browser close',
-  // both "never auto-lock" and "never clear the clipboard": one English for the two chips
   'しない': 'Never',
   'settings.clipOff': 'Off',
   'マスターパスワード': 'Master password',
@@ -92,10 +84,8 @@ export default {
   '暗号化バックアップ・CSV・JSON・PGP 暗号化': 'Encrypted backup, CSV, JSON, PGP-encrypted',
   '暗号化して、このブラウザの中だけに保存します': 'Encrypted and stored only in this browser',
 
-  /* ── popup.html: password health sheet ── */
   '問題の種類': 'Issue types',
 
-  /* ── lock screen and first-run setup (popup.html, views/lock.js) ── */
   '解除': 'Unlock',
   'マスターパスワードを決める': 'Choose a master password',
   'Akari を開くときに使う、ひとつだけのパスワードです。保管庫の中身はこのパスワードで暗号化されます。':
@@ -124,7 +114,6 @@ export default {
   'すでに作成されています。開き直してください': 'Already set up. Reopen Akari.',
   '作成できませんでした': 'Could not create the vault',
 
-  /* ── popup.js ── */
   'Akari のサービスに接続できませんでした': 'Could not connect to the Akari service',
   'ロックできませんでした。保管庫はまだひらいています': 'Could not lock. The vault is still unlocked.',
   'ロックできませんでした': 'Could not lock',
@@ -137,7 +126,6 @@ export default {
   '{title} を保存しました': '{title} saved',
   '変更は暗号化して保存されました': 'Changes were encrypted and saved',
 
-  /* ── state.js: errors and the clipboard ── */
   'ロックされています': 'Akari is locked',
   'アイテムが見つかりません': 'Item not found',
   '入力内容を確認してください': 'Check what you entered',
@@ -153,7 +141,6 @@ export default {
   '{n}秒後にクリップボードから自動で消去します': 'Clears from the clipboard in {n} s',
   '自動消去を設定できませんでした': 'Could not schedule the clipboard clear',
 
-  /* ── controllers ── */
   '入力欄が見つかりませんでした': 'No login fields found',
   'ログインの入力欄が表示されているページで、もう一度押してください': 'Press again on a page that shows the login form',
   '{site} に自動入力しました': 'Filled in on {site}',
@@ -164,7 +151,6 @@ export default {
   '削除できませんでした': 'Could not delete',
   '並び替え: {sort}（クリックで切り替え）': 'Sort: {sort} (click to switch)',
 
-  /* ── list (views/list.js, views/format.js) ── */
   '{n} 件': '{n} items',
   '(無題)': '(Untitled)',
   '弱いパスワード': 'Weak password',
@@ -199,7 +185,6 @@ export default {
   '{n}か月前': '{n} mo ago',
   '{n}年前': '{n} yr ago',
 
-  /* ── detail pane (views/detail.js, views/totp-view.js) ── */
   'detail.copyField': 'Copy {label}',
   'detail.copy': 'Copy',
   'detail.show': 'Show',
@@ -274,13 +259,11 @@ export default {
   '{title} のパスワードを更新しました': 'Password updated for {title}',
   '強度: {label} · {bits} bit': 'Strength: {label} · {bits} bit',
 
-  /* ── strength levels (views/generator.js, and lib/strength.js labels shown by views/meter.js) ── */
   '弱い': 'Weak',
   '普通': 'Fair',
   '強い': 'Strong',
   '非常に強い': 'Very strong',
 
-  /* ── generator (views/generator.js) ── */
   '単語数': 'Words',
   '{n} 文字': '{n} characters',
   '{n} 語': '{n} words',
@@ -290,7 +273,6 @@ export default {
   '保留できませんでした': 'Could not hold the new password',
   'パスワードを更新できませんでした': 'Could not update the password',
 
-  /* ── selection mode (views/picker.js) ── */
   '件を選択中': 'selected',
   'すべて選択 ({n})': 'Select all ({n})',
   'picker.none': 'Clear',

@@ -1,8 +1,3 @@
-// Internal helpers shared by the structured importers (1Password, Bitwarden, Dashlane, Enpass,
-// Keeper, Proton Pass, KeePass): a small builder that fills a typed item's template fields
-// (dates, months and the Wi-Fi security option via _values.js) and keeps everything else as
-// `extra`. Not an importer itself.
-
 import { t } from '../../../shared/i18n.js';
 import { typeOf, fieldLabel, optionLabel, isSecretKind, cardBrand } from '../../../shared/item-types.js';
 import { toDate, toMonth, wifiSecurity } from './_values.js';
@@ -10,10 +5,8 @@ import { toDate, toMonth, wifiSecurity } from './_values.js';
 const pad = (n) => String(n).padStart(2, '0');
 const str = (v) => (v == null ? '' : String(v).trim());
 
-/** A label Akari gives a value itself (as opposed to one read from the file). */
 export const L = (key, ja, params = null) => t('import.label.' + key, params, ja);
 
-/** A month-only value stored in a date field: expiry → last day of the month, else the 1st. */
 function monthToDate(v, key) {
   const m = toMonth(v);
   if (!m) return '';
@@ -22,22 +15,12 @@ function monthToDate(v, key) {
   return `${m}-${pad(day)}`;
 }
 
-// Field names that usually hold a secret (custom fields with no "hidden" flag of their own).
 const SECRET_NAME = /(^|[^a-z])(pins?|pin ?code|passwords?|passcode|passphrase|secrets?|private ?key|api ?key|keys?|tokens?|cvv2?|cvc|otp|totp|seed|mnemonic)([^a-z]|$)|暗証|パスワード|パスコード|パスフレーズ|秘密|シークレット|キー|鍵|トークン|セキュリティコード|シード|リカバリー|合言葉/i;
 export const looksSecret = (name) => SECRET_NAME.test(str(name)) && !/public|公開/i.test(str(name));
 
-/** An http(s) URL, or a bare host name with a dot ("example.jp/login"); nothing else is a link. */
 const isUrlLike = (v) => /^https?:\/\/[^\s/?#]+\S*$/i.test(v)
   || /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:\d+)?([/?#]\S*)?$/i.test(v);
 
-// --- typed item builder --------------------------------------------------------------------
-
-/**
- * Builder for one item of `type`. put(key, value) fills the template key when it is free
- * (converting dates, months, the Wi-Fi security option and port numbers); anything that does
- * not fit — unknown key, key already filled, value not convertible — goes to `extra` with the
- * given label (default: the template field's label), so nothing is lost.
- */
 export function typed(type) {
   const tpl = new Map((typeOf(type)?.fields || []).map((fd) => [fd.key, fd]));
   const fields = {};
@@ -58,12 +41,11 @@ export function typed(type) {
     if (fd.kind === 'date') v = toDate(v) || monthToDate(v, key);
     else if (fd.kind === 'month') v = toMonth(v);
     else if (fd.kind === 'select') {
-      // An option id, an option label (Akari's own exports write labels), or Wi-Fi security text.
       v = fd.options.find((o) => o.id === v || o.label === v || optionLabel(type, key, o.id) === v)?.id ?? wifiSecurity(v);
     } else if (fd.kind === 'number') v = /^\d{1,10}$/.test(v) ? v : '';
-    else if (fd.kind === 'url') v = isUrlLike(v) ? v : ''; // a URL field becomes a link: never a stray word
+    else if (fd.kind === 'url') v = isUrlLike(v) ? v : '';
     if (Object.hasOwn(fields, key)) {
-      if (fields[key] !== v || !v) add(lab, raw, sec); // a second, different value is kept too
+      if (fields[key] !== v || !v) add(lab, raw, sec);
       return;
     }
     if (v) fields[key] = v;
@@ -72,7 +54,6 @@ export function typed(type) {
   return {
     type, fields, extra, put, add,
     has: (key) => Object.hasOwn(fields, key),
-    /** Card brand: kept only when Akari cannot tell it from the number. */
     brand(value, label) {
       if (str(value) && !cardBrand(fields.number)) add(label || L('cardBrand', 'ブランド'), value);
     },
@@ -80,14 +61,6 @@ export function typed(type) {
   };
 }
 
-/**
- * Fill a typed item from `entries` ([{ id, label, value, secret }]; `id` may be an array of
- * ids). `rules` is [[templateKey, ...matchers]]: a string matches an entry id exactly, a RegExp
- * is tested on the label. For each key, matchers are tried in order and the first unused entry
- * with a value wins. Entries no rule took become extra fields (label, secret flag kept).
- * A value the source marks secret only goes to a non-secret field when the source's own id
- * says it belongs there — a label guess never unmasks it (it stays a secret extra field).
- */
 export function fromEntries(type, entries, rules) {
   const b = typed(type);
   const used = new Set();
@@ -109,10 +82,6 @@ export function fromEntries(type, entries, rules) {
   return b;
 }
 
-/**
- * Field-name patterns (English and Japanese) for each typed template, used where a format has
- * no stable field ids (Enpass, Keeper labels, Proton Pass custom items) and as a fallback.
- */
 const R = (...parts) => new RegExp(parts.join('|'), 'i');
 export const LABEL_RULES = {
   card: [
@@ -159,7 +128,7 @@ export const LABEL_RULES = {
     ['port', R('port', 'ポート')],
     ['username', R('user', 'login', 'ユーザー')],
     ['password', R('password', 'パスワード')],
-    ['url', R('\\burl\\b', '^管理画面( ?の? ?url)?$')], // "Admin console URL", not "Admin console password"
+    ['url', R('\\burl\\b', '^管理画面( ?の? ?url)?$')],
   ],
   softwareLicense: [
     ['product', R('^product( name)?$', '製品名', '^製品$')],

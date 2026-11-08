@@ -1,6 +1,3 @@
-// Regenerate extension/src/third_party/jsqr.js (an ES-module wrapper of jsQR's UMD build).
-//   npm install && node scripts/build-jsqr.mjs
-
 import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,59 +1,48 @@
-/* Akari design tokens — design 1a "Akari Terminal" (design/Akari Terminal.dc.html):
-   monospace, a 16px grid and a warm palette. Dark is Akari's own theme and the default; the
-   light theme (テーマ: ライト, or 自動 on a light OS) is the same lamp on warm paper. shared/theme.js
-   sets <html data-theme="dark|light"> before the page draws.
-   Fonts are bundled under src/assets/fonts (JetBrains Mono + M PLUS 1 Code for Japanese).
-
-   Translucent colours are written as rgb(var(--…-rgb) / α) so both themes share one stylesheet:
-   --ink-rgb is the warm neutral that draws lines and washes (light on dark, dark on paper). */
-
 :root {
   color-scheme: dark;
   --font-ui: 'JetBrains Mono', 'M PLUS 1 Code', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --font-mono: 'JetBrains Mono', 'M PLUS 1 Code', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --fs-base: 12px;
 
-  /* channels for translucent colours */
-  --ink-rgb: 255 214 186;       /* warm neutral: lines, washes, scrollbars */
-  --wash-rgb: 255 200 160;      /* row hover */
-  --soot-rgb: 20 16 13;         /* the deep surface, for boxes laid over the grid */
+  --ink-rgb: 255 214 186;
+  --wash-rgb: 255 200 160;
+  --soot-rgb: 20 16 13;
   --accent-rgb: 255 122 69;
   --fav-rgb: 255 194 92;
   --ok-rgb: 155 214 126;
   --danger-rgb: 255 107 91;
   --info-rgb: 142 197 255;
 
-  /* surfaces, darkest to lightest */
-  --bg-deep: #0F0C0A;         /* inputs, generator output */
-  --bg: #14100D;              /* app background */
-  --bg-panel: #17130F;        /* stat cells */
-  --bg-raised: #1A1511;       /* header, status bar, sheets */
-  --surface: #1F1915;         /* menus, popovers */
-  --box-fill: rgb(var(--soot-rgb) / .9);     /* boxes over the grid */
+  --bg-deep: #0F0C0A;
+  --bg: #14100D;
+  --bg-panel: #17130F;
+  --bg-raised: #1A1511;
+  --surface: #1F1915;
+  --box-fill: rgb(var(--soot-rgb) / .9);
   --surface-hover: rgb(var(--wash-rgb) / .05);
   --surface-sunken: rgb(var(--ink-rgb) / .06);
   --surface-soft: rgb(var(--ink-rgb) / .08);
   --hover-on-surface: rgb(var(--wash-rgb) / .07);
-  --grid-line: rgb(var(--ink-rgb) / .035);   /* the 16px background grid */
-  --line: rgb(var(--ink-rgb) / .1);           /* hairlines inside boxes */
-  --rule: rgb(var(--ink-rgb) / .11);          /* header / column / status borders */
-  --border: rgb(var(--ink-rgb) / .12);        /* buttons, boxes */
+  --grid-line: rgb(var(--ink-rgb) / .035);
+  --line: rgb(var(--ink-rgb) / .1);
+  --rule: rgb(var(--ink-rgb) / .11);
+  --border: rgb(var(--ink-rgb) / .12);
   --border-strong: rgb(var(--ink-rgb) / .16);
   --menu-ring: rgb(var(--ink-rgb) / .14);
   --scrollbar: rgb(var(--ink-rgb) / .16);
 
   --text: #F2E8DE;
-  --text-2: #D7CABD;          /* secondary values */
-  --text-muted: #C4B6A7;      /* icon buttons, secondary labels */
-  --text-dim: #AE9F90;        /* row subtitles */
-  --text-soft: #A39484;       /* field labels, hints */
-  --text-faint: #938374;      /* placeholders, zero counts (≥ 4.5:1 on every surface) */
+  --text-2: #D7CABD;
+  --text-muted: #C4B6A7;
+  --text-dim: #AE9F90;
+  --text-soft: #A39484;
+  --text-faint: #938374;
 
-  --accent: #FF7A45;          /* 灯 */
-  --accent-strong: #FF9A6E;   /* hover, links */
-  --accent-hover: #FF9A6E;    /* the primary button's hover fill */
+  --accent: #FF7A45;
+  --accent-strong: #FF9A6E;
+  --accent-hover: #FF9A6E;
   --accent-deep: #FF9A6E;
-  --accent-ink: #FFC0A4;      /* text on accent tint */
+  --accent-ink: #FFC0A4;
   --accent-soft: rgb(var(--accent-rgb) / .12);
   --accent-soft-hover: rgb(var(--accent-rgb) / .18);
   --accent-tint: rgb(var(--accent-rgb) / .1);
@@ -61,13 +50,13 @@
   --accent-on: rgb(var(--accent-rgb) / .14);
   --accent-tint-border: rgb(var(--accent-rgb) / .45);
   --accent-on-ring: rgb(var(--accent-rgb) / .5);
-  --accent-line: rgb(var(--accent-rgb) / .55);    /* hovered borders */
+  --accent-line: rgb(var(--accent-rgb) / .55);
   --link: #FF9A6E;
   --link-hover: #FFC0A4;
   --focus-border: rgb(var(--accent-rgb) / .7);
   --focus-ring: 0 0 0 3px rgb(var(--accent-rgb) / .15);
   --on-accent: #14100D;
-  --on-danger: #14100D;        /* text on the alarm-red fill */
+  --on-danger: #14100D;
 
   --success: #9BD67E;
   --danger: #FF6B5B;
@@ -82,29 +71,25 @@
   --ok-soft: rgb(var(--ok-rgb) / .1);
   --ok-deep: #9BD67E;
 
-  /* password strength: level 0..4 */
   --lv0: #4A3E35; --lv1: var(--danger); --lv2: var(--fav); --lv3: #D9D36A; --lv4: var(--success);
   --lv0-bg: rgb(var(--ink-rgb) / .06); --lv1-bg: rgb(var(--danger-rgb) / .12); --lv2-bg: rgb(var(--fav-rgb) / .12);
   --lv3-bg: rgb(217 211 106 / .12); --lv4-bg: rgb(var(--ok-rgb) / .12);
   --seg-off: rgb(var(--ink-rgb) / .08);
 
-  /* generator character colours */
   --ch-letter: var(--text); --ch-digit: var(--accent-strong); --ch-symbol: var(--fav);
 
   --toggle-on-track: var(--accent); --toggle-off-track: rgb(var(--ink-rgb) / .15);
 
-  /* item tiles: oklch(L C <hue>) at three strengths, hue per item */
   --tile-bg: rgb(var(--ink-rgb) / .06);
-  --tile-l: 0.85; --tile-c: 0.11;            /* tile glyph */
-  --tile-bg-l: 0.72; --tile-bg-c: 0.12;      /* tile fill (13 %) and border (32 %) */
-  --vault-l: 0.8; --vault-c: 0.13;           /* vault dot */
+  --tile-l: 0.85; --tile-c: 0.11;
+  --tile-bg-l: 0.72; --tile-bg-c: 0.12;
+  --vault-l: 0.8; --vault-c: 0.13;
 
-  /* the toast is the one inverted surface: light on the dark theme, dark on the light one */
   --toast-bg: #F2E8DE; --toast-text: #14100D; --toast-sub: #5E5046;
   --toast-line: rgb(20 16 13 / .28); --toast-hover: rgb(20 16 13 / .07);
   --scrim: rgb(8 6 5 / .66);
-  --blob-1: rgb(var(--accent-rgb) / .2);  /* the lamp glow at the lock screen's corner */
-  --scan: rgb(var(--accent-rgb) / .07);   /* the lock screen's scan line */
+  --blob-1: rgb(var(--accent-rgb) / .2);
+  --scan: rgb(var(--accent-rgb) / .07);
 
   --shadow-card: none;
   --shadow-row: none;
@@ -114,13 +99,11 @@
   --shadow-chip: none;
 
   --r-row: 5px; --r-card: 6px; --r-menu: 8px; --r-sheet: 0; --r-pill: 4px; --r-tile: 6px;
-  --spring: cubic-bezier(.22, 1, .36, 1);     /* decelerates, never overshoots */
+  --spring: cubic-bezier(.22, 1, .36, 1);
   --spring-soft: cubic-bezier(.2, .9, .2, 1);
   --ease-out: cubic-bezier(.2, .8, .2, 1);
 }
 
-/* ── ライト: the same lamp on warm paper. Neutrals stay in the warm hue; text and status colours are
-   deepened until they read at ≥ 4.5:1 on every surface; the lamp's fill keeps dark ink on it. ── */
 :root[data-theme="light"] {
   color-scheme: light;
 
@@ -163,7 +146,7 @@
   --link: #AE4317;
   --link-hover: #8A330F;
   --on-accent: #1F150E;
-  --on-danger: #FFF8F1;        /* the deeper red of paper needs light text */
+  --on-danger: #FFF8F1;
 
   --success: #2F6E1C;
   --danger: #B8301F;

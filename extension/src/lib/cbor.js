@@ -1,10 +1,18 @@
-// Minimal CBOR (RFC 8949) for WebAuthn: unsigned/negative integers, byte strings,
-// text strings, arrays, maps, booleans and null. Maps are written in CTAP2
-// canonical key order. Use a Map for integer keys (COSE keys); plain objects
-// are treated as text-keyed maps. Decoded maps are always returned as Map.
-
 const te = new TextEncoder();
 const td = new TextDecoder('utf-8', { fatal: true });
+
+const MAJOR_UINT = 0;
+const MAJOR_NEGATIVE_INT = 1;
+const MAJOR_BYTES = 2;
+const MAJOR_TEXT = 3;
+const MAJOR_ARRAY = 4;
+const MAJOR_MAP = 5;
+const MAJOR_TAG = 6;
+const MAJOR_SIMPLE = 7;
+const SIMPLE_FALSE = 20;
+const SIMPLE_TRUE = 21;
+const SIMPLE_NULL = 22;
+const MAX_NESTING_DEPTH = 32;
 
 function head(major, n) {
   const m = major << 5;
@@ -18,19 +26,26 @@ function head(major, n) {
   return out;
 }
 
+function compareCanonicalKeys(a, b) {
+  if ((a.kb[0] >> 5) !== (b.kb[0] >> 5)) return (a.kb[0] >> 5) - (b.kb[0] >> 5);
+  if (a.kb.length !== b.kb.length) return a.kb.length - b.kb.length;
+  for (let i = 0; i < a.kb.length; i++) if (a.kb[i] !== b.kb[i]) return a.kb[i] - b.kb[i];
+  throw new TypeError('cbor: duplicate map key');
+}
+
 function encodeInto(out, value) {
-  if (value === null) { out.push(0xf6); return; }
-  if (value === false) { out.push(0xf4); return; }
-  if (value === true) { out.push(0xf5); return; }
+  if (value === null) { out.push((MAJOR_SIMPLE << 5) | SIMPLE_NULL); return; }
+  if (value === false) { out.push((MAJOR_SIMPLE << 5) | SIMPLE_FALSE); return; }
+  if (value === true) { out.push((MAJOR_SIMPLE << 5) | SIMPLE_TRUE); return; }
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value)) throw new TypeError('cbor: only safe integers are supported');
-    if (value >= 0) out.push(...head(0, value));
-    else out.push(...head(1, -1 - value));
+    if (value >= 0) out.push(...head(MAJOR_UINT, value));
+    else out.push(...head(MAJOR_NEGATIVE_INT, -1 - value));
     return;
   }
   if (typeof value === 'string') {
     const b = te.encode(value);
-    out.push(...head(3, b.length));
+    out.push(...head(MAJOR_TEXT, b.length));
     for (const x of b) out.push(x);
     return;
   }
@@ -38,12 +53,12 @@ function encodeInto(out, value) {
     const b = value instanceof Uint8Array ? value
       : value instanceof ArrayBuffer ? new Uint8Array(value)
         : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    out.push(...head(2, b.length));
+    out.push(...head(MAJOR_BYTES, b.length));
     for (const x of b) out.push(x);
     return;
   }
   if (Array.isArray(value)) {
-    out.push(...head(4, value.length));
+    out.push(...head(MAJOR_ARRAY, value.length));
     for (const v of value) encodeInto(out, v);
     return;
   }
@@ -55,14 +70,8 @@ function encodeInto(out, value) {
       encodeInto(kb, k);
       return { kb, v };
     });
-    // CTAP2 canonical order: major type, then encoded length, then bytewise.
-    encoded.sort((a, b) => {
-      if ((a.kb[0] >> 5) !== (b.kb[0] >> 5)) return (a.kb[0] >> 5) - (b.kb[0] >> 5);
-      if (a.kb.length !== b.kb.length) return a.kb.length - b.kb.length;
-      for (let i = 0; i < a.kb.length; i++) if (a.kb[i] !== b.kb[i]) return a.kb[i] - b.kb[i];
-      throw new TypeError('cbor: duplicate map key');
-    });
-    out.push(...head(5, encoded.length));
+    encoded.sort(compareCanonicalKeys);
+    out.push(...head(MAJOR_MAP, encoded.length));
     for (const { kb, v } of encoded) {
       for (const x of kb) out.push(x);
       encodeInto(out, v);
@@ -72,7 +81,6 @@ function encodeInto(out, value) {
   throw new TypeError('cbor: unsupported value ' + typeof value);
 }
 
-/** @returns {Uint8Array} */
 export function encode(value) {
   const out = [];
   encodeInto(out, value);
@@ -91,30 +99,30 @@ function readLength(bytes, pos, info) {
 }
 
 function decodeAt(bytes, pos, depth) {
-  if (depth > 32) throw new Error('cbor: nesting too deep');
+  if (depth > MAX_NESTING_DEPTH) throw new Error('cbor: nesting too deep');
   if (pos >= bytes.length) throw new Error('cbor: truncated');
   const ib = bytes[pos++];
   const major = ib >> 5;
   const info = ib & 0x1f;
-  if (major === 7) {
-    if (info === 20) return [false, pos];
-    if (info === 21) return [true, pos];
-    if (info === 22) return [null, pos];
+  if (major === MAJOR_SIMPLE) {
+    if (info === SIMPLE_FALSE) return [false, pos];
+    if (info === SIMPLE_TRUE) return [true, pos];
+    if (info === SIMPLE_NULL) return [null, pos];
     throw new Error('cbor: unsupported simple/float value');
   }
-  if (major === 6) throw new Error('cbor: tags are not supported');
+  if (major === MAJOR_TAG) throw new Error('cbor: tags are not supported');
   let n;
   [n, pos] = readLength(bytes, pos, info);
   switch (major) {
-    case 0: return [n, pos];
-    case 1: return [-1 - n, pos];
-    case 2:
-    case 3: {
+    case MAJOR_UINT: return [n, pos];
+    case MAJOR_NEGATIVE_INT: return [-1 - n, pos];
+    case MAJOR_BYTES:
+    case MAJOR_TEXT: {
       if (pos + n > bytes.length) throw new Error('cbor: truncated');
       const slice = bytes.slice(pos, pos + n);
-      return [major === 2 ? slice : td.decode(slice), pos + n];
+      return [major === MAJOR_BYTES ? slice : td.decode(slice), pos + n];
     }
-    case 4: {
+    case MAJOR_ARRAY: {
       if (n > bytes.length - pos) throw new Error('cbor: truncated');
       const arr = [];
       for (let i = 0; i < n; i++) {
@@ -124,7 +132,7 @@ function decodeAt(bytes, pos, depth) {
       }
       return [arr, pos];
     }
-    case 5: {
+    case MAJOR_MAP: {
       if (n * 2 > bytes.length - pos) throw new Error('cbor: truncated');
       const map = new Map();
       for (let i = 0; i < n; i++) {
@@ -142,13 +150,11 @@ function decodeAt(bytes, pos, depth) {
   }
 }
 
-/** Decode one item starting at `offset`; returns the value and the offset just past it. */
 export function decodePartial(bytes, offset = 0) {
   const [value, end] = decodeAt(bytes, offset, 0);
   return { value, offset: end };
 }
 
-/** Decode exactly one item; trailing bytes are an error. */
 export function decode(bytes) {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const { value, offset } = decodePartial(b, 0);

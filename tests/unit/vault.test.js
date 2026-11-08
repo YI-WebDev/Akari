@@ -13,7 +13,6 @@ import { TYPE_IDS, typeOf, hasTemplate, LIMITS } from '../../extension/src/share
 const OPTS = { iterations: 1000 };
 const PW = 'master-password-1';
 
-/** A passkey with the shape passkey-service.js stores (ES256, PKCS8 private key, COSE public key). */
 function samplePasskey(over = {}) {
   return {
     credentialId: toB64url(randomBytes(32)),
@@ -247,7 +246,6 @@ test('validateItem: types, caps, url normalization, totp', () => {
     secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30, issuer: '', label: '',
   });
   assert.equal(validateItem({ totp: null }).totp, null);
-  // non-editable fields are never passed through
   const out = validateItem({ id: 'i1', passkeys: [{ privateKey: 'x' }], createdAt: 1 });
   assert.deepEqual(out, { id: 'i1' });
   assert.equal(normalizeUrl('  example.com '), 'https://example.com');
@@ -263,9 +261,6 @@ test('sanitizeItem removes passkey private keys without touching the original', 
   assert.equal(clean.password, 's3cret!');
 });
 
-// ---- import from other managers ---------------------------------------------
-
-/** An ImportedItem passkey as importers produce it: real PKCS8 key, no public key. */
 async function importedPasskey(over = {}) {
   const cred = await createCredential({ rpId: over.rpId || 'github.com', userHandle: randomBytes(16), clientDataHash: randomBytes(32) });
   return {
@@ -285,7 +280,6 @@ test('passkeyFromImport derives the COSE public key and applies the backup check
   assert.equal(out.publicKey, toB64url(cred.cosePublicKey));
   assert.equal(out.privateKey, pk.privateKey);
   assert.deepEqual([out.alg, out.signCount, out.createdAt, out.lastUsedAt], [-7, 0, 2000, null]);
-  // Usable for sign-in.
   const a = await getAssertion({ passkey: out, rpId: 'github.com', clientDataHash: randomBytes(32) });
   assert.equal(a.signature[0], 0x30);
 
@@ -309,7 +303,6 @@ test('passkeyFromImport: rpId must be localhost or a registrable, non-public-suf
     'router.local', 'example.invalidtld', 'intranet', '', 'Example.com', 'a..b', null]) {
     assert.equal(await passkeyFromImport({ ...pk, rpId }, 5000), null, String(rpId));
   }
-  // The addImportedItems path drops such passkeys but keeps the item.
   const data = defaultData(1000);
   const res = await addImportedItems(data, [
     { type: 'login', title: 'io', url: 'https://github.io', username: 'u', password: 'p', passkeys: [{ ...pk, rpId: 'github.io' }] },
@@ -325,10 +318,10 @@ test('addImportedItems: validation, duplicates (existing and in-batch), timestam
   );
   const now = 50_000;
   const res = await addImportedItems(data, [
-    { type: 'login', title: 'GitHub', url: 'https://GITHUB.com/other', username: 'hina', password: 'pw1' }, // dup of Mine (same host)
+    { type: 'login', title: 'GitHub', url: 'https://GITHUB.com/other', username: 'hina', password: 'pw1' },
     { type: 'login', title: 'GitHub 2', url: 'github.com', username: 'hina', password: 'pw2', fav: true, createdAt: 100, updatedAt: 9e15 },
-    { type: 'login', title: 'GitHub 2 again', url: 'https://github.com', username: 'hina', password: 'pw2' }, // in-batch dup
-    { type: 'note', title: 'Memo', note: 'body', url: '' }, // dup note
+    { type: 'login', title: 'GitHub 2 again', url: 'https://github.com', username: 'hina', password: 'pw2' },
+    { type: 'note', title: 'Memo', note: 'body', url: '' },
     { type: 'note', title: 'Memo', note: 'other body' },
     { type: 'login', title: 'App', url: 'androidapp://com.example', username: 'u', password: 'p', note: 'n' },
     { title: '  ' + 'T'.repeat(300), username: 'long-title' },
@@ -387,7 +380,6 @@ test('addImportedItems: passkeys pass the strict checks and never duplicate cred
     { type: 'login', title: 'bad list', username: 'd', passkeys: 'nope' },
   ], 'personal', 9000);
   assert.deepEqual(res, { added: 3, duplicates: 1, invalid: 0, passkeys: 3 });
-  // The duplicate login is not added again, but the existing one gets the passkey it lacked (kept ones stay first).
   assert.deepEqual(mine.passkeys.map((p) => p.credentialId), [existing.pk.credentialId, forMine.credentialId]);
   assert.equal(mine.updatedAt, 9000);
   const [a, b] = data.items.slice(1);
@@ -396,9 +388,6 @@ test('addImportedItems: passkeys pass the strict checks and never duplicate cred
   assert.equal(a.passkeys[0].privateKey, fresh.privateKey);
 });
 
-// ---- item types (shared/item-types.js) ---------------------------------------
-
-/** A valid value for every template field of `type`, by kind. */
 function sampleFields(type) {
   const byKind = {
     text: (fd) => fd.key + ' value', secret: (fd) => 's3cret ' + fd.key, multiline: () => 'line 1\nline 2',
@@ -448,8 +437,7 @@ test('validateItem: template fields are normalized and checked per kind', () => 
   assert.equal(validateItem({ type: 'note', fields: {} }).fields, undefined, 'empty fields on note/login are dropped');
   assert.equal(validateItem({ fields: {} }).fields, undefined);
 
-  // Caps: LIMITS.fieldValue for single-line kinds, LIMITS.multilineValue for multiline ones.
-  assert.equal(validateItem({ type: 'apiCredential', fields: { keyId: 'k'.repeat(LIMITS.fieldValue) } }).fields.keyId.length, LIMITS.fieldValue);
+  assert.equal(validateItem({ type: 'apiCredential', fields: { keyId: 'k'.repeat(LIMITS.fieldValue) } }).fields.keyId.length, LIMITS.fieldValue, 'Caps: LIMITS.fieldValue for single-line kinds, LIMITS.multilineValue for multiline ones');
   bad({ type: 'apiCredential', fields: { keyId: 'k'.repeat(LIMITS.fieldValue + 1) } });
   bad({ type: 'apiCredential', fields: { secret: 's'.repeat(LIMITS.fieldValue + 1) } });
   assert.equal(validateItem({ type: 'sshKey', fields: { privateKey: 'k'.repeat(LIMITS.multilineValue) } }).fields.privateKey.length, LIMITS.multilineValue);
@@ -474,7 +462,6 @@ test('validateItem: extra on any type, with count and length limits', () => {
 });
 
 test('validateItem: login-only keys on other types: empty legacy values dropped, others refused unless unchanged', () => {
-  // Legacy notes were stored with url/username/password = '' and totp = null; the popup sends them back.
   assert.deepEqual(validateItem({ type: 'note', title: 'Memo', url: '', username: '', password: '', totp: null, passkeys: [] }),
     { type: 'note', title: 'Memo' });
   assert.deepEqual(validateItem({ type: 'card', url: '  ', fields: { cvv: '1' } }), { type: 'card', fields: { cvv: '1' } });
@@ -483,7 +470,6 @@ test('validateItem: login-only keys on other types: empty legacy values dropped,
     { type: 'note', totp: { secret: 'JBSWY3DPEHPK3PXP' } }, { type: 'note', url: 'javascript:alert(1)' },
   ]) bad(item);
 
-  // A stored legacy note with a non-empty value keeps it (never lost) but cannot change it.
   const legacy = { ...makeItem({ title: 'Old', url: 'https://router.example', username: 'admin', password: 'pw' }, 1), type: 'note' };
   assert.deepEqual(validateItem({ ...legacy, fav: true }, legacy), {
     id: legacy.id, type: 'note', vault: 'personal', title: 'Old', url: 'https://router.example', username: 'admin', password: 'pw',
@@ -492,7 +478,6 @@ test('validateItem: login-only keys on other types: empty legacy values dropped,
   bad({ id: legacy.id, password: 'changed' }, legacy);
   bad({ id: legacy.id, username: 'someone' }, makeItem({ type: 'note' }, 1));
 
-  // The stored type is used when the payload has none, and can never change.
   const card = makeItem({ type: 'card', fields: { number: '4111111111111111' } }, 1);
   assert.deepEqual(validateItem({ id: card.id, fields: { cvv: '999' } }, card), { id: card.id, fields: { cvv: '999' } });
   bad({ id: card.id, fields: { cvv: '999' } }, null, 'without the stored item, fields default to a login');
@@ -526,7 +511,6 @@ test('backup export/import keeps fields and extra; legacy note keys; invalid typ
   const extra = [{ label: 'メモ欄', value: 'v', secret: false }, { label: '暗証', value: '0000', secret: true }];
   for (const type of TYPE_IDS.filter(hasTemplate)) data.items.push(makeItem({ type, title: type, fields: sampleFields(type), extra, vault: 'work' }, 1000));
   data.items.push(makeItem({ title: 'Login', url: 'https://a.example', username: 'u', password: 'p', extra }, 1000));
-  // Legacy notes: stored with every login key, empty or (theoretically) filled.
   const legacyEmpty = { ...makeItem({ title: 'legacy' }, 1000), type: 'note', note: 'body' };
   const legacyFilled = { ...makeItem({ title: 'legacy filled', url: 'https://router.example', username: 'admin', password: 'pw' }, 1000), type: 'note' };
   data.items.push(legacyEmpty, legacyFilled);
@@ -548,7 +532,6 @@ test('backup export/import keeps fields and extra; legacy note keys; invalid typ
   assert.ok(!('passkeys' in byTitle.get('legacy filled')));
   for (const t of ['bad date', 'unknown key', 'fields on note']) assert.ok(!byTitle.has(t), t);
 
-  // mergeData: same id but a different type is skipped; typed items replace by updatedAt.
   const current = structuredClone(imported);
   const card = current.items.find((i) => i.type === 'card');
   const incoming = {
@@ -577,40 +560,34 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   const gh = { type: 'login', title: 'GH', url: 'https://github.com', username: 'hina', password: 'pw' };
   const res = await addImportedItems(data, [
     ...all,
-    ...structuredClone(all), // a true duplicate: the identical record imported twice → 1
-    // True duplicates of the existing card: separators and case of the number, and the title's case/spaces, do not matter.
+    ...structuredClone(all),
     { ...visa, title: ' visa ', fields: { ...visa.fields, number: '4111 1111 1111 1111' } },
     { ...visa, fields: { ...visa.fields, number: '4111-1111-1111-1111' } },
-    // Different records that share identifying values are all kept:
-    { ...visa, fields: { ...visa.fields, expiry: '2031-04', cvv: '987' } }, // a renewed card (same number, new expiry/CVV)
+    { ...visa, fields: { ...visa.fields, expiry: '2031-04', cvv: '987' } },
     { type: 'apiCredential', title: 'OpenAI', fields: { host: 'api.openai.com', secret: 'sk-one' } },
-    { type: 'apiCredential', title: 'OpenAI', fields: { host: 'api.openai.com', secret: 'sk-two' } }, // same host, other secret
+    { type: 'apiCredential', title: 'OpenAI', fields: { host: 'api.openai.com', secret: 'sk-two' } },
     { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'pw-a' } },
-    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'pw-b' } }, // same network name, other password
-    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'PW-A' } }, // secrets compare exactly, case included
-    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'a', secret: false }] }, // untitled CSV rows,
-    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'b', secret: false }] }, // different custom fields
+    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'pw-b' } },
+    { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'PW-A' } },
+    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'a', secret: false }] },
+    { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'b', secret: false }] },
     { type: 'note', title: 'メモ', extra: [{ label: '項目', value: 'b', secret: true }] },
     { type: 'identity', title: 'Me', fields: { lastName: 'Sato' }, note: 'n' },
-    { type: 'identity', title: 'Me', fields: { lastName: 'Sato' }, note: 'other' }, // other note
+    { type: 'identity', title: 'Me', fields: { lastName: 'Sato' }, note: 'other' },
     { type: 'passport', title: 'Passport', fields: { number: 'TK1234567' } },
-    { type: 'passport', title: 'Passport', fields: { number: 'tk 123 4567' } }, // dup: number without separators / case
-    { type: 'passport', title: 'Passport', fields: { number: 'TR1234567' } }, // letters count
-    // Logins: host + username + password, plus note, TOTP secret and extra.
+    { type: 'passport', title: 'Passport', fields: { number: 'tk 123 4567' } },
+    { type: 'passport', title: 'Passport', fields: { number: 'TR1234567' } },
     gh,
     { ...gh, note: 'second account' },
     { ...gh, totp: { secret: 'JBSWY3DPEHPK3PXP' } },
     { ...gh, extra: [{ label: 'PIN', value: '1', secret: true }] },
-    { ...gh, title: 'Other title', url: 'https://GITHUB.com/login' }, // dup: same host, title not compared
-    // Salvage: values that fail their kind's check move to extra; a select label maps to its id.
+    { ...gh, title: 'Other title', url: 'https://GITHUB.com/login' },
     { type: 'identity', title: 'Salvaged', fields: { lastName: 'Sato', birthDate: '1990/01/02', bogus: 'kept', port: 5 } },
     { type: 'wifi', title: 'Office', fields: { ssid: 'Office', security: 'WPA2' } },
-    { type: 'note', title: 'note fields', fields: { x: 1 } }, // a note has no template: all into extra
-    // Invalid: login-only keys on other types, bad extra, unknown type.
+    { type: 'note', title: 'note fields', fields: { x: 1 } },
     { type: 'card', title: 'with url', url: 'https://bank.example', fields: { number: '5555555555554444' } },
     { type: 'card', title: 'bad extra', extra: 'nope' },
     { type: 'bogus', title: 'x' },
-    // Passkeys on a non-login are ignored.
     { type: 'server', title: 'srv', fields: { host: 'h' }, passkeys: [(await importedPasskey()).pk] },
   ], 'personal', now);
   const n = all.length;
@@ -647,8 +624,6 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   assert.ok(!added.some((i) => ['with url', 'bad extra'].includes(i.title)));
 });
 
-// ---- password history and the pending new password ---------------------------------
-
 test('setLoginPassword keeps what it replaces: newest first, no duplicates, capped; a pending one settles', () => {
   const it = makeItem({ type: 'login', title: 'x', password: 'p0' }, 1);
   assert.equal(setLoginPassword(it, 'p0', 2), false, 'same password: nothing to do');
@@ -657,19 +632,16 @@ test('setLoginPassword keeps what it replaces: newest first, no duplicates, capp
   setLoginPassword(it, 'p2', 20);
   assert.deepEqual(it.passwordHistory, [{ password: 'p1', changedAt: 20 }, { password: 'p0', changedAt: 10 }]);
   assert.equal(it.passwordUpdatedAt, 20);
-  // Taking an old one back moves it out of the history and the current one in.
   setLoginPassword(it, 'p0', 30);
   assert.equal(it.password, 'p0');
   assert.deepEqual(it.passwordHistory.map((h) => h.password), ['p2', 'p1']);
   for (let i = 3; i < 20; i++) setLoginPassword(it, 'p' + i, 30 + i);
   assert.equal(it.passwordHistory.length, PASSWORD_HISTORY_MAX);
   assert.equal(it.passwordHistory[0].password, 'p18');
-  // A held password that becomes current is no longer pending.
   setPendingPassword(it, 'next', 99);
   assert.deepEqual(it.pendingPassword, { password: 'next', createdAt: 99 });
   setLoginPassword(it, 'next', 100);
   assert.equal(it.pendingPassword, undefined);
-  // An empty start keeps no empty entry.
   const fresh = makeItem({ type: 'login', title: 'y' }, 1);
   setLoginPassword(fresh, 'first', 5);
   assert.equal(fresh.passwordHistory, undefined);
@@ -682,7 +654,7 @@ test('setPendingPassword checks the value and clears with null', () => {
   assert.throws(() => setPendingPassword(it, 'cur', 2), { code: 'INVALID' }, 'already current');
   assert.throws(() => setPendingPassword(it, 42, 2), { code: 'INVALID' });
   setPendingPassword(it, 'a', 2);
-  setPendingPassword(it, 'b', 3); // replaces
+  setPendingPassword(it, 'b', 3);
   assert.deepEqual(it.pendingPassword, { password: 'b', createdAt: 3 });
   setPendingPassword(it, null, 4);
   assert.equal('pendingPassword' in it, false);
@@ -711,7 +683,6 @@ test('backups keep the history and the pending password, cleaned; a merge loses 
   assert.deepEqual(l.pendingPassword, { password: 'next', createdAt: 95 });
   assert.equal('passwordHistory' in data.items.find((i) => i.id === 'N1'), false, 'notes carry no history');
 
-  // The backup's copy is newer: its password wins, and both histories plus the replaced password stay.
   const current = { vaults: data.vaults, items: [item({ password: 'mine', updatedAt: 50, passwordHistory: [{ password: 'older', changedAt: 40 }] })] };
   const incoming = { vaults: data.vaults, items: [item({ password: 'cur', updatedAt: 200, passwordUpdatedAt: 150, passwordHistory: [{ password: 'old1', changedAt: 90 }] })] };
   const { data: merged } = mergeData(current, incoming);

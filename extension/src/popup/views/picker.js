@@ -1,7 +1,3 @@
-// Right pane in selection mode (S.picking): what is checked, select all / none, and deleting
-// the checked items after a confirmation. popup.js owns the mode; this file only draws it and
-// reports the user's choice through the event bus ('pickAll', 'pickNone', 'pickExit', 'pickDelete').
-
 import { t } from '../../shared/i18n.js';
 import { S, emit, visibleItems } from '../state.js';
 import { h, clear, icon } from './dom.js';
@@ -9,12 +5,11 @@ import { rise } from './fx.js';
 import { typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { tileEl } from './list.js';
 
-const SHOWN = 6; // names listed in the pane; the rest are counted
+const SHOWN = 6;
 
 let confirming = false;
 let busy = false;
 
-/** Leave the "really delete?" step (selection changed, Esc, やめる). */
 export function resetPicker() {
   confirming = false;
   busy = false;
@@ -22,7 +17,6 @@ export function resetPicker() {
 
 export const pickerConfirming = () => confirming;
 
-/** Ask before deleting (the Delete key, or the button). */
 export function askDelete() {
   if (!S.picked.size || busy) return;
   confirming = true;
@@ -34,7 +28,6 @@ export function setPickerBusy(on) {
   renderPicker();
 }
 
-/** Checked items in list order (the list keeps S.picked to visible rows). */
 const pickedItems = (vis) => vis.filter((it) => S.picked.has(it.id));
 
 function line(it) {

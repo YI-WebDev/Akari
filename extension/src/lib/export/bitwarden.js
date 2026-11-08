@@ -1,27 +1,7 @@
-// Unencrypted Bitwarden JSON export (PLAN.md §7.3): vaults become folders; logins
-// carry TOTP and passkeys (fido2Credentials, Bitwarden's export shape).
-//
-// Item types (shared/item-types.js) → Bitwarden cipher types:
-//   login → 1 login · note → 2 secureNote
-//   card → 3 card { cardholderName, brand, number (digits only), expMonth ("1"–"12"), expYear, code }
-//   identity → 4 identity (name/address/company/email/phone keys; title, address3, ssn, username,
-//     passportNumber, licenseNumber null)
-//   sshKey → 5 sshKey { privateKey, publicKey, keyFingerprint }
-//   every other type → 2 secureNote whose custom fields are the template values.
-// `notes` is always the item's own note (or null).
-// Every item that is neither login nor note — native card/identity/sshKey included — gets a
-// first custom field { name: 'akari:type', value: '<typeId>', type: 0 } so an import back into
-// Akari restores its type. Then: template values with no native Bitwarden key (card PIN, identity
-// birthDate/jobTitle/website, SSH passphrase/host/username, every value of a secure-note fallback),
-// any legacy login keys of a non-login item, then `extra`. Custom fields: name = display label
-// (fieldLabel), type 1 hidden for secret kinds and secret extras, else 0 text; select values are
-// written as their option label.
-
 import { fromB64url } from '../../shared/bytes.js';
 import { cardBrand } from '../../shared/item-types.js';
 import { totpUri, templateEntries } from './csv.js';
 
-/** Custom field naming the Akari type of a non-login, non-note item (read back by the Bitwarden importer). */
 export const TYPE_FIELD = 'akari:type';
 
 const TYPE_LOGIN = 1;
@@ -31,21 +11,20 @@ const TYPE_IDENTITY = 4;
 const TYPE_SSH_KEY = 5;
 const FIELD_TEXT = 0;
 const FIELD_HIDDEN = 1;
+const GUID_CREDENTIAL_ID_BYTES = 16;
+const UNTITLED_NAME = '--';
 
-// Template keys of 'identity' that Bitwarden's identity has a key of the same name for.
 const IDENTITY_KEYS = ['firstName', 'middleName', 'lastName', 'address1', 'address2', 'city', 'state', 'postalCode',
   'country', 'company', 'email', 'phone'];
-// Bitwarden spells this brand differently in its card brand list.
 const BITWARDEN_BRAND = { 'American Express': 'Amex' };
 
 const iso = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 const orNull = (s) => (s ? s : null);
 const customField = (name, value, hidden) => ({ name, value, type: hidden ? FIELD_HIDDEN : FIELD_TEXT, linkedId: null });
 
-/** Bitwarden keeps 16-byte credential ids as GUIDs and any other length as "b64." + base64url. */
 export function bitwardenCredentialId(b64url) {
   const b = fromB64url(b64url);
-  if (b.length !== 16) return 'b64.' + b64url;
+  if (b.length !== GUID_CREDENTIAL_ID_BYTES) return 'b64.' + b64url;
   const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
@@ -56,11 +35,11 @@ function fido2Credential(pk) {
     keyType: 'public-key',
     keyAlgorithm: 'ECDSA',
     keyCurve: 'P-256',
-    keyValue: pk.privateKey, // PKCS8, base64url
+    keyValue: pk.privateKey,
     rpId: pk.rpId,
     userHandle: pk.userHandle,
     userName: orNull(pk.userName),
-    counter: '0', // Akari signs with a constant 0 counter, as synced passkeys do
+    counter: '0',
     rpName: pk.rpId,
     userDisplayName: orNull(pk.userDisplayName),
     discoverable: 'true',
@@ -68,10 +47,6 @@ function fido2Credential(pk) {
   };
 }
 
-/**
- * Native Bitwarden part of a typed item: { type, key, value, used } where `used` lists the
- * template keys written natively (the rest become custom fields).
- */
 function nativePart(it) {
   const x = it.fields || {};
   switch (it.type) {
@@ -110,11 +85,6 @@ function nativePart(it) {
   }
 }
 
-/**
- * @param {{ vaults: { id: string, name: string }[], items: object[] }} data  decrypted VaultData
- *   (passkey private keys included — they are written as fido2Credentials[].keyValue)
- * @returns {string} pretty-printed JSON
- */
 export function toBitwardenJson(data) {
   const folders = data.vaults.map((v) => ({ id: v.id, name: v.name }));
   const folderIds = new Set(folders.map((f) => f.id));
@@ -123,7 +93,6 @@ export function toBitwardenJson(data) {
     const native = login ? null : nativePart(it);
     const history = login && Array.isArray(it.passwordHistory) ? it.passwordHistory : [];
     const out = {
-      // Bitwarden's own shape: the password and when it stopped being used.
       passwordHistory: history.length ? history.map((h) => ({ lastUsedDate: iso(h.changedAt), password: h.password })) : null,
       revisionDate: iso(it.updatedAt),
       creationDate: iso(it.createdAt),
@@ -133,7 +102,7 @@ export function toBitwardenJson(data) {
       folderId: folderIds.has(it.vault) ? it.vault : null,
       type: login ? TYPE_LOGIN : native.type,
       reprompt: 0,
-      name: it.title || '--',
+      name: it.title || UNTITLED_NAME,
       notes: orNull(it.note),
       favorite: !!it.fav,
       collectionIds: null,
@@ -153,8 +122,8 @@ export function toBitwardenJson(data) {
       for (const e of templateEntries(it)) {
         if (!native.used.includes(e.key)) fields.push(customField(e.label, e.value, e.secret));
       }
-      // Legacy notes may still carry login fields; keep them so nothing is lost.
-      for (const [name, value, hidden] of [['url', it.url, false], ['username', it.username, false], ['password', it.password, true]]) {
+      const legacyLoginFields = [['url', it.url, false], ['username', it.username, false], ['password', it.password, true]];
+      for (const [name, value, hidden] of legacyLoginFields) {
         if (value) fields.push(customField(name, value, hidden));
       }
     }

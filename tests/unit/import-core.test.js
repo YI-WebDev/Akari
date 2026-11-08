@@ -39,14 +39,12 @@ test('readZip: deflate and stored entries, findEntry by basename', async () => {
 
 test('readZip refuses a bomb without inflating it (security review #1)', async () => {
   const { deflateRawSync } = await import('node:zlib');
-  const huge = deflateRawSync(Buffer.alloc(80 * 2 ** 20)); // 80 MiB of zeros → ~80 KB
-  // Lying header (declares 1 byte): inflation stops as soon as output passes it.
+  const eightyMiBOfZerosDeflated = deflateRawSync(Buffer.alloc(80 * 2 ** 20));
   const t0 = Date.now();
-  await assert.rejects(readZip(buildRaw('a.json', huge, 1))[0].bytes(), (e) => e.code === 'INVALID_FORMAT');
+  await assert.rejects(readZip(buildRaw('a.json', eightyMiBOfZerosDeflated, 1))[0].bytes(), (e) => e.code === 'INVALID_FORMAT', 'a header declaring 1 byte lies: inflation stops once the output passes it');
   assert.ok(Date.now() - t0 < 2000, 'must stop as soon as the output passes the declared size');
-  // Honest header over the per-entry cap: refused before inflating.
-  const declaredHuge = buildRaw('b.json', huge, 80 * 2 ** 20);
-  await assert.rejects(readZip(declaredHuge)[0].bytes(), (e) => e.code === 'UNSUPPORTED');
+  const honestHeaderOverEntryCap = buildRaw('b.json', eightyMiBOfZerosDeflated, 80 * 2 ** 20);
+  await assert.rejects(readZip(honestHeaderOverEntryCap)[0].bytes(), (e) => e.code === 'UNSUPPORTED', 'refused before inflating');
 });
 
 test('CSV caps rows and columns (security review #3)', () => {
@@ -57,7 +55,6 @@ test('CSV caps rows and columns (security review #3)', () => {
   assert.ok(Date.now() - t0 < 2000);
 });
 
-/** One deflated entry whose central/local headers declare `usize` bytes. */
 function buildRaw(name, body, usize) {
   const nameB = Buffer.from(name);
   const local = Buffer.alloc(30);

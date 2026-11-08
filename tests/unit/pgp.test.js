@@ -9,9 +9,6 @@ const te = new TextEncoder();
 const td = new TextDecoder();
 const armorBytes = (s) => te.encode(s);
 
-// Made with GnuPG 2.4.7: `gpg --symmetric [--cipher-algo AES256 --armor | --force-ocb --armor]`,
-// passphrase "gnupg-pass", plaintext GPG_PLAIN. SKESK v4 without session-key packet,
-// ZIP-compressed literal data, old-format packet headers.
 const GPG_PASS = 'gnupg-pass';
 const GPG_PLAIN = 'from,gnupg\r\nテスト,1\r\n';
 const GPG_ARMORED = `-----BEGIN PGP MESSAGE-----
@@ -23,7 +20,6 @@ RsTfV27obrj9
 -----END PGP MESSAGE-----
 `;
 const GPG_BINARY_B64 = 'jA0ECQMIfb/DXbUz5mzw0lgBs+drvgAJeCa0CfhnHraXjYPsYYPGnqXDMjbUuTUvhnyInACKvhpMuNR5l3aTttw/lj3a82C4RSatbHVY+7HvUbry9hz+2Xo/gZRVupdmFmAl/QozwgCh';
-// GnuPG's LibrePGP AEAD (OCB, SKESK v5 + AEAD packet).
 const GPG_OCB = `-----BEGIN PGP MESSAGE-----
 
 jE0FCQIDCA/NYHDxoJa38C02LJ61jGG+7HRtUKYPqIE2Aje+vDWFXzGO7ks79cI4
@@ -85,7 +81,6 @@ test('binary and armored input', async () => {
   assert.ok(binary instanceof Uint8Array && binary.length > 20);
   assert.ok(isPgp(binary));
   assert.equal(td.decode(await decryptPgp(binary, 'pw')), 'both forms');
-  // Armor after leading whitespace / a BOM-less preamble line still counts as armored.
   assert.equal(td.decode(await decryptPgp(armorBytes('\r\n' + armored.replace(/\n/g, '\r\n')), 'pw')), 'both forms');
 });
 
@@ -109,7 +104,6 @@ test('decrypts OpenPGP.js messages with GnuPG-compatible settings and with AEAD 
     const msg = await openpgp.readMessage({ armoredMessage: armored });
     const seipd = msg.packets.find((p) => p instanceof openpgp.SymEncryptedIntegrityProtectedDataPacket);
     assert.equal(seipd.version, config.aeadProtect ? 2 : 1);
-    // Text-mode literal data comes back in its canonical CRLF form.
     assert.equal(td.decode(await decryptPgp(armorBytes(armored), 'pp-1')), 'proton,pass\r\n', JSON.stringify(config));
     await assert.rejects(decryptPgp(armorBytes(armored), 'pp-2'), { code: 'BAD_PASSWORD' });
   }
@@ -124,7 +118,6 @@ test('public-key encrypted → UNSUPPORTED; garbage → INVALID_FORMAT; signed-o
   const pkBinary = (await openpgp.unarmor(pk)).data;
   await rejectsWith(decryptPgp(pkBinary, 'anything'), 'UNSUPPORTED');
 
-  // Both a key and a passphrase (gpg -c -e): the passphrase path works.
   const both = await openpgp.encrypt({ message: await openpgp.createMessage({ text: 'y' }), encryptionKeys: publicKey, passwords: ['pw'] });
   assert.equal(td.decode(await decryptPgp(armorBytes(both), 'pw')), 'y');
 
@@ -157,8 +150,6 @@ test('Argon2 S2K: decrypts where WebAssembly runs; UNSUPPORTED (not BAD_PASSWORD
   }
 });
 
-// ---- limits on cost parameters taken from the file ---------------------------------
-
 const ARGON2 = (params) => ({ s2kType: openpgp.enums.s2k.argon2, s2kArgon2Params: params });
 
 test('more than 4 passphrase packets (SKESK) → UNSUPPORTED before any S2K runs', async () => {
@@ -170,32 +161,28 @@ test('more than 4 passphrase packets (SKESK) → UNSUPPORTED before any S2K runs
 });
 
 test('Argon2 parameters above passes 10 / parallelism 16 / memory 2^20 KiB → UNSUPPORTED; Proton defaults decrypt', async () => {
-  // OpenPGP.js / Proton Pass defaults: t=3, p=4, m=2^16 KiB (64 MiB).
   const proton = await openpgp.encrypt({
     message: await openpgp.createMessage({ binary: te.encode('proton') }), passwords: ['pw'],
     config: ARGON2({ passes: 3, parallelism: 4, memoryExponent: 16 }),
   });
   assert.equal(td.decode(await decryptPgp(armorBytes(proton), 'pw')), 'proton');
 
-  // Raise parameters in the packet without running them (encrypting at m=2^21 would need 2 GiB).
   const small = await openpgp.encrypt({
     message: await openpgp.createMessage({ text: 'x' }), passwords: ['pw'], format: 'binary',
     config: ARGON2({ passes: 1, parallelism: 1, memoryExponent: 10 }),
   });
-  // SKESK v4: header(2) version algo s2k-type=4 salt(16) t p encodedM …
-  assert.deepEqual([small[0], small[2], small[4], small[21], small[22], small[23]], [0xc3, 4, 4, 1, 1, 10]);
+  const skeskFields = { tag: small[0], version: small[2], s2kType: small[4], passes: small[21], parallelism: small[22], encodedMemory: small[23] };
+  assert.deepEqual(skeskFields, { tag: 0xc3, version: 4, s2kType: 4, passes: 1, parallelism: 1, encodedMemory: 10 });
   const tweak = ({ t = 1, p = 1, encodedM = 10 }) => {
     const b = small.slice();
     b.set([t, p, encodedM], 21);
     return b;
   };
-  // (RFC 9580 needs memory >= 2^(3 + ceil(log2 p)) KiB, hence encodedM 11 with p = 255.)
   for (const params of [{ t: 11 }, { t: 255 }, { p: 17 }, { p: 255, encodedM: 11 }, { encodedM: 21 }, { encodedM: 30 }]) {
     const t0 = Date.now();
     await rejectsWith(decryptPgp(tweak(params), 'pw'), 'UNSUPPORTED');
     assert.ok(Date.now() - t0 < 1000, JSON.stringify(params) + ' refused before running Argon2');
   }
-  // At the limits the packet is accepted (the changed parameters just don't open it).
   await assert.rejects(decryptPgp(tweak({ t: 10, p: 16 }), 'pw'), { code: 'BAD_PASSWORD' });
 });
 

@@ -1,5 +1,3 @@
-// Byte helpers shared by the service worker, extension pages and Node tests.
-
 const te = new TextEncoder();
 const td = new TextDecoder();
 
@@ -39,7 +37,6 @@ export function randomBytes(n) {
   return crypto.getRandomValues(new Uint8Array(n));
 }
 
-/** Uniform random integer in [0, n) using rejection sampling (no modulo bias). */
 export function randomInt(n) {
   if (!Number.isInteger(n) || n <= 0 || n > 2 ** 32) throw new RangeError('randomInt: bad bound ' + n);
   const limit = 2 ** 32 - (2 ** 32 % n);

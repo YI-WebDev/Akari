@@ -1,8 +1,3 @@
-// Regenerate extension/src/shared/psl-data.js from the Public Suffix List.
-//   curl -sSfL https://publicsuffix.org/list/public_suffix_list.dat -o psl.dat
-//   node scripts/build-psl.mjs psl.dat
-// Rules are converted to punycode because URL().hostname is always ASCII.
-
 import { readFile, writeFile } from 'node:fs/promises';
 import { domainToASCII } from 'node:url';
 import path from 'node:path';

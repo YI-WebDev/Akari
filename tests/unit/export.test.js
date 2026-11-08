@@ -113,7 +113,6 @@ test('toBitwardenJson: passkeys → fido2Credentials (Bitwarden shape, PKCS8 key
     discoverable: 'true',
     creationDate: new Date(T0).toISOString(),
   });
-  // The key is a usable PKCS8 P-256 key; importing derives the same COSE public key.
   const back = await passkeyFromImport({ ...passkey, privateKey: fido.keyValue, publicKey: undefined }, T1);
   assert.equal(back.publicKey, toB64url(cred.cosePublicKey));
 });
@@ -170,8 +169,6 @@ test('toCsv: formula-looking name/url/note/vault cells get a leading quote; cred
   for (const s of ['', 'x', ' =x', "'=x", ',', '0', 'https://a']) assert.equal(noFormula(s), s);
   assert.equal(noFormula(null), '');
 });
-
-// ---- item types (shared/item-types.js) ---------------------------------------
 
 function typedData() {
   const data = defaultData(T1);
@@ -246,7 +243,6 @@ test('toBitwardenJson: other types → secure note with template custom fields; 
   assert.deepEqual(wifi.secureNote, { type: 0 });
   assert.equal(wifi.notes, null, 'notes is only ever the item note, never the type name');
   assert.ok(items.every((it, i) => it.notes === (data.items[i].note || null)), 'no item gets text written into notes');
-  // The type marker is on every item that is neither login nor note, native Bitwarden types included.
   assert.deepEqual(items.map((it) => it.fields?.find((x) => x.name === 'akari:type')?.value ?? null),
     data.items.map((it) => (it.type === 'login' || it.type === 'note' ? null : it.type)));
   assert.deepEqual(wifi.fields, [cf('akari:type', 'wifi', 0), cf('ネットワーク名', 'Home-5G', 0), cf('パスワード', 'wifi pw', 1), cf('セキュリティ', 'WPA2', 0)],
@@ -258,7 +254,6 @@ test('toBitwardenJson: other types → secure note with template custom fields; 
   ]);
   assert.equal(login.type, 1);
   assert.deepEqual(login.fields, [cf('暗証', '0000', 1), cf('担当', '山田', 0)], 'no type marker on logins');
-  // No item of any type leaks Akari's internal keys.
   for (const it of items) for (const k of ['extra', 'vault', 'hue']) assert.ok(!(k in it), k);
 });
 
@@ -279,7 +274,6 @@ test('toCsv: other types keep the columns; template and custom fields become "la
   const login = by.get('Login with extra');
   assert.deepEqual([login.url, login.username, login.password, login.note], ['https://a.example', 'u', 'p', '暗証: 0000\n担当: 山田']);
 
-  // Formula escaping still applies to the combined note cell.
   const evil = defaultData(T1);
   evil.items.push(makeItem({ type: 'wifi', title: 'x', fields: { ssid: '=cmd' } }, T1));
   evil.items.push(makeItem({ type: 'apiCredential', title: '@x', fields: { keyId: 'k' }, extra: [{ label: '+l', value: 'v', secret: false }] }, T1));

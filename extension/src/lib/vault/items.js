@@ -1,20 +1,17 @@
-// Items: defaults per type, validation of what the popup may change, the legacy-key cleanup and
-// the copy that may leave the service worker. Pure: no chrome.* access.
-
 import { randomInt } from '../../shared/bytes.js';
 import { TYPE_IDS, typeOf, hasTemplate, isSecretKind, LIMITS } from '../../shared/item-types.js';
 import { invalid, isObject, isHue } from './common.js';
 
 export const FIELD_CAPS = Object.freeze({ title: 200, url: 2048, username: 512, password: 1024, note: 10000 });
-// Keys only a 'login' carries (passkeys and passwordUpdatedAt are never editable anyway).
 const LOGIN_ONLY = Object.freeze(['url', 'username', 'password', 'totp']);
 const TOTP_ALGORITHMS = ['SHA1', 'SHA256', 'SHA512'];
+const TOTP_MAX_PERIOD = 300;
+const TOTP_MAX_TEXT_LENGTH = 200;
+const CARD_NUMBER_MIN_DIGITS = 8;
+const CARD_NUMBER_MAX_DIGITS = 19;
+const MAX_ID_LENGTH = 100;
+const MAX_VAULT_ID_LENGTH = 64;
 
-/**
- * Fills id, timestamps, hue and the other PLAN §2 defaults for the item's type (item-types.js):
- * every type gets `extra: []`; logins add url/username/password/totp/passkeys/passwordUpdatedAt;
- * templated types add `fields: {}`. Given keys are kept as-is (callers validate first).
- */
 export function makeItem(partial = {}, nowMs = Date.now()) {
   const given = Object.fromEntries(Object.entries(partial || {}).filter(([, v]) => v !== undefined));
   const type = given.type ?? 'login';
@@ -45,7 +42,6 @@ export function makeItem(partial = {}, nowMs = Date.now()) {
   return item;
 }
 
-/** "github.com/login" → "https://github.com/login". Only http(s) URLs are accepted. */
 export function normalizeUrl(url) {
   const s = url.trim();
   if (!s) return '';
@@ -72,9 +68,9 @@ function normalizeTotp(t) {
   const label = t.label ?? '';
   if (!TOTP_ALGORITHMS.includes(algorithm)) throw invalid('Invalid totp algorithm');
   if (digits !== 6 && digits !== 8) throw invalid('Invalid totp digits');
-  if (!Number.isInteger(period) || period < 1 || period > 300) throw invalid('Invalid totp period');
-  if (typeof issuer !== 'string' || issuer.length > 200) throw invalid('Invalid totp issuer');
-  if (typeof label !== 'string' || label.length > 200) throw invalid('Invalid totp label');
+  if (!Number.isInteger(period) || period < 1 || period > TOTP_MAX_PERIOD) throw invalid('Invalid totp period');
+  if (typeof issuer !== 'string' || issuer.length > TOTP_MAX_TEXT_LENGTH) throw invalid('Invalid totp issuer');
+  if (typeof label !== 'string' || label.length > TOTP_MAX_TEXT_LENGTH) throw invalid('Invalid totp label');
   return { secret, algorithm, digits, period, issuer, label };
 }
 
@@ -86,15 +82,10 @@ const isMultilineKind = (kind) => kind === 'multiline' || kind === 'secret-multi
 
 function isCalendarDate(y, m, d) {
   if (y < 1 || m < 1 || m > 12 || d < 1) return false;
-  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  return d <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  const isLeapYear = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  return d <= [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
 }
 
-/**
- * One template value, normalized by its field's kind; '' when blank. Throws INVALID.
- * Single-line non-secret values are trimmed, secrets keep their spaces, multiline values get LF
- * line ends. A card number keeps its grouping ("-" becomes " ") but must hold 8–19 digits.
- */
 export function normalizeFieldValue(fd, value) {
   if (typeof value !== 'string') throw invalid('Invalid ' + fd.key);
   const multiline = isMultilineKind(fd.kind);
@@ -105,7 +96,7 @@ export function normalizeFieldValue(fd, value) {
   if (fd.format === 'card') {
     v = v.trim().replace(/-/g, ' ');
     const digits = v.replace(/ /g, '');
-    if (!/^\d+$/.test(digits) || digits.length < 8 || digits.length > 19) throw bad();
+    if (!/^\d+$/.test(digits) || digits.length < CARD_NUMBER_MIN_DIGITS || digits.length > CARD_NUMBER_MAX_DIGITS) throw bad();
   }
   switch (fd.kind) {
     case 'date': {
@@ -128,18 +119,17 @@ export function normalizeFieldValue(fd, value) {
       if (!TEL_RE.test(v) || !/\p{Nd}/u.test(v)) throw bad();
       break;
     case 'url':
-      v = normalizeUrl(v); // same rules as a login URL: http(s) only
+      v = normalizeUrl(v);
       break;
-    case 'select': // stored as an option id (language-neutral), never its label
+    case 'select':
       if (!fd.options.some((o) => o.id === v)) throw bad();
       break;
-    default: // text, secret, multiline, secret-multiline: any string
+    default:
   }
   if (v.length > (multiline ? LIMITS.multilineValue : LIMITS.fieldValue)) throw invalid(fd.key + ' is too long');
   return v;
 }
 
-/** `fields` of a templated type → only non-blank, normalized template values. Unknown keys → INVALID. */
 function normalizeFields(type, fields) {
   if (!isObject(fields)) throw invalid('Invalid fields');
   const template = typeOf(type).fields;
@@ -153,7 +143,6 @@ function normalizeFields(type, fields) {
   return out;
 }
 
-/** Custom fields (any type): ≤ LIMITS.extraCount of { label, value, secret }; blank rows are dropped. */
 function normalizeExtra(list) {
   if (!Array.isArray(list) || list.length > LIMITS.extraCount) throw invalid('Invalid extra');
   const out = [];
@@ -169,27 +158,12 @@ function normalizeExtra(list) {
   return out;
 }
 
-/**
- * Validates the user-editable fields that are present on `item` and returns a
- * normalized copy containing only those fields (plus id). Throws INVALID.
- * Non-editable fields (passkeys, timestamps) are never returned.
- *
- * `stored` is the item being updated (null for a new one): its type is used when `item`
- * has none, and the type can never change. Per type (shared/item-types.js):
- * - `fields` only on templated types; keys must be template keys, values strings checked
- *   per kind; `fields: {}` is accepted (and dropped) on login/note.
- * - `extra` on any type.
- * - Login-only keys (url, username, password, totp) on any other type: '' / null are
- *   accepted and dropped (legacy notes were stored with url/username/password = '');
- *   a non-empty value is INVALID unless it equals the stored item's value (a legacy
- *   value is kept, never lost, but cannot be set or changed).
- */
 export function validateItem(item, stored = null) {
   if (!isObject(item)) throw invalid('Item must be an object');
   const has = (k) => item[k] !== undefined;
   const out = {};
   if (item.id != null && item.id !== '') {
-    if (typeof item.id !== 'string' || item.id.length > 100) throw invalid('Invalid id');
+    if (typeof item.id !== 'string' || item.id.length > MAX_ID_LENGTH) throw invalid('Invalid id');
     out.id = item.id;
   }
   const storedType = stored ? stored.type ?? 'login' : null;
@@ -200,7 +174,7 @@ export function validateItem(item, stored = null) {
   }
   const type = out.type ?? storedType ?? 'login';
   if (has('vault')) {
-    if (typeof item.vault !== 'string' || !item.vault || item.vault.length > 64) throw invalid('Invalid vault');
+    if (typeof item.vault !== 'string' || !item.vault || item.vault.length > MAX_VAULT_ID_LENGTH) throw invalid('Invalid vault');
     out.vault = item.vault;
   }
   for (const key of Object.keys(FIELD_CAPS)) {
@@ -236,28 +210,23 @@ export function validateItem(item, stored = null) {
   return out;
 }
 
-/**
- * A non-login item drops the empty login keys a legacy note was stored with ('' / null / []).
- * Non-empty legacy values stay (validateItem never lets them change).
- */
 export function stripLegacyLoginKeys(item) {
   if ((item.type ?? 'login') === 'login') return item;
   for (const key of ['url', 'username', 'password']) if (item[key] === '') delete item[key];
   if (item.totp === null) delete item.totp;
   if (Array.isArray(item.passkeys) && !item.passkeys.length) delete item.passkeys;
   if (item.password === undefined) delete item.passwordUpdatedAt;
-  delete item.passwordHistory; // login-only
+  delete item.passwordHistory;
   delete item.pendingPassword;
   return item;
 }
 
-/** Deep copy with passkeys[].privateKey removed — the only form that may leave the SW. */
 export function sanitizeItem(item) {
   const copy = structuredClone(item);
   if (Array.isArray(copy.passkeys)) {
     copy.passkeys = copy.passkeys.map((pk) => {
       if (!isObject(pk)) return pk;
-      const { privateKey, ...rest } = pk; // eslint-disable-line no-unused-vars
+      const { privateKey, ...rest } = pk;
       return rest;
     });
   }

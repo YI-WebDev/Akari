@@ -1,7 +1,3 @@
-// Item editor in the 1a field-box language. Replaces the detail pane; the list stays visible.
-// Login and secure note have their own fields; every other type is built from its template
-// in shared/item-types.js. All types get 追加の項目 (extra fields), the vault chooser and ★.
-
 import { MSG } from '../../shared/messages.js';
 import {
   typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, personName, LIMITS,
@@ -25,15 +21,19 @@ const $ = (id) => document.getElementById(id);
 
 export const editorOpen = () => !!E;
 
-const TOTP_TEXT_MAX = 200; // the SW rejects longer issuer/label values
-// secret fields that get the password generator button
+const TOTP_TEXT_MAX = 200;
+const DEFAULT_TOTP_DIGITS = 6;
+const DEFAULT_TOTP_PERIOD = 30;
+const TITLE_MAX_LENGTH = 200;
+const CARD_DIGITS_MIN = 8;
+const CARD_DIGITS_MAX = 19;
+const EXTRA_VALUE_MAX_HEIGHT_PX = 120;
+const INITIAL_FOCUS_DELAY_MS = 80;
 const GEN_FIELDS = { wifi: 'password', database: 'password', server: 'password', cryptoWallet: 'password' };
 
-/** Parse a pasted base32 secret or otpauth:// URI into a TotpConfig. Throws on invalid input. */
 function parseTotpInput(text, { title, username }) {
   const s = String(text || '').trim();
-  // whole code points only, staying within the SW's UTF-16 length limit
-  const cap = (v) => {
+  const clampTotpText = (v) => {
     let out = '';
     for (const ch of String(v || '').trim()) {
       if (out.length + ch.length > TOTP_TEXT_MAX) break;
@@ -42,13 +42,13 @@ function parseTotpInput(text, { title, username }) {
     return out;
   };
   if (/^otpauth:/i.test(s)) {
-    const cfg = parseOtpauthUri(s); // throws with a Japanese message
+    const cfg = parseOtpauthUri(s);
     if (!cfg?.secret) throw new Error(t('URI に秘密鍵（secret）が含まれていません'));
-    return { ...cfg, issuer: cap(cfg.issuer), label: cap(cfg.label) };
+    return { ...cfg, issuer: clampTotpText(cfg.issuer), label: clampTotpText(cfg.label) };
   }
   const secret = normalizeSecret(s);
   if (!isValidSecret(secret)) throw new Error(t('秘密鍵の形式が正しくありません（Base32 の英字と 2〜7 の数字）'));
-  return { secret, algorithm: 'SHA1', digits: 6, period: 30, issuer: cap(title), label: cap(username) };
+  return { secret, algorithm: 'SHA1', digits: DEFAULT_TOTP_DIGITS, period: DEFAULT_TOTP_PERIOD, issuer: clampTotpText(title), label: clampTotpText(username) };
 }
 
 function setErr(key, msg) {
@@ -62,7 +62,6 @@ function markDirty() {
   if (E) E.dirty = true;
 }
 
-/** One "label | input" row of a field box. The error line sits right after the .field (see setErr). */
 function inputField(key, label, input, extra = [], below = [], { mono = key === 'password' || key === 'totp' } = {}) {
   const err = h('div', { class: 'field-err', role: 'alert' });
   E.errs[key] = err;
@@ -70,7 +69,6 @@ function inputField(key, label, input, extra = [], below = [], { mono = key === 
   return h('div', { class: 'ed-row' }, h('label', { for: input.id, title: label }, label), h('div', { class: 'ed-ctl' }, wrap, err, below));
 }
 
-/** Eye button that masks / unmasks `el` (an <input> by type, a <textarea> by the .masked class). */
 function revealButton(el, label, { onToggle } = {}) {
   const eye = h('button', { class: 'ibtn', type: 'button' });
   const set = (on) => {
@@ -89,7 +87,6 @@ function revealButton(el, label, { onToggle } = {}) {
   return { eye, show: () => { on = true; set(true); } };
 }
 
-/** The title a templated item gets when the title field is left empty (never from a secret, except a card's last 4). */
 function derivedTitle() {
   if (!E?.templated) return '';
   const v = (k) => String(E.fields.get(k)?.read() ?? '').trim();
@@ -116,10 +113,10 @@ function updateHead() {
   const typed = E.els.title.value.trim();
   const auto = derivedTitle();
   if (E.templated) E.els.title.placeholder = auto || t('editor.titleAuto', { type: typeLabel(E.type) }, '空欄なら「{type}」');
-  const tt = typed || E.original?.title || auto;
+  const shownTitle = typed || E.original?.title || auto;
   const tile = E.els.tile;
-  tile.textContent = letterOf(tt || (E.type === 'note' ? 'N' : '?'));
-  tile.style.setProperty('--h', String(Number.isFinite(E.original?.hue) ? E.original.hue : hueOf({ title: tt })));
+  tile.textContent = letterOf(shownTitle || (E.type === 'note' ? 'N' : '?'));
+  tile.style.setProperty('--h', String(Number.isFinite(E.original?.hue) ? E.original.hue : hueOf({ title: shownTitle })));
 }
 
 function updateMeter() {
@@ -148,7 +145,7 @@ function renderTotp() {
     const tv = totpView(E.totp);
     E.totpView = tv;
     const meta = [E.totp.issuer, E.totp.label].filter(Boolean).join(' · ')
-      || t('{digits} 桁 · {period} 秒', { digits: E.totp.digits || 6, period: E.totp.period || 30 });
+      || t('{digits} 桁 · {period} 秒', { digits: E.totp.digits || DEFAULT_TOTP_DIGITS, period: E.totp.period || DEFAULT_TOTP_PERIOD });
     tv.col.append(h('span', { class: 'ed-totp-meta', title: meta }, meta));
     const row = h('div', { class: 'ed-totp' },
       tv.col,
@@ -207,7 +204,7 @@ async function scanQr(btn) {
     } catch {
       throw new Error(t('このタブは読み取れませんでした'));
     }
-    if (E !== mine) return; // editor closed, replaced or locked meanwhile
+    if (E !== mine) return;
     if (!text) throw new Error(t('このタブに QR コードが見つかりませんでした'));
     if (!/^otpauth:\/\//i.test(text)) throw new Error(t('認証アプリ用の QR コードではありません'));
     let cfg;
@@ -226,8 +223,6 @@ async function scanQr(btn) {
   }
 }
 
-/* ───────── template fields ───────── */
-
 const FORMAT_ERR = {
   date: () => t('editor.err.date', null, '日付は YYYY-MM-DD の形式で入力してください'),
   month: () => t('editor.err.month', null, 'MM/YYYY（または MM/YY）の形式で入力してください'),
@@ -238,13 +233,11 @@ const FORMAT_ERR = {
   card: () => t('editor.err.card', null, 'カード番号は 8〜19 桁の数字で入力してください'),
 };
 const PLACEHOLDER = { date: 'YYYY-MM-DD', month: 'MM/YYYY', url: 'https://', email: 'name@example.com' };
-// the service worker's rule for kind 'tel' (lib/vault.js), checked here to point at the field
 const TEL_RE = /^\+?[\p{Nd}\s()\-./#*,;‐–—－ー（）＋]+(?:\s*(?:ext\.?|x|内線)\s*\p{Nd}+)?$/iu;
 
-/** Select kind → chips like the vault chooser (click the chosen one again to clear it). */
 function selectField(fd, raw) {
   const label = fieldLabel(E.type, fd.key);
-  let cur = fd.options.some((o) => o.id === raw) ? raw : ''; // stored values are option ids
+  let cur = fd.options.some((o) => o.id === raw) ? raw : '';
   let touched = false;
   const group = h('div', { class: 'vault-pick opt-pick', role: 'radiogroup', 'aria-label': label, id: 'edF-' + fd.key });
   const opts = fd.options.map((o) => ({ id: o.id, text: optionLabel(E.type, fd.key, o.id) }));
@@ -260,7 +253,6 @@ function selectField(fd, raw) {
   return { row, read: () => cur, validate: () => ({ value: touched ? cur : str(raw) }), focusEl: group };
 }
 
-/** One template field: the input that fits its kind, a reader and a validator (→ stored value). */
 function templateField(fd, raw) {
   if (fd.kind === 'select') return selectField(fd, raw);
   const key = fd.key;
@@ -287,7 +279,6 @@ function templateField(fd, raw) {
     });
   }
   input.value = shown;
-  // a field the user never typed in is saved exactly as stored (no reformatting, no re-validation)
   let touched = false;
   input.addEventListener('input', () => { touched = true; setErr(errKey, ''); });
 
@@ -323,7 +314,6 @@ function templateField(fd, raw) {
     extra.push(gen);
   }
 
-  // tidy typed dates / months / card numbers when leaving the field
   if (fd.kind === 'date' || fd.kind === 'month' || card) {
     input.addEventListener('blur', () => {
       if (!E || !touched) return;
@@ -342,9 +332,8 @@ function templateField(fd, raw) {
       const s = v.normalize('NFKC').trim();
       if (!s) return { value: '' };
       const d = digitsOnly(s);
-      return /^[\d\s-]+$/.test(s) && d.length >= 8 && d.length <= 19 ? { value: d } : { error: FORMAT_ERR.card() };
+      return /^[\d\s-]+$/.test(s) && d.length >= CARD_DIGITS_MIN && d.length <= CARD_DIGITS_MAX ? { value: d } : { error: FORMAT_ERR.card() };
     }
-    // secrets and multiline values keep their whitespace (an SSH key keeps its final newline)
     if (secret || multi) return { value: v.replace(/\r\n?/g, '\n') };
     const s = v.trim();
     if (!s) return { value: '' };
@@ -368,8 +357,6 @@ function templateField(fd, raw) {
 
 const str = (v) => (v == null ? '' : String(v));
 
-/* ───────── 追加の項目 (extra fields) ───────── */
-
 let extraSeq = 0;
 
 function extraRow(x = {}) {
@@ -389,11 +376,10 @@ function extraRow(x = {}) {
   labelIn.addEventListener('input', () => { value.setAttribute('aria-label', nameValue()); setErr(errKey, ''); });
   const grow = () => {
     value.style.height = 'auto';
-    value.style.height = Math.min(value.scrollHeight, 120) + 'px';
+    value.style.height = Math.min(value.scrollHeight, EXTRA_VALUE_MAX_HEIGHT_PX) + 'px';
   };
   value.addEventListener('input', grow);
 
-  // rows the user adds or edits must have a name; untouched stored rows are kept as they are
   const entry = { uid, labelIn, value, secret: !!x.secret, touched: !('value' in x) };
   for (const el of [labelIn, value]) el.addEventListener('input', () => { entry.touched = true; });
   const { eye } = revealButton(value, labelIn.value.trim() || t('editor.extraValue', null, '値'));
@@ -467,8 +453,6 @@ function extrasBox(list) {
     rows);
 }
 
-/* ───────── vault, head, foot ───────── */
-
 function vaultPicker() {
   const group = h('div', { class: 'vault-pick', role: 'radiogroup', 'aria-label': t('vaults.label', null, '保管庫') });
   const render = () => {
@@ -485,7 +469,6 @@ function vaultPicker() {
   return h('div', { class: 'ed-row' }, h('div', { class: 'ed-label' }, t('vaults.label', null, '保管庫')), h('div', { class: 'ed-ctl' }, group));
 }
 
-/** "[個人] ログイン", as in the detail head. */
 function kindLabel() {
   const v = S.vaults.find((x) => x.id === E.vault);
   return [h('span', { class: 'd-vault', vars: { '--vc': vaultColor(v?.hue ?? 30) } }, `[${v?.name || '—'}]`),
@@ -516,7 +499,6 @@ function footConfirm(text, yesLabel, onYes, noLabel = t('やめる')) {
 
 function confirmDelete() {
   const pk = E.original?.passkeys?.length || 0;
-  // it goes to the ゴミ箱: the toast offers 元に戻す, and the ゴミ箱 keeps it for TRASH_DAYS
   const ask = pk
     ? t('trash.askPasskeys', { n: pk }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')
     : t('trash.ask', null, 'ゴミ箱に移しますか？ 30 日間は元に戻せます');
@@ -540,7 +522,6 @@ function confirmDelete() {
   });
 }
 
-/** Close, asking first when there are unsaved changes. `then` runs after closing. Refused while saving. */
 export function requestClose(then) {
   if (!E) { then?.(); return; }
   if (E.busy) {
@@ -556,8 +537,6 @@ export function requestClose(then) {
   shake(E.els.foot);
   footConfirm(t('変更を破棄しますか？'), t('破棄する'), done, t('編集を続ける'));
 }
-
-/* ───────── save ───────── */
 
 function collectExtras(bad) {
   const out = [];
@@ -579,7 +558,6 @@ function collect() {
   const title = els.title.value.trim();
   const note = els.note.value.replace(/\s+$/, '');
   const extra = collectExtras(bad);
-  // the first problem in reading order gets the focus
   const firstBad = () => problems.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))[0];
 
   if (E.type === 'note' || (!E.templated && E.type !== 'login')) {
@@ -604,7 +582,7 @@ function collect() {
     return { value: { title: finalTitle, fields, note, vault: E.vault, fav: E.fav, extra } };
   }
 
-  const url = withScheme(els.url.value); // "localhost:3000" → "https://localhost:3000"
+  const url = withScheme(els.url.value);
   if (url && !safeHttpUrl(url)) bad('url', t('http(s) の URL を入力してください'), els.url);
   const finalTitle = title || (url && safeHttpUrl(url) ? siteOf(url) : '');
   if (!finalTitle) bad('title', t('タイトルかウェブサイトを入力してください'), els.title);
@@ -636,7 +614,7 @@ async function save(e) {
     : { ...forSave(mine.original), ...r.value };
   try {
     const res = await call(MSG.VAULT_SAVE_ITEM, { item: payload });
-    if (E !== mine) return; // locked (or replaced) while saving
+    if (E !== mine) return;
     const saved = mergeSaved(res?.item, mine.original ? { ...mine.original, ...r.value } : payload);
     closeEditor();
     emit('saved', saved, isNew);
@@ -648,12 +626,6 @@ async function save(e) {
   }
 }
 
-/* ───────── open / close ───────── */
-
-/**
- * openEditor({ id }) edits an item; openEditor({ type, prefill: { url, title } }) creates one.
- * `type` is any id from shared/item-types.js (login when unknown).
- */
 export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   closeEditor();
   const original = id ? itemById(id) : null;
@@ -684,7 +656,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     : t('editor.new', { type: typeLabel(kind) }, '新規{type}');
 
   const titlePh = kind === 'note' ? t('例: Wi-Fi のパスワード') : kind === 'login' ? t('例: github.com') : '';
-  els.title = h('input', { id: 'edTitle', type: 'text', value: src.title || '', placeholder: titlePh, autocomplete: 'off', maxlength: 200 });
+  els.title = h('input', { id: 'edTitle', type: 'text', value: src.title || '', placeholder: titlePh, autocomplete: 'off', maxlength: TITLE_MAX_LENGTH });
   els.title.addEventListener('input', updateHead);
   els.note = h('textarea', { id: 'edNote', rows: kind === 'note' ? 7 : 3, placeholder: kind === 'note' ? t('ここに書いた内容は暗号化して保存されます') : '', spellcheck: 'false' });
   els.note.value = src.note || '';
@@ -733,7 +705,6 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     }
     meta.append(noteRow);
   } else {
-    // secure note: the text belongs with the title
     main.append(noteRow);
   }
 
@@ -763,7 +734,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   $('cardScroll').hidden = true;
   host.hidden = false;
   rise(scroll);
-  setTimeout(() => (original ? els.title : (kind === 'login' && els.title.value ? els.username : els.title))?.focus({ preventScroll: true }), 80);
+  setTimeout(() => (original ? els.title : (kind === 'login' && els.title.value ? els.username : els.title))?.focus({ preventScroll: true }), INITIAL_FOCUS_DELAY_MS);
 }
 
 export function closeEditor() {
@@ -771,7 +742,7 @@ export function closeEditor() {
   E.totpView?.stop();
   E = null;
   const host = $('editor');
-  clear(host); // drops every typed value, revealed or not
+  clear(host);
   host.hidden = true;
   $('cardScroll').hidden = false;
 }

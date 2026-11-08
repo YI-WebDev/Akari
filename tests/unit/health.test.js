@@ -1,5 +1,3 @@
-// lib/health.js: the rules behind the popup's パスワード診断 view.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -13,7 +11,6 @@ const TOTP = { secret: 'JBSWY3DPEHPK3PXP' };
 const PASSKEY = { credentialId: 'x', rpId: 'example.com' };
 
 let n = 0;
-/** A healthy login (a strong password of its own, TOTP, set 10 days ago) unless `props` say otherwise. */
 function login(props = {}) {
   n++;
   return {
@@ -41,14 +38,14 @@ test('weak, reused, old and no2fa are found, in ISSUES order', () => {
   const h = passwordHealth([weak, r1, r2, old, bare, all, twin], { now: NOW });
   assert.deepEqual(h.issues.get(weak.id), ['weak']);
   assert.deepEqual(h.issues.get(r1.id), ['reused']);
-  assert.deepEqual(h.issues.get(r2.id), ['reused']); // a passkey counts as a second factor
-  assert.deepEqual(h.issues.get(old.id), ['old']); // exactly OLD_AFTER_DAYS counts as old
+  assert.deepEqual(h.issues.get(r2.id), ['reused'], 'a passkey counts as a second factor');
+  assert.deepEqual(h.issues.get(old.id), ['old'], 'exactly OLD_AFTER_DAYS counts as old');
   assert.deepEqual(h.issues.get(bare.id), ['no2fa']);
   assert.deepEqual(h.issues.get(all.id), ['weak', 'reused', 'old', 'no2fa']);
   assert.deepEqual(h.issues.get(twin.id), ['weak', 'reused']);
   assert.deepEqual(h.counts, { weak: 3, reused: 4, old: 2, no2fa: 2 });
   assert.equal(h.logins, 7);
-  assert.equal(h.needsAction, 6); // everything but `bare`, whose only issue is advice
+  assert.equal(h.needsAction, 6, 'every login but bare, whose only issue is advice');
   assert.equal(h.reuse.get(r1.id), 1);
   assert.equal(h.reuse.get(all.id), 1);
   assert.equal(h.reuse.has(weak.id), false);
@@ -59,7 +56,7 @@ test('weak, reused, old and no2fa are found, in ISSUES order', () => {
 test('only logins with a password are judged', () => {
   const items = [
     login({ password: '' }),
-    { id: 'n', type: 'note', title: 'メモ', password: '1234', createdAt: 1 }, // a legacy note key is not a login password
+    { id: 'n', type: 'note', title: 'メモ', password: '1234', createdAt: 1 },
     { id: 'c', type: 'card', title: 'カード', fields: { pin: '1234' }, createdAt: 1 },
     null,
   ];

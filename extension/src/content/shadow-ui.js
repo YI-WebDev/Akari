@@ -1,26 +1,8 @@
-// Akari's in-page UI kit (ISOLATED world). Classic script, loaded before autofill.js and
-// webauthn-bridge.js. Content scripts of one extension share an isolated world per frame,
-// so the first copy to run defines globalThis.__akariShadowUi and later copies return.
-//
-// Everything is built in CLOSED shadow roots with textContent only: the page can neither
-// read what Akari shows nor inject markup into it.
-
 (() => {
   'use strict';
 
   if (globalThis.__akariShadowUi) return;
 
-  // "Akari Terminal" look. System monospace fonts only: nothing is loaded into the page.
-  //
-  // Colours: a closed shadow root cannot read shared/tokens.css, so the palette below is a literal copy of
-  // those tokens, held in --ak-* custom properties named after them (--ak-text-dim = --text-dim, ...).
-  // The dark block copies tokens.css's :root, the .light block its :root[data-theme="light"]. Keep both in
-  // step with tokens.css. Translucent colours are rgb(var(--ak-…-rgb) / α), as in tokens.css.
-  //
-  // The palette is defined on the UI roots themselves (the 灯 button, the menu, the bar / card), never on
-  // :host: custom properties ignore `all: initial` and inherit from the page, which could restyle Akari
-  // through its host. Values set on elements inside the closed root cannot be reached by page CSS, and
-  // everything that uses them is one of those roots or inside one. themed() adds .light (see below).
   const FONT = 'ui-monospace, "Cascadia Mono", Consolas, "BIZ UDGothic", monospace';
   const CSS = `
 :host { all: initial; }
@@ -135,14 +117,12 @@
 `;
   let sheet = null;
 
-  /** A zero-size, top-most host with a closed shadow root for one piece of UI. */
   function makeHost() {
     if (!sheet) {
       sheet = new CSSStyleSheet();
       sheet.replaceSync(CSS);
     }
     const host = document.createElement('div');
-    // CSSOM (not a style attribute) so strict page CSP cannot block it.
     for (const [p, v] of [['all', 'initial'], ['position', 'fixed'], ['top', '0'], ['left', '0'], ['width', '0'],
       ['height', '0'], ['z-index', '2147483647'], ['display', 'block']]) {
       host.style.setProperty(p, v, 'important');
@@ -160,7 +140,6 @@
     return n;
   }
 
-  // The theme (i18n-page.js reads it with the language): 'light' for the light setting, or for auto on a light OS.
   const isLight = () => {
     try {
       return globalThis.__akariI18n?.theme?.() === 'light';
@@ -169,11 +148,6 @@
     }
   };
 
-  /**
-   * Give a UI root (.orb, .menu, .bar) the current theme and return it. The marker is a class on that root,
-   * inside the closed shadow root: nothing is set on the host, which the page can see. It is read when the
-   * root is built, so a menu or card keeps the theme it opened with.
-   */
   function themed(node) {
     node.classList.toggle('light', isLight());
     return node;
@@ -186,52 +160,43 @@
     b.setAttribute('aria-label', 'Akari');
     b.style.width = b.style.height = b.style.lineHeight = size + 'px';
     b.style.fontSize = Math.max(11, Math.round(size * 0.58)) + 'px';
-    b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the page field
+    b.addEventListener('mousedown', (e) => e.preventDefault());
     return b;
   }
 
-  // ---- clickjacking guard ---------------------------------------------------------
-  //
-  // A page we cannot trust (same-site XSS, user-content subdomain) can focus a field, then hide or cover our UI
-  // (opacity on <html>, a pointer-events:none decoy on top) and lure the user into clicking or pressing Enter.
-  // So a click/Enter on Akari's UI only counts after IntersectionObserver v2 has reported the element truly
-  // visible (not occluded, no opacity/filter/transform tricks) for VISIBLE_MS without a move, the tab is
-  // visible, nothing in the ancestor chain is translucent and, for mouse clicks, our own host is what is
-  // really under the pointer.
-
   const VISIBLE_MS = 500;
+  const MIN_VISIBLE_RATIO = 0.5;
+  const OCCLUSION_CHECK_DELAY_MS = 100;
 
   function visibilityGuard(target, getHost) {
-    let since = 0; // performance.now() since which the target has been continuously visible, 0 = not visible
+    let visibleSince = 0;
     const io = new IntersectionObserver(
       (entries) => {
         const e = entries[entries.length - 1];
-        since = e.isIntersecting && e.isVisible && e.intersectionRatio >= 0.5 ? since || performance.now() : 0;
+        visibleSince = e.isIntersecting && e.isVisible && e.intersectionRatio >= MIN_VISIBLE_RATIO ? visibleSince || performance.now() : 0;
       },
-      { threshold: [0, 0.5, 1], trackVisibility: true, delay: 100 },
+      { threshold: [0, MIN_VISIBLE_RATIO, 1], trackVisibility: true, delay: OCCLUSION_CHECK_DELAY_MS },
     );
     io.observe(target);
     const opaque = (n) => parseFloat(getComputedStyle(n).opacity) >= 1;
     return {
-      /** The target moved: it has to stay put for VISIBLE_MS again. */
       reset() {
-        if (since) since = performance.now();
+        if (visibleSince) visibleSince = performance.now();
       },
-      /** May this trusted click / keydown act on the target? */
       ok(e) {
         if (!e.isTrusted || document.visibilityState !== 'visible') return false;
-        if (!since || performance.now() - since < VISIBLE_MS) return false;
+        if (!visibleSince || performance.now() - visibleSince < VISIBLE_MS) return false;
         const host = getHost();
         if (!host || !host.isConnected) return false;
         for (let n = host; n; n = n.parentElement) if (!opaque(n)) return false;
         if (document.body && !opaque(document.body)) return false;
-        // detail 0 = keyboard-activated click (focus is inside our shadow root, the page cannot put it there)
-        if (e.type === 'click' && e.detail !== 0 && document.elementFromPoint(e.clientX, e.clientY) !== host) return false;
+        const isPointerClick = e.type === 'click' && e.detail !== 0;
+        if (isPointerClick && document.elementFromPoint(e.clientX, e.clientY) !== host) return false;
         return true;
       },
       stop() {
         io.disconnect();
-        since = 0;
+        visibleSince = 0;
       },
     };
   }

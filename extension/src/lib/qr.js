@@ -1,17 +1,12 @@
-// QR decoding (jsQR). Runs in extension pages and the service worker.
 import jsQR from '../third_party/jsqr.js';
 
-// Screenshots from captureVisibleTab can be several thousand pixels wide; a first pass at a
-// reduced size keeps decoding fast, a second pass at native size catches small codes.
 const FAST_MAX_DIM = 1600;
 
-/** Decode a QR code from raw RGBA pixels. Returns the text, or null when none is found. */
 export function decodeQrFromImageData({ data, width, height }) {
   const result = jsQR(data, width, height, { inversionAttempts: 'attemptBoth' });
   return result && result.data ? result.data : null;
 }
 
-/** Decode a QR code from a `data:` URL (e.g. chrome.tabs.captureVisibleTab output). */
 export async function decodeQrFromDataUrl(dataUrl) {
   const blob = dataUrlToBlob(dataUrl);
   if (!blob) return null;
@@ -19,7 +14,7 @@ export async function decodeQrFromDataUrl(dataUrl) {
   try {
     bitmap = await createImageBitmap(blob);
   } catch {
-    return null; // not a decodable image
+    return null;
   }
   try {
     const longest = Math.max(bitmap.width, bitmap.height);

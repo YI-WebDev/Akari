@@ -1,8 +1,3 @@
-// Motion helpers. Akari's signature: a secret value is decoded into view — it is revealed
-// left to right while the characters still to come cycle through random glyphs (scramble).
-// The rest only confirms a state change: a short fade when the detail changes, a shake on a
-// wrong input, a turn of the regenerate icon. All honour prefers-reduced-motion.
-
 const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
 export const reducedMotion = () => mq.matches;
 
@@ -17,7 +12,6 @@ export function cancelScramble(key) {
   running.delete(key);
 }
 
-/** Reveal `target` into el.textContent left-to-right over `ms`, cycling random glyphs (cosmetic only). */
 export function scramble(key, el, target, ms = 520, glyphs = GLYPHS, onDone) {
   cancelScramble(key);
   if (!el) return;
@@ -49,7 +43,6 @@ export function scramble(key, el, target, ms = 520, glyphs = GLYPHS, onDone) {
   step();
 }
 
-/** Same as scramble but renders into per-character spans via `render(text)`. */
 export function scrambleWith(key, target, ms, render, glyphs = GLYPHS, onDone) {
   cancelScramble(key);
   const chars = Array.from(target);
@@ -67,7 +60,6 @@ export function scrambleWith(key, target, ms, render, glyphs = GLYPHS, onDone) {
   step();
 }
 
-/** Fade the matching children in together (no stagger, no travel). */
 export function rise(container, selector = '[data-f]') {
   if (!container || reducedMotion()) return;
   container.querySelectorAll(selector).forEach((el) => {

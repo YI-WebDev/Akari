@@ -1,20 +1,12 @@
-// Enpass JSON export: { folders: [...], items: [{ title, note, category, template_type, favorite,
-// trashed, archived, createdAt, updated_at, fields: [{ uid, label, type, value, sensitive,
-// deleted }], attachments }] }. Folders are ignored.
-// Categories / templates with an Akari type are mapped by field type (ccNumber, username, …),
-// the identity template's field uids and, for the rest, the (possibly translated) labels.
-
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { L, fromEntries, LABEL_RULES } from './_fields.js';
 
-/** Enpass category → Japanese name of a kind kept as a secure note (no matching Akari type; translated when reported). */
 const KINDS = {
   creditcard: 'クレジットカード', identity: '個人情報', finance: '金融情報', license: 'ライセンス',
   travel: '旅行', computer: 'コンピューター', misc: 'その他', document: 'ドキュメント',
 };
 
-/** template_type (e.g. "travel.passport", "computer.wifi") → Akari type. */
 const TEMPLATES = [
   [/wi-?fi|wireless|router/, 'wifi'], [/database/, 'database'], [/ssh/, 'sshKey'], [/server|hosting/, 'server'],
   [/\bapi|apikey|apicredential/, 'apiCredential'], [/passport/, 'passport'], [/driv/, 'driverLicense'],
@@ -24,7 +16,6 @@ const TEMPLATES = [
 ];
 
 const uid = (n) => `uid:${n}`;
-/** Template key ← Enpass field type / identity field uid, before the label rules. */
 const RULES = {
   card: [['cardholder', 'ccName'], ['number', 'ccNumber'], ['expiry', 'ccExpiry'], ['cvv', 'ccCvc'], ['pin', 'ccPin']],
   identity: [
@@ -50,8 +41,8 @@ const flag = (v) => v === true || Number(v) === 1;
 function typeOfItem(category, template) {
   if (category === 'creditcard') return 'card';
   if (category === 'identity') return 'identity';
-  const tt = template.toLowerCase();
-  return TEMPLATES.find(([re]) => re.test(tt))?.[1] || null;
+  const templateName = template.toLowerCase();
+  return TEMPLATES.find(([re]) => re.test(templateName))?.[1] || null;
 }
 
 const toEntry = (f) => ({
@@ -62,7 +53,6 @@ const toEntry = (f) => ({
 });
 const toExtra = (e) => ({ label: e.label, value: e.value, secret: e.secret });
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file) {
   const json = parseJson(bytesToText(file.bytes), 'Enpass');
   if (!json || typeof json !== 'object' || !Array.isArray(json.items)) {
@@ -113,8 +103,8 @@ export async function parse(file) {
     const type = typeOfItem(category, str(it.template_type));
     if (type) {
       const entries = fields.map(toEntry);
-      const brand = type === 'card' ? entries.findIndex((e) => e.id[0] === 'ccType') : -1;
-      const [cardType] = brand >= 0 ? entries.splice(brand, 1) : [];
+      const cardTypeIndex = type === 'card' ? entries.findIndex((e) => e.id[0] === 'ccType') : -1;
+      const [cardType] = cardTypeIndex >= 0 ? entries.splice(cardTypeIndex, 1) : [];
       const b = fromEntries(type, entries, [...(RULES[type] || []), ...LABEL_RULES[type]]);
       if (cardType) b.brand(cardType.value, cardType.label);
       items.push({ ...base, ...b.item({ note: it.note }) });

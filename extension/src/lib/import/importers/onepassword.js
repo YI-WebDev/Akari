@@ -1,10 +1,3 @@
-// 1Password exports:
-//  - .1pux: ZIP with export.data (JSON accounts[].vaults[].items[]) and files/ (attachments).
-//  - .1pif: JSON records separated by "***5642bee8-a5ff-11dc-8314-0800200c9a66***" lines.
-//  - .zip: treated as 1pux when it holds export.data (or as 1pif when it holds a .1pif file).
-// Categories with an Akari type are mapped onto it by 1Password's stable field ids; fields that
-// fit no template key (and custom fields of logins) become extra fields.
-
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
@@ -14,7 +7,6 @@ import { toDate, toMonth, monthOf } from './_values.js';
 
 const LOGIN = 'login', PASSWORD = 'password', NOTE = 'note';
 
-/** 1pux categoryUuid → Akari type id, or the Japanese name of a kind that is kept as a note (translated when reported). */
 const CATEGORIES = {
   '001': LOGIN, '002': 'card', '003': NOTE, '004': 'identity', '005': PASSWORD,
   '006': 'ドキュメント', '100': 'softwareLicense', '101': 'bankAccount', '102': 'database',
@@ -23,7 +15,6 @@ const CATEGORIES = {
   '111': 'メールアカウント', '112': 'apiCredential', '113': 'medicalRecord', '114': 'sshKey', '115': 'cryptoWallet',
 };
 
-/** 1pif typeName → same as above. system.* records (folders, tombstones) are not items. */
 const TYPE_NAMES = {
   'webforms.WebForm': LOGIN, 'passwords.Password': PASSWORD, 'securenotes.SecureNote': NOTE,
   'wallet.financial.CreditCard': 'card', 'wallet.financial.BankAccountUS': 'bankAccount',
@@ -35,7 +26,6 @@ const TYPE_NAMES = {
   'wallet.onlineservices.Email.v2': 'メールアカウント', 'identities.Identity': 'identity',
 };
 
-/** Template key ← 1Password field ids (first one with a value wins). */
 const RULES = {
   card: [['cardholder', 'cardholder'], ['number', 'ccnum'], ['expiry', 'expiry'], ['cvv', 'cvv'], ['pin', 'pin']],
   identity: [
@@ -81,25 +71,22 @@ const RULES = {
     ['version', 'product_version'], ['licenseKey', 'reg_code'], ['licensee', 'reg_name'], ['email', 'reg_email'],
     ['purchaseDate', 'order_date'], ['url', 'download_link', 'publisher_website'],
   ],
-  cryptoWallet: LABEL_RULES.cryptoWallet, // no published field ids; matched by label
+  cryptoWallet: LABEL_RULES.cryptoWallet,
 };
 
-// Login form fields that carry no data worth keeping (buttons, checkboxes, radios, selects…).
-const FORM_NOISE = new Set(['B', 'C', 'I', 'R', 'S']);
+const NON_DATA_FORM_FIELD_TYPES = new Set(['B', 'C', 'I', 'R', 'S']);
 const PIF_SEPARATOR = /^\*{3}[0-9a-f-]+\*{3}[ \t]*$/im;
 
 const str = (v) => (v == null ? '' : String(v).trim());
 const scalars = (o) => Object.values(o).filter((v) => v != null && typeof v !== 'object').join(' ');
 const ADDRESS_PARTS = [['street', 'address1'], ['city', 'city'], ['state', 'state'], ['zip', 'postalCode'], ['country', 'country']];
 
-/** A 1Password address object → one entry (joined), or one entry per part for identities. */
 function addressEntries(id, label, a, split) {
   if (!a || typeof a !== 'object') return [{ id, label, value: str(a) }];
   if (!split) return [{ id, label, value: ADDRESS_PARTS.map(([k]) => str(a[k])).filter(Boolean).join(', ') }];
   return ADDRESS_PARTS.map(([k, key]) => ({ id: `${id}.${k}`, label: fieldLabel('identity', key), value: str(a[k]) }));
 }
 
-/** Shared state for one parse run. */
 function makeRun() {
   return { items: [], skipped: 0, converted: {}, attachments: 0, badTotp: 0 };
 }
@@ -107,11 +94,6 @@ function makeRun() {
 const otpExtra = (t) => ({ label: t.label || L('otp', 'ワンタイムパスワード'), value: t.value, secret: true });
 const toExtra = (e) => ({ label: e.label, value: e.value, secret: !!e.secret });
 
-/**
- * Build the ImportedItem for any 1Password item once its parts are normalised.
- * `entries` are [{ id, label, value, secret }] that are not username/password/url/totp;
- * `totps` are [{ label, value }].
- */
 function emit(run, kind, p) {
   const { title, username, password, totps, entries, notes, tags, fav, createdAt, updatedAt } = p;
   const urls = [...new Set(p.urls.map(str).filter(Boolean))];
@@ -152,8 +134,6 @@ function emit(run, kind, p) {
       const i = list.findIndex((e) => e.id === id);
       return i < 0 ? null : list.splice(i, 1)[0];
     };
-    // Cards: the brand only matters when the number does not tell it; 1pif also keeps the
-    // expiry as flat expiry_mm / expiry_yy keys.
     const brand = kind === 'card' ? take('type') || take('cctype') : null;
     let flatExpiry = '';
     if (kind === 'card') {
@@ -187,9 +167,6 @@ function finish(run) {
   return { items: run.items, skipped: run.skipped, warnings };
 }
 
-// --- 1pux ----------------------------------------------------------------------------------
-
-/** One 1pux section field → entries (value kinds: string, concealed, email, date, monthYear…). */
 function puxFieldEntries(f, run, splitAddress) {
   const id = str(f.id);
   const label = str(f.title) || id || L('field', '項目');
@@ -235,7 +212,7 @@ function from1puxItem(run, item) {
     if (!f || f.value == null || f.value === '') continue;
     if (f.designation === 'username' && !username) username = f.value;
     else if (f.designation === 'password' && !password) password = f.value;
-    else if (!FORM_NOISE.has(f.fieldType)) {
+    else if (!NON_DATA_FORM_FIELD_TYPES.has(f.fieldType)) {
       entries.push({ id: str(f.name) || str(f.id), label: str(f.name) || str(f.id) || L('field', '項目'), value: String(f.value), secret: f.fieldType === 'P' });
     }
   }
@@ -282,8 +259,6 @@ function parse1puxData(run, data) {
   }
 }
 
-// --- 1pif ----------------------------------------------------------------------------------
-
 const PIF_KNOWN = new Set(['fields', 'sections', 'URLs', 'URL', 'notesPlain', 'htmlForm', 'passwordHistory', 'password']);
 
 function pifFieldEntries(f, splitAddress) {
@@ -302,7 +277,8 @@ function pifFieldEntries(f, splitAddress) {
 function from1pifRecord(run, rec) {
   const typeName = str(rec.typeName);
   if (rec.trashed === true || typeName === 'system.Tombstone') { run.skipped++; return; }
-  if (typeName.startsWith('system.')) return; // folders, saved searches
+  const isFolderOrSavedSearch = typeName.startsWith('system.');
+  if (isFolderOrSavedSearch) return;
   const kind = TYPE_NAMES[typeName] || 'その他のアイテム';
   const sc = rec.secureContents || {};
   let username = '', password = '';
@@ -312,7 +288,7 @@ function from1pifRecord(run, rec) {
     if (!f || f.value == null || f.value === '') continue;
     if (f.designation === 'username' && !username) username = f.value;
     else if (f.designation === 'password' && !password) password = f.value;
-    else if (!FORM_NOISE.has(f.type)) {
+    else if (!NON_DATA_FORM_FIELD_TYPES.has(f.type)) {
       entries.push({ id: str(f.name) || str(f.id), label: str(f.name) || str(f.id) || L('field', '項目'), value: String(f.value), secret: f.type === 'P' });
     }
   }
@@ -329,8 +305,8 @@ function from1pifRecord(run, rec) {
       entries.push(...pifFieldEntries(f, kind === 'identity'));
     }
   }
-  // Older records keep wallet data as flat secureContents keys (often duplicated in sections).
-  if (kind !== LOGIN && kind !== PASSWORD) {
+  const keepsFlatSecureContents = kind !== LOGIN && kind !== PASSWORD;
+  if (keepsFlatSecureContents) {
     for (const [k, v] of Object.entries(sc)) {
       if (PIF_KNOWN.has(k) || sectionNames.has(k) || v == null || typeof v === 'object') continue;
       entries.push({ id: k, label: k, value: String(v) });
@@ -368,9 +344,6 @@ function parse1pifText(run, text) {
   }
 }
 
-// --- entry point ---------------------------------------------------------------------------
-
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file) {
   const run = makeRun();
   if (isZip(file.bytes)) {
@@ -378,8 +351,8 @@ export async function parse(file) {
     const data = findEntry(entries, 'export.data');
     if (data) {
       parse1puxData(run, parseJson(bytesToText(await data.bytes()), t('1Password（export.data）')));
-      // Attachment bodies live under files/; documents and file fields were also counted per item.
-      run.attachments = Math.max(run.attachments, entries.filter((e) => /^files\//i.test(e.name)).length);
+      const attachmentFileCount = entries.filter((e) => /^files\//i.test(e.name)).length;
+      run.attachments = Math.max(run.attachments, attachmentFileCount);
       return finish(run);
     }
     const pif = entries.find((e) => /\.1pif$/i.test(e.name));
@@ -394,8 +367,8 @@ export async function parse(file) {
     parse1pifText(run, text);
   } else if (/^\s*\{/.test(text)) {
     const json = parseJson(text, '1Password');
-    if (Array.isArray(json?.accounts)) parse1puxData(run, json); // a bare export.data
-    else if (json && typeof json === 'object' && 'typeName' in json) from1pifRecord(run, json); // single 1pif record
+    if (Array.isArray(json?.accounts)) parse1puxData(run, json);
+    else if (json && typeof json === 'object' && 'typeName' in json) from1pifRecord(run, json);
     else throw new ImportError('INVALID_FORMAT', t('1Password の書き出しファイルではありません'));
   } else {
     throw new ImportError('INVALID_FORMAT', t('1Password の書き出しファイル（1PUX / 1PIF）ではありません'));

@@ -15,7 +15,6 @@
 </head>
 <body>
   <h1>SPA ログイン</h1>
-  <!-- The inputs are rendered 1 s after load and there is no <form>. -->
   <div id="root">読み込み中…</div>
   <pre id="status" data-state="loading"></pre>
   <script>
@@ -25,10 +24,6 @@
     const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
     const inputs = [];
 
-    // React-style controlled input: the framework keeps a "value tracker" that is updated whenever the
-    // value is assigned through the element (el.value = x). An input event is only treated as a user edit
-    // when the DOM value differs from the tracked one, and the DOM is re-rendered from `state`. So
-    // el.value = 'x' alone never reaches `state`; the native prototype setter + an input event does.
     function controlled(name, type, id, autocomplete, label) {
       const row = document.createElement('div');
       row.className = 'row';

@@ -1,13 +1,3 @@
-// Akari WebAuthn bridge (ISOLATED world, top frame). Classic script; uses the in-page UI kit
-// (shadow-ui.js, loaded just before it). Relays requests from webauthn-page.js (MAIN world)
-// to the service worker and the answers back. The service worker derives the origin from
-// the sender, so nothing the page claims about its origin is trusted.
-//
-// While Akari is unlocked, sign-in and saving a passkey happen on a card in the page: the
-// service worker says what to show (the site's passkeys, or the account to save), and a
-// trusted click on the card (once it has been plainly visible for a moment) asks it to sign
-// or to create. Closing the card hands the request to whatever is next (another passkey
-// manager, or the browser). The page only ever gets the credential.
 (() => {
   'use strict';
 
@@ -15,13 +5,11 @@
   const TO_EXT = 'page→ext';
   const TO_PAGE = 'ext→page';
   const ORIGIN = location.origin;
-  // Codes the page maps to DOMExceptions; anything else lets the browser handle the request.
   const PASS_THROUGH = new Set(['NOT_ALLOWED', 'FALLBACK', 'INVALID_STATE', 'SECURITY', 'NOT_SUPPORTED', 'INVALID']);
   const TYPES = { create: 'passkey/create', get: 'passkey/get' };
   const ASSERT = 'passkey/assert';
   const SAVE = 'passkey/save';
   const ui = globalThis.__akariShadowUi;
-  // In-page UI text (i18n-page.js); the Japanese source text, placeholders filled, if that script is missing.
   const t = (text, params = null) => (globalThis.__akariI18n
     ? globalThis.__akariI18n.t(text, params)
     : text.replace(/\{(\w+)\}/g, (m, k) => (params && Object.hasOwn(params, k) ? String(params[k]) : m)));
@@ -31,7 +19,6 @@
   const reply = (id, body) => window.postMessage({ __akari: TAG, dir: TO_PAGE, id, ...body }, ORIGIN);
 
   async function send(message) {
-    // Throws "Extension context invalidated" after the extension reloads.
     if (!chrome.runtime?.id) throw new Error('context invalidated');
     return chrome.runtime.sendMessage(message);
   }
@@ -57,10 +44,9 @@
     reply(d.id, { ok: false, code: PASS_THROUGH.has(code) ? code : 'FALLBACK' });
   }
 
-  // ---- the card -------------------------------------------------------------------
-
   const MIN_TIMEOUT = 30000;
   const MAX_TIMEOUT = 300000;
+  const DONE_CARD_LINGER_MS = 1200;
   const EMPTY = { host: null, root: null, box: null, guard: null, d: null, timer: 0, busy: false, note: null, controls: [] };
   const card = { ...EMPTY };
 
@@ -73,16 +59,14 @@
     Object.assign(card, EMPTY);
   }
 
-  /** Close the card and let the next handler (another manager, the browser) take the request. */
   function dismiss() {
     const d = card.d;
     closeCard();
     if (d) reply(d.id, { ok: false, code: 'FALLBACK' });
   }
 
-  /** A card at the top right with a title bar (× and Esc hand the request on); returns its body. */
   function openCard(d, title) {
-    if (card.d) reply(card.d.id, { ok: false, code: 'NOT_ALLOWED' }); // superseded without an abort
+    if (card.d) reply(card.d.id, { ok: false, code: 'NOT_ALLOWED' });
     closeCard();
     const { el, orb } = ui;
     const { host, root } = ui.makeHost();
@@ -132,19 +116,17 @@
     return f;
   }
 
-  /** A request the user started gets the keyboard and a timeout; passkey autofill on page load does not. */
   function takeFocus(d, target) {
     if (d.mediation === 'conditional') return;
     target.focus({ preventScroll: true });
-    const t = typeof d.options?.timeout === 'number' ? d.options.timeout : MAX_TIMEOUT;
+    const requestedTimeout = typeof d.options?.timeout === 'number' ? d.options.timeout : MAX_TIMEOUT;
     card.timer = setTimeout(() => {
       if (card.d !== d) return;
       closeCard();
       reply(d.id, { ok: false, code: 'NOT_ALLOWED' });
-    }, Math.min(MAX_TIMEOUT, Math.max(MIN_TIMEOUT, t)));
+    }, Math.min(MAX_TIMEOUT, Math.max(MIN_TIMEOUT, requestedTimeout)));
   }
 
-  /** An account line: initial tile, name, and a muted second line. */
   function account(cls, name, sub) {
     const { el } = ui;
     const line = el(cls === 'row' ? 'button' : 'div', cls);
@@ -206,7 +188,6 @@
     btns.append(primary);
 
     if (info.excluded) {
-      // Told only after the user acts, so the page cannot probe what Akari holds.
       body.append(el('div', 'note', t('このアカウントのパスキーは Akari に保存済みです')));
       primary.textContent = 'OK';
       primary.addEventListener('click', (e) => {
@@ -253,7 +234,6 @@
     takeFocus(d, primary);
   }
 
-  /** After a trusted click on the card: ask the service worker for the credential and answer the page. */
   async function act(message, doneText, failText) {
     const d = card.d;
     if (!d || card.busy) return;
@@ -263,9 +243,8 @@
     try {
       res = await send(message);
     } catch {
-      /* extension reloaded: handled below */
     }
-    if (card.d !== d) return; // cancelled or replaced meanwhile
+    if (card.d !== d) return;
     if (res && res.ok && res.data && res.data.credential) {
       reply(d.id, { ok: true, credential: res.data.credential });
       const done = ui.el('div', 'done');
@@ -273,18 +252,16 @@
       card.box.replaceChildren(done);
       card.d = null;
       const host = card.host;
-      setTimeout(() => card.host === host && closeCard(), 1200);
+      setTimeout(() => card.host === host && closeCard(), DONE_CARD_LINGER_MS);
       return;
     }
     const code = res && res.error && res.error.code;
     if (code === 'LOCKED') {
-      // Locked meanwhile: unlock in Akari's window (or leave passkey autofill to the browser).
       closeCard();
       forward(d);
       return;
     }
     if (code === 'INVALID_STATE') {
-      // Saved meanwhile (another tab): the site asked not to register twice.
       closeCard();
       reply(d.id, { ok: false, code });
       return;
@@ -293,8 +270,6 @@
     for (const c of card.controls) c.disabled = false;
     card.note(res ? failText : t('Akari が更新されました — ページを再読み込みしてください'));
   }
-
-  // ---- page messages ------------------------------------------------------------------
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== ORIGIN) return;

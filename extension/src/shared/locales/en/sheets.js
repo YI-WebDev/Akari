@@ -1,10 +1,4 @@
-// English for the sheets strings. Keys are the Japanese source text (or a dotted key used
-// with a Japanese fallback); values are the English. Japanese needs no entry.
-// Covers the settings sheet's runtime text, the 保管庫 / インポート / エクスポート pages,
-// パスワード診断, the ＋ and 表示 menus and the item editor (popup/views/*.js).
-
 export default {
-  /* ── settings sheet (views/settings.js) ── */
   '設定': 'Settings',
   'vaults.title': 'Vaults',
   'インポート': 'Import',
@@ -35,7 +29,6 @@ export default {
   '変更できませんでした（{why}）': "Could not change it ({why})",
   '暗号化して、このブラウザの中だけに保存します': 'Encrypted and stored only in this browser',
 
-  /* ── 保管庫 page (views/vaults.js) ── */
   'vaults.list': 'Vaults',
   'vaults.label': 'Vault',
   'vaults.add': 'New vault',
@@ -75,7 +68,6 @@ export default {
   'vaults.deleted': 'Vault "{name}" deleted',
   'vaults.movedN': 'Moved {n} items to "{name}"',
 
-  /* ── インポート page (views/import.js) ── */
   '別のパスワードマネージャーから移行するには、そのアプリでデータを書き出してから、ここで読み込みます。読み込んだら、書き出したファイルは削除してください。':
     'To move from another password manager, export your data from that app, then import it here. After importing, delete the exported file.',
   '読み込み元': 'Source',
@@ -158,7 +150,6 @@ export default {
   'パスワードが暗号化されずに残っています。ごみ箱に入れた場合は、ごみ箱も空にしてください。':
     'It holds your passwords unencrypted. If you move it to the trash, empty the trash too.',
 
-  /* ── エクスポート page (views/export.js) ── */
   '暗号化・Akari で読み込める': 'Encrypted · imports into Akari',
   'Chrome などで読み込める・平文': 'Imports into Chrome and others · unencrypted',
   '多くのアプリで読み込める・平文・パスキーも含む': 'Imports into most apps · unencrypted · includes passkeys',
@@ -195,7 +186,6 @@ export default {
   '書き出せませんでした（{why}）': "Could not export ({why})",
   'PGP で暗号化できませんでした。ファイルは保存していません': "Could not encrypt with PGP. No file was saved",
 
-  /* ── パスワード診断 (views/health.js) ── */
   'health.action': 'To fix',
   'health.weak': 'Weak',
   'health.reused': 'Reused',
@@ -219,11 +209,9 @@ export default {
   'health.logins': 'Logins: {n}',
   '(無題)': '(Untitled)',
   'すべて': 'All',
-  // list separators: issue names in a row's label, titles sharing a password
   '・': ', ',
   '、': ', ',
 
-  /* ── ＋ and 表示 menus (views/type-menu.js) ── */
   'menu.newType': 'New {type}',
   'menu.other': 'Other',
   'menu.generator': 'Password generator',
@@ -234,7 +222,6 @@ export default {
   'list.viewRecent': 'Recent',
   'list.viewFav': 'Favorites',
 
-  /* ── item editor (views/editor.js) ── */
   'editor.new': 'New {type}',
   'editor.edit': 'Edit {type}',
   'editor.titleAuto': 'Defaults to "{type}"',
@@ -256,7 +243,6 @@ export default {
   'editor.err.card': 'Card numbers are 8–19 digits',
   'editor.err.extraLabel': 'Enter a field name',
   'editor.err.empty': 'Enter a title or fill in a field',
-  // the eye buttons (shared with views/detail.js)
   'detail.show': 'Show',
   'detail.hide': 'Hide',
   'detail.showField': 'Show {label}',

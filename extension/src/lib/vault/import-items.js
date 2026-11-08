@@ -1,6 +1,3 @@
-// Items from another manager's export (lib/import ImportedItem) added to VaultData, with exact
-// duplicates skipped. Pure: no chrome.* access.
-
 import { TYPE_IDS, typeOf, fieldLabel, isSecretKind } from '../../shared/item-types.js';
 import { invalid, isObject, clampTs } from './common.js';
 import { FIELD_CAPS, makeItem, normalizeUrl, validateItem, normalizeFieldValue } from './items.js';
@@ -17,20 +14,10 @@ function hostKey(url) {
   }
 }
 
-// Identifiers written with or without separators ("4111 1111…" = "4111-1111…", "TK 123 4567" = "tk1234567").
 const COMPACT_KEYS = new Set(['number', 'accountNumber', 'iban']);
 const compact = (v) => String(v ?? '').toLowerCase().replace(/[^0-9a-z]/g, '');
 const titleKey = (title) => String(title ?? '').trim().toLowerCase();
 
-/**
- * Import dedupe skips EXACT duplicates only, so two different records are never merged
- * (a renewed card, a second API key for the same host, two "Home" Wi-Fi networks…).
- * - Logins: host + username + password + note + TOTP secret + extra; the title too when
- *   host, username and password are all empty (e.g. TOTP only).
- * - Every other type: type + title (trimmed, lowercased) + note + every template value,
- *   secrets included (as stored; card/account/license/passport/SSN numbers and IBANs
- *   compared without separators or case) + extra (label, value, secret).
- */
 function duplicateKey(it) {
   const type = it.type ?? 'login';
   const extra = (it.extra || []).map((e) => [e.label, e.value, !!e.secret]);
@@ -44,11 +31,6 @@ function duplicateKey(it) {
   return JSON.stringify([type, titleKey(it.title), it.note ?? '', fields, extra]);
 }
 
-/**
- * Import only: a field value that fails its kind's check (a "1990/01/02" date, a hyphenated port…),
- * or a key the type's template does not have, moves to `extra` instead of making the whole item invalid.
- * A select value given as an option label ("WPA2") is mapped to its id ("wpa2").
- */
 function salvageFields(type, item) {
   const template = typeOf(type).fields;
   const kept = {};
@@ -66,7 +48,7 @@ function salvageFields(type, item) {
         normalizeFieldValue(fd, value);
         kept[key] = value;
         continue;
-      } catch { /* moved to extra below */ }
+      } catch { }
     }
     if (value.trim()) moved.push({ label: fd ? fieldLabel(type, key) : key, value, secret: fd ? isSecretKind(fd.kind) : false });
   }
@@ -74,7 +56,6 @@ function salvageFields(type, item) {
   if (moved.length && (item.extra === undefined || Array.isArray(item.extra))) item.extra = [...(item.extra || []), ...moved];
 }
 
-/** Editable fields of an ImportedItem; a login's non-http(s) URL (androidapp://…) moves into the note. */
 function importFields(raw, vaultId) {
   const fields = { vault: vaultId };
   for (const k of IMPORT_FIELDS) if (raw[k] !== undefined) fields[k] = raw[k];
@@ -93,42 +74,30 @@ function importFields(raw, vaultId) {
   return fields;
 }
 
-/**
- * Adds items parsed from another manager's export to `data` (in place) as new items
- * of vault `vaultId`, which must exist. Every type is accepted; items that fail
- * validateItem are counted as invalid (template values that fail their kind's check
- * are kept in `extra` first, see salvageFields), duplicates of existing (or earlier)
- * items are skipped, and passkeys (logins only) are kept only when valid and not
- * already present (credentialId or rpId + userHandle). A duplicate login still gets
- * the passkeys it lacks, so importing again after an import that dropped them (or
- * from a manager whose passkeys Akari could not read before) brings them in.
- * @returns {Promise<{ added: number, duplicates: number, invalid: number, passkeys: number }>}
- */
 export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) {
   if (!Array.isArray(list) || list.length > MAX_IMPORT_ITEMS) throw invalid('Too many items');
   if (!data.vaults.some((v) => v.id === vaultId)) throw invalid('Unknown vault');
   const seen = new Map(data.items.map((it) => [duplicateKey(it), it]));
-  const credIds = new Set();
-  const accounts = new Set();
+  const takenCredentialIds = new Set();
+  const takenAccountKeys = new Set();
   const accountKey = (pk) => pk.rpId + '\n' + pk.userHandle;
   for (const it of data.items) {
     for (const pk of it.passkeys || []) {
-      credIds.add(pk.credentialId);
-      accounts.add(accountKey(pk));
+      takenCredentialIds.add(pk.credentialId);
+      takenAccountKeys.add(accountKey(pk));
     }
   }
-  /** Valid passkeys of `raw` not yet anywhere in the vault, appended to `into`; returns how many. */
   async function takePasskeys(raw, into) {
-    let n = 0;
+    let added = 0;
     for (const p of Array.isArray(raw.passkeys) ? raw.passkeys : []) {
       const pk = await passkeyFromImport(p, nowMs);
-      if (!pk || credIds.has(pk.credentialId) || accounts.has(accountKey(pk))) continue;
-      credIds.add(pk.credentialId);
-      accounts.add(accountKey(pk));
+      if (!pk || takenCredentialIds.has(pk.credentialId) || takenAccountKeys.has(accountKey(pk))) continue;
+      takenCredentialIds.add(pk.credentialId);
+      takenAccountKeys.add(accountKey(pk));
       into.push(pk);
-      n++;
+      added++;
     }
-    return n;
+    return added;
   }
   const out = { added: 0, duplicates: 0, invalid: 0, passkeys: 0 };
   for (const raw of list) {
@@ -149,7 +118,8 @@ export async function addImportedItems(data, list, vaultId, nowMs = Date.now()) 
     }, nowMs);
     const key = duplicateKey(item);
     const same = seen.get(key);
-    if (same) {
+    const isDuplicate = !!same;
+    if (isDuplicate) {
       out.duplicates++;
       if (login && (same.type ?? 'login') === 'login') {
         if (!Array.isArray(same.passkeys)) same.passkeys = [];

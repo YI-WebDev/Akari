@@ -1,8 +1,3 @@
-// Message contract between extension contexts: the one list of message types.
-// Content scripts and the offscreen document are classic scripts and cannot import
-// modules, so they hard-code these strings; tests/unit/messages.test.js checks that every
-// such string is listed here and that every type here has a receiver. Keep values stable.
-
 export const MSG = Object.freeze({
   VAULT_STATUS: 'vault/status',
   VAULT_SETUP: 'vault/setup',
@@ -10,24 +5,24 @@ export const MSG = Object.freeze({
   VAULT_LOCK: 'vault/lock',
   VAULT_GET_ALL: 'vault/getAll',
   VAULT_SAVE_ITEM: 'vault/saveItem',
-  VAULT_DELETE_ITEM: 'vault/deleteItem', // to the ゴミ箱 (lib/vault/trash.js)
-  VAULT_DELETE_ITEMS: 'vault/deleteItems', // the popup's selection, in one write; also to the ゴミ箱
-  VAULT_RESTORE_ITEMS: 'vault/restoreItems', // back from the ゴミ箱
-  VAULT_PURGE_ITEMS: 'vault/purgeItems', // out of the ゴミ箱 for good: `ids`, or all when `all` is true
+  VAULT_DELETE_ITEM: 'vault/deleteItem',
+  VAULT_DELETE_ITEMS: 'vault/deleteItems',
+  VAULT_RESTORE_ITEMS: 'vault/restoreItems',
+  VAULT_PURGE_ITEMS: 'vault/purgeItems',
   VAULT_DELETE_PASSKEY: 'vault/deletePasskey',
-  VAULT_PENDING_PASSWORD: 'vault/pendingPassword', // a new password waiting for the change on the site: set / confirm / discard
+  VAULT_PENDING_PASSWORD: 'vault/pendingPassword',
   VAULT_CHANGE_PASSWORD: 'vault/changePassword',
   VAULT_EXPORT: 'vault/export',
   VAULT_IMPORT: 'vault/import',
-  VAULT_IMPORT_ITEMS: 'vault/importItems', // items parsed from another manager's export
-  VAULT_EXPORT_PLAIN: 'vault/exportPlain', // CSV / Bitwarden JSON, master password required
+  VAULT_IMPORT_ITEMS: 'vault/importItems',
+  VAULT_EXPORT_PLAIN: 'vault/exportPlain',
   VAULT_CREATE_VAULT: 'vault/createVault',
-  VAULT_UPDATE_VAULT: 'vault/updateVault', // name and/or hue
-  VAULT_DELETE_VAULT: 'vault/deleteVault', // its items move to `moveTo`, or to the ゴミ箱 only when `deleteItems` is true
+  VAULT_UPDATE_VAULT: 'vault/updateVault',
+  VAULT_DELETE_VAULT: 'vault/deleteVault',
 
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',
-  SETTINGS_LANGUAGE: 'settings/language', // content scripts: the 言語 and テーマ settings only (they cannot read storage)
+  SETTINGS_LANGUAGE: 'settings/language',
 
   CLIPBOARD_SCHEDULE_CLEAR: 'clipboard/scheduleClear',
   ACTIVITY_PING: 'activity/ping',
@@ -38,20 +33,18 @@ export const MSG = Object.freeze({
   AUTOFILL_REQUEST_FILL: 'autofill/requestFill',
   AUTOFILL_OFFER_SAVE: 'autofill/offerSave',
   AUTOFILL_CONFIRM_SAVE: 'autofill/confirmSave',
-  AUTOFILL_NOTE_USERNAME: 'autofill/noteUsername', // the username step of a two-step login
-  // SW -> content script
+  AUTOFILL_NOTE_USERNAME: 'autofill/noteUsername',
   AUTOFILL_DO_FILL: 'autofill/doFill',
 
   PASSKEY_CREATE: 'passkey/create',
   PASSKEY_GET: 'passkey/get',
   PASSKEY_REQUEST: 'passkey/request',
   PASSKEY_RESPOND: 'passkey/respond',
-  PASSKEY_ASSERT: 'passkey/assert', // bridge → SW: the user picked a passkey on the page card
-  PASSKEY_SAVE: 'passkey/save', // bridge → SW: the user saved a passkey on the page card
-  PASSKEY_CANCEL: 'passkey/cancel', // bridge → SW when the page aborts
-  PASSKEY_VERIFY: 'passkey/verify', // consent window → SW: master-password re-prompt for UV
+  PASSKEY_ASSERT: 'passkey/assert',
+  PASSKEY_SAVE: 'passkey/save',
+  PASSKEY_CANCEL: 'passkey/cancel',
+  PASSKEY_VERIFY: 'passkey/verify',
 
-  // SW -> offscreen document
   OFFSCREEN_CLEAR_CLIPBOARD: 'offscreen/clearClipboard',
 });
 
@@ -64,28 +57,24 @@ export const ERR = Object.freeze({
   INVALID: 'INVALID',
   DOMAIN_MISMATCH: 'DOMAIN_MISMATCH',
   FORBIDDEN: 'FORBIDDEN',
-  NOT_ALLOWED: 'NOT_ALLOWED', // WebAuthn NotAllowedError (user cancelled / timed out)
-  FALLBACK: 'FALLBACK', // let the browser's own WebAuthn handle the request
-  NOT_EMPTY: 'NOT_EMPTY', // a vault still holds items and the request said neither where to move them nor to delete them
+  NOT_ALLOWED: 'NOT_ALLOWED',
+  FALLBACK: 'FALLBACK',
+  NOT_EMPTY: 'NOT_EMPTY',
   INTERNAL: 'INTERNAL',
-  // WebAuthn: webauthn-page.js turns these into the DOMException the site expects
-  INVALID_STATE: 'INVALID_STATE', // InvalidStateError: the credential is already registered
-  SECURITY: 'SECURITY', // SecurityError: the rp id does not fit the page's origin
-  UV_REQUIRED: 'UV_REQUIRED', // the site requires user verification that was not given
+  INVALID_STATE: 'INVALID_STATE',
+  SECURITY: 'SECURITY',
+  UV_REQUIRED: 'UV_REQUIRED',
 });
 
-// autoLockMinutes value for "ロックしない": never lock on its own, also not when the browser
-// closes (the vault key is kept on this device). 0 = lock when the browser closes.
 export const NEVER_LOCK = -1;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,
-  language: 'auto', // 'auto' follows the browser's UI language; 'ja' | 'en' pin one (shared/i18n.js)
-  theme: 'dark', // 'dark' | 'light' | 'auto' (follows the OS); Akari is dark unless the user picks otherwise
+  language: 'auto',
+  theme: 'dark',
 });
 
-// Vaults (保管庫) the user can make: name length in characters, how many in all.
 export const VAULT_LIMITS = Object.freeze({ name: 40, count: 20 });
 
 export const DEFAULT_VAULTS = Object.freeze([

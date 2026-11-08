@@ -1,11 +1,3 @@
-// Akari autofill content script (ISOLATED world, every http(s) frame).
-// Classic script: no imports, message names mirror src/shared/messages.js.
-//
-// - never fills on its own: only on the popup / shortcut request (autofill/doFill) or a click
-//   on a row of the inline menu
-// - inline menu and save bar live in CLOSED shadow roots, built with textContent only
-// - the page can never reach vault data: the service worker judges origins from sender.*
-
 (() => {
   'use strict';
 
@@ -19,14 +11,12 @@
     }
   };
 
-  // A content script left over from before an extension reload is dead: replace it.
   const previous = window.__akariAutofill;
   if (previous) {
     if (previous.alive()) return;
     try {
       previous.dispose();
     } catch {
-      /* old context is gone */
     }
   }
 
@@ -38,7 +28,6 @@
     NOTE_USERNAME: 'autofill/noteUsername',
     DO_FILL: 'autofill/doFill',
   };
-  // In-page UI text (i18n-page.js); the Japanese source text if that script is missing.
   const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
   const lockedText = () => t('Akari はロックされています — ツールバーのアイコンから解除してください');
 
@@ -46,13 +35,19 @@
   const ac = new AbortController();
   const LISTEN = { capture: true, signal: ac.signal };
   const LISTEN_PASSIVE = { capture: true, passive: true, signal: ac.signal };
-  const hosts = new Set(); // Akari's own shadow hosts: events from them are ignored
-  const knownPassword = new WeakSet(); // inputs seen as type=password (they may turn into type=text via "show")
-  let filling = false; // true while we move focus ourselves
-  let lastUsername = ''; // for two-step logins where the password page has no username field
+  const hosts = new Set();
+  const knownPassword = new WeakSet();
+  let filling = false;
+  let lastUsername = '';
   let offerCooldownUntil = 0;
-
-  // ---- messaging ---------------------------------------------------------------
+  const MAX_SCOPE_ANCESTORS = 8;
+  const MAX_INPUTS_IN_LOGIN_SCOPE = 24;
+  const MAX_FIELDS_IN_LOGIN_SCOPE = 8;
+  const QUIET_AFTER_NO_MATCH_MS = 10000;
+  const OFFER_COOLDOWN_MS = 1500;
+  const SAVED_BAR_LINGER_MS = 1500;
+  const FOCUSOUT_SETTLE_MS = 200;
+  const DOM_CHANGE_DEBOUNCE_MS = 300;
 
   async function send(type, payload) {
     const fail = (code) => ({ ok: false, code });
@@ -65,8 +60,6 @@
       return fail('INTERNAL');
     }
   }
-
-  // ---- field detection ---------------------------------------------------------
 
   const TEXT_TYPES = new Set(['text', 'email', 'tel']);
   const USER_HINT = /user|login|log-?in|e-?mail|account|member|identifier|(^|[-_.\s])id($|[-_.\s])|ユーザー?|アカウント|ログイン|メール|会員/i;
@@ -93,7 +86,6 @@
         return false;
       }
     } catch {
-      /* older engines: fall through to the size check */
     }
     const r = el.getBoundingClientRect();
     return r.width >= 8 && r.height >= 8 && r.right + scrollX > 0 && r.bottom + scrollY > 0;
@@ -109,7 +101,6 @@
       : Array.from(scope.querySelectorAll('input'));
   const passwordsIn = (scope) => inputsIn(scope).filter((i) => isPasswordish(i) && usable(i));
 
-  // Including open shadow roots (closed ones are invisible to us by design).
   function deepInputs(root = document, out = []) {
     out.push(...root.querySelectorAll('input'));
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
@@ -125,33 +116,31 @@
     return a;
   }
 
-  /** The form, or (SPA without <form>) the nearest container that holds the field's counterpart. */
   function scopeOf(el) {
     if (el.form) return el.form;
     const wantPassword = !isPasswordish(el);
     let node = el.parentElement;
-    for (let i = 0; node && node !== document.body && node !== document.documentElement && i < 8; i++) {
+    for (let i = 0; node && node !== document.body && node !== document.documentElement && i < MAX_SCOPE_ANCESTORS; i++) {
       const all = inputsIn(node);
-      if (all.length > 24) break; // a big container is not a login form (and checking visibility is not free)
+      if (all.length > MAX_INPUTS_IN_LOGIN_SCOPE) break;
       const fields = all.filter(isFieldCandidate);
-      if (fields.length > 8) break;
+      if (fields.length > MAX_FIELDS_IN_LOGIN_SCOPE) break;
       if (wantPassword ? fields.some(isPasswordish) : fields.length > 1) return node;
       node = node.parentElement;
     }
     return el.parentElement || el.getRootNode();
   }
 
-  /** Which password field of a scope is the *current* one (sign-up / change forms have new-password ones). */
   function currentPassword(pws) {
     const marked = pws.find((p) => acTokens(p).includes('current-password'));
     if (marked) return marked;
     const plain = pws.filter((p) => !acTokens(p).includes('new-password'));
     if (!plain.length) return null;
-    if (pws.length === 2 && plain.length === 2) return null; // password + confirm: sign-up
+    const looksLikeSignUpWithConfirmation = pws.length === 2 && plain.length === 2;
+    if (looksLikeSignUpWithConfirmation) return null;
     return plain[0];
   }
 
-  /** Username field for a password field: autocomplete=username, then name hints, then the nearest one before it. */
   function findUsername(scope, anchor, loose) {
     const cands = inputsIn(scope).filter((i) => TEXT_TYPES.has(i.type) && !isPasswordish(i) && usable(i));
     const before = anchor ? cands.filter((c) => c.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
@@ -172,7 +161,6 @@
     return ac.includes('username') || ac.includes('email') || el.type === 'email' || USER_HINT_STRONG.test(describe(el));
   }
 
-  /** 'username' | 'password' (current) | 'new-password' | null */
   function fieldRole(el) {
     if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly || hosts.has(el)) return null;
     if (isPasswordish(el)) {
@@ -186,15 +174,11 @@
       const cur = currentPassword(pws);
       return cur && findUsername(scope, cur, true) === el ? 'username' : null;
     }
-    // First step of a two-step login: only trust an explicit hint.
     return acTokens(el).includes('username') ? 'username' : null;
   }
 
-  // ---- filling -------------------------------------------------------------------
-
   const nativeValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
-  // Native setter + bubbling input/change/blur, so React/Vue controlled inputs notice the value.
   function fillField(el, value) {
     try {
       el.focus({ preventScroll: true });
@@ -209,22 +193,20 @@
   }
 
   function fillTarget(target, username, password) {
-    let last = null;
+    let lastFilled = null;
     filling = true;
     try {
-      if (target.username && username && fillField(target.username, username)) last = target.username;
-      if (target.password && password && fillField(target.password, password)) last = target.password;
-      if (last) last.focus({ preventScroll: true }); // leave the caret where Enter submits
+      if (target.username && username && fillField(target.username, username)) lastFilled = target.username;
+      if (target.password && password && fillField(target.password, password)) lastFilled = target.password;
+      if (lastFilled) lastFilled.focus({ preventScroll: true });
     } catch {
-      /* page removed the field meanwhile */
     } finally {
       filling = false;
     }
     removeFieldUi();
-    return !!last;
+    return !!lastFilled;
   }
 
-  /** Fill target for a popup / shortcut request: the focused form if any, else the first one. */
   function findFillTarget() {
     const pws = deepInputs().filter((i) => isPasswordish(i) && usable(i));
     const targets = [];
@@ -240,14 +222,13 @@
       const active = deepActive();
       return (active && targets.find((t) => t.scope.contains(active))) || targets[0];
     }
-    if (pws.length) return null; // only sign-up / change-password forms: nothing to fill
+    if (pws.length) return null;
     const user = deepInputs().find((i) => usable(i) && looksLikeUsername(i));
     return user ? { username: user, password: null } : null;
   }
 
   function onMessage(msg, sender, sendResponse) {
     if (!msg || msg.type !== M.DO_FILL || !isTop || sender.id !== chrome.runtime.id) return;
-    // The service worker pinned the origin it verified; refuse if the tab moved on since.
     if (typeof msg.origin === 'string' && msg.origin !== location.origin) {
       sendResponse({ filled: false });
       return;
@@ -259,8 +240,6 @@
   }
   chrome.runtime.onMessage.addListener(onMessage);
 
-  // ---- shadow UI plumbing (shadow-ui.js) ----------------------------------------
-
   const ui = globalThis.__akariShadowUi;
   const { el, orb, themed, visibilityGuard } = ui;
 
@@ -270,9 +249,7 @@
     return made;
   }
 
-  // ---- inline menu --------------------------------------------------------------
-
-  const quietUntil = new WeakMap(); // input -> timestamp until which the DOM observer won't re-query for it
+  const quietUntil = new WeakMap();
   const field = { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, token: 0, guard: null };
 
   function removeFieldUi() {
@@ -326,7 +303,7 @@
     const offscreen = r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth;
     field.btn.style.display = offscreen || r.width < size * 3 ? 'none' : 'block';
     field.btn.style.width = field.btn.style.height = field.btn.style.lineHeight = size + 'px';
-    field.btn.style.fontSize = Math.max(11, Math.round(size * 0.58)) + 'px'; // the 灯 glyph never below 11px
+    field.btn.style.fontSize = Math.max(11, Math.round(size * 0.58)) + 'px';
     field.btn.style.left = Math.round(r.right - size - 6) + 'px';
     field.btn.style.top = Math.round(r.top + (r.height - size) / 2) + 'px';
     if (field.menu) placeMenu(r);
@@ -366,7 +343,6 @@
       menu.appendChild(row);
       field.rows.push({ row, id: it.id });
     }
-    // Key hints below the rows (the first row stays right under the field), then the close button.
     const foot = el('div', 'foot');
     foot.append(el('span', 'mark', '灯'), el('span', 'grow'));
     const keys = field.rows.length ? [['↑↓', t('選択')], ['⏎', t('入力')]] : [];
@@ -406,7 +382,6 @@
       if (field.root) renderMenu([], res.code === 'LOCKED' ? lockedText() : t('このサイトでは使えません'));
       return;
     }
-    // Credentials live only in this stack frame; the page sees them once they are in the inputs.
     fillTarget(target, res.data.username, res.data.password);
   }
 
@@ -434,8 +409,7 @@
     if (token !== field.token || field.el !== input) return;
     if (res.ok && res.data.pendingSave && isTop && !bar.host) showSaveBar(res.data.pendingSave);
     if (!res.ok || (!res.data.locked && !res.data.items.length)) {
-      // Nothing useful to offer; don't re-ask on every DOM mutation while this field stays focused.
-      quietUntil.set(input, Date.now() + 10000);
+      quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
       return removeFieldUi();
     }
     field.state = res.data;
@@ -460,8 +434,6 @@
     if (role === 'username' || role === 'password') onFieldFocus(target, role);
     else if (field.el && !field.open) removeFieldUi();
   }
-
-  // ---- save / update bar -------------------------------------------------------
 
   const bar = { host: null, guard: null };
 
@@ -503,7 +475,6 @@
     body.append(who, msg, btns);
     card.append(head, body);
     root.appendChild(card);
-    // Saving/updating a password is as sensitive as filling one: same visibility rules as the menu.
     const guard = visibilityGuard(card, () => host);
     bar.guard = guard;
 
@@ -520,10 +491,10 @@
         const done = el('div', 'done');
         done.append(el('span', 'ok', '[ ok ]'), el('span', '', t('保存しました')));
         card.replaceChildren(done);
-        setTimeout(() => bar.host === host && hideSaveBar(), 1500);
+        setTimeout(() => bar.host === host && hideSaveBar(), SAVED_BAR_LINGER_MS);
         return;
       }
-      if (res.ok) return hideSaveBar(); // candidate expired meanwhile
+      if (res.ok) return hideSaveBar();
       save.disabled = skip.disabled = false;
       note(res.code === 'LOCKED' ? lockedText() : t('保存できませんでした'));
     });
@@ -534,8 +505,6 @@
     skip.addEventListener('click', (e) => e.isTrusted && dismiss());
     card.addEventListener('keydown', (e) => e.isTrusted && e.key === 'Escape' && dismiss());
   }
-
-  // ---- save prompt triggers -------------------------------------------------------
 
   function credentialsFrom(scope) {
     const filled = passwordsIn(scope).filter((p) => p.value);
@@ -552,7 +521,7 @@
   function credentialsFromButton(btn) {
     if (btn.form) return credentialsFrom(btn.form);
     let node = btn.parentElement;
-    for (let i = 0; node && node !== document.body && node !== document.documentElement && i < 8; i++) {
+    for (let i = 0; node && node !== document.body && node !== document.documentElement && i < MAX_SCOPE_ANCESTORS; i++) {
       const pw = passwordsIn(node).find((p) => p.value);
       if (pw) return credentialsFrom(scopeOf(pw));
       node = node.parentElement;
@@ -579,10 +548,6 @@
     return n.getAttribute('role') === 'button' && SUBMIT_TEXT.test(label);
   }
 
-  /**
-   * A form that is only a username step (two-step logins: the password comes on the next page,
-   * which this content script will not remember): the service worker keeps the username for it.
-   */
   function noteUsername(scope) {
     if (!scope || passwordsIn(scope).some((p) => p.value)) return;
     const user = deepInputs(scope).find((el) => el.value && el.value.trim() && looksLikeUsername(el) && isVisible(el));
@@ -591,14 +556,12 @@
 
   async function offerSave(creds) {
     if (!isTop || !creds || !creds.password || Date.now() < offerCooldownUntil) return;
-    offerCooldownUntil = Date.now() + 1500; // click + submit + Enter all fire for one login
+    offerCooldownUntil = Date.now() + OFFER_COOLDOWN_MS;
     const res = await send(M.OFFER_SAVE, { username: creds.username, password: creds.password });
     if (res.ok && (res.data.action === 'new' || res.data.action === 'update')) {
       showSaveBar({ action: res.data.action, username: res.data.username, host: res.data.host });
     }
   }
-
-  // ---- wiring ----------------------------------------------------------------------
 
   document.addEventListener('focusin', (e) => {
     if (filling) return;
@@ -610,7 +573,7 @@
   document.addEventListener('focusout', () => {
     setTimeout(() => {
       if (field.el && !field.open && deepActive() !== field.el) removeFieldUi();
-    }, 200);
+    }, FOCUSOUT_SETTLE_MS);
   }, LISTEN_PASSIVE);
 
   document.addEventListener('pointerdown', (e) => {
@@ -640,9 +603,9 @@
       }
     }
     if (e.key === 'Enter' && !e.isComposing) {
-      const t = e.composedPath()[0];
-      if (t && t.tagName === 'INPUT' && isPasswordish(t)) offerSave(credentialsFrom(scopeOf(t)));
-      else if (t && t.tagName === 'INPUT' && looksLikeUsername(t)) noteUsername(scopeOf(t));
+      const input = e.composedPath()[0];
+      if (input && input.tagName === 'INPUT' && isPasswordish(input)) offerSave(credentialsFrom(scopeOf(input)));
+      else if (input && input.tagName === 'INPUT' && looksLikeUsername(input)) noteUsername(scopeOf(input));
     }
   }, LISTEN);
 
@@ -663,14 +626,13 @@
   }, LISTEN_PASSIVE);
 
   document.addEventListener('change', (e) => {
-    const t = e.composedPath()[0];
-    if (t && t.tagName === 'INPUT' && t.value && looksLikeUsername(t)) lastUsername = t.value.trim();
+    const input = e.composedPath()[0];
+    if (input && input.tagName === 'INPUT' && input.value && looksLikeUsername(input)) lastUsername = input.value.trim();
   }, LISTEN_PASSIVE);
 
   window.addEventListener('scroll', schedulePlace, LISTEN_PASSIVE);
   window.addEventListener('resize', schedulePlace, LISTEN_PASSIVE);
 
-  // Forms rendered later (SPA): remember password inputs, drop UI of vanished fields, pick up an autofocused field.
   let domTimer = 0;
   const observer = new MutationObserver(() => {
     if (domTimer) return;
@@ -682,7 +644,7 @@
         const active = deepActive();
         if (active && !(quietUntil.get(active) > Date.now())) considerFocus(active);
       }
-    }, 300);
+    }, DOM_CHANGE_DEBOUNCE_MS);
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -692,19 +654,15 @@
     try {
       chrome.runtime.onMessage.removeListener(onMessage);
     } catch {
-      /* context already invalidated */
     }
     for (const h of hosts) h.remove();
     hosts.clear();
   }
   window.__akariAutofill = { alive, dispose };
 
-  // ---- init --------------------------------------------------------------------------
-
   for (const p of document.querySelectorAll('input[type="password"]')) knownPassword.add(p);
   considerFocus(deepActive());
   if (isTop) {
-    // A save prompt carried over from the previous page of this tab (login -> redirect).
     send(M.PAGE_MATCHES).then((res) => {
       if (res.ok && res.data.pendingSave && !bar.host) showSaveBar(res.data.pendingSave);
     });

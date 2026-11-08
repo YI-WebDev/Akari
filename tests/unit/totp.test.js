@@ -13,14 +13,12 @@ import {
 } from '../../extension/src/lib/totp.js';
 import { utf8, fromUtf8 } from '../../extension/src/shared/bytes.js';
 
-// RFC 6238 Appendix B (8 digits). Seeds are ASCII strings of the length matching the hash.
 const SEEDS = {
   SHA1: '12345678901234567890',
   SHA256: '12345678901234567890123456789012',
   SHA512: '1234567890123456789012345678901234567890123456789012345678901234',
 };
-const RFC6238 = [
-  // [time (s), SHA1, SHA256, SHA512]
+const RFC6238_VECTORS = [
   [59, '94287082', '46119246', '90693936'],
   [1111111109, '07081804', '68084774', '25091201'],
   [1111111111, '14050471', '67062674', '99943326'],
@@ -30,7 +28,7 @@ const RFC6238 = [
 ];
 
 test('RFC 6238 Appendix B test vectors (SHA1 / SHA256 / SHA512, 8 digits)', async () => {
-  for (const [t, ...expected] of RFC6238) {
+  for (const [t, ...expected] of RFC6238_VECTORS) {
     for (const [i, algorithm] of ['SHA1', 'SHA256', 'SHA512'].entries()) {
       const config = { secret: base32Encode(utf8(SEEDS[algorithm])), algorithm, digits: 8, period: 30 };
       assert.equal(await generateTotp(config, t * 1000), expected[i], `${algorithm} @ T=${t}`);
@@ -48,9 +46,7 @@ test('RFC 4226 Appendix D HOTP vectors (6 digits)', async () => {
 
 test('generateTotp defaults to SHA1 / 6 digits / 30 s and zero-pads', async () => {
   const config = { secret: base32Encode(utf8(SEEDS.SHA1)) };
-  // 6-digit truncation of the RFC T=59 value 94287082
   assert.equal(await generateTotp(config, 59000), '287082');
-  // T=1111111109 → 07081804 → leading zero must survive in the 6-digit code
   assert.equal(await generateTotp(config, 1111111109000), '081804');
 });
 
@@ -64,7 +60,6 @@ test('the code is stable inside a period and changes at the boundary', async () 
 });
 
 test('known secret JBSWY3DPEHPK3PXP produces the reference code', async () => {
-  // "Hello!\xDE\xAD\xBE\xEF" – widely used demo secret; value cross-checked with node:crypto
   const { createHmac } = await import('node:crypto');
   const key = Buffer.from(base32Decode('JBSWY3DPEHPK3PXP'));
   const counter = Buffer.alloc(8);
@@ -82,13 +77,12 @@ test('remainingSeconds', () => {
   assert.equal(remainingSeconds(c, 29_999), 1);
   assert.equal(remainingSeconds(c, 30_000), 30);
   assert.equal(remainingSeconds({ period: 60 }, 61_000), 59);
-  assert.equal(remainingSeconds({}, 1_000), 29); // default period
+  assert.equal(remainingSeconds({}, 1_000), 29, 'default period');
   const r = remainingSeconds(c);
   assert.ok(Number.isInteger(r) && r >= 1 && r <= 30);
 });
 
 test('base32 decode: case-insensitive, ignores spaces / hyphens / padding', () => {
-  // RFC 4648 §10 test vectors
   const vectors = [['', ''], ['f', 'MY======'], ['fo', 'MZXQ===='], ['foo', 'MZXW6==='], ['foob', 'MZXW6YQ='], ['fooba', 'MZXW6YTB'], ['foobar', 'MZXW6YTBOI======']];
   for (const [plain, enc] of vectors) {
     assert.equal(fromUtf8(base32Decode(enc)), plain);
@@ -96,7 +90,7 @@ test('base32 decode: case-insensitive, ignores spaces / hyphens / padding', () =
     assert.equal(base32Encode(utf8(plain)), enc.replace(/=+$/, ''));
   }
   assert.equal(fromUtf8(base32Decode('mzxw 6ytb-oi')), 'foobar');
-  assert.throws(() => base32Decode('MZXW1YTB'), /秘密鍵/); // '1' is not in the alphabet
+  assert.throws(() => base32Decode('MZXW1YTB'), /秘密鍵/);
 });
 
 test('base32 round-trips random bytes', () => {
@@ -120,10 +114,10 @@ test('isValidSecret', () => {
   assert.ok(isValidSecret('MZXW6YTBOI======'));
   assert.ok(!isValidSecret(''));
   assert.ok(!isValidSecret('   '));
-  assert.ok(!isValidSecret('JBSWY3D')); // too short
-  assert.ok(!isValidSecret('JBSWY3DPEHPK3PX1')); // '1' invalid
+  assert.ok(!isValidSecret('JBSWY3D'));
+  assert.ok(!isValidSecret('JBSWY3DPEHPK3PX1'));
   assert.ok(!isValidSecret('JBSWY3DPEHPK3PXP!'));
-  assert.ok(!isValidSecret('JBSWY3DPEHPK3PXPA')); // 17 chars cannot encode whole bytes
+  assert.ok(!isValidSecret('JBSWY3DPEHPK3PXPA'), '17 chars cannot encode whole bytes');
   assert.ok(!isValidSecret(undefined));
 });
 

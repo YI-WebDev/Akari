@@ -52,7 +52,6 @@ function setup({ items = [login()], locked = false, tabs, active, sendMessage } 
   return { svc, vault, chrome, clock };
 }
 
-/** Content-script sender: frame URL (sender.url) + top-level tab URL. */
 const sender = (frameUrl, tabUrl = frameUrl, over = {}) => ({
   id: 'ext', url: frameUrl, frameId: 0, tab: { id: 1, url: tabUrl }, ...over,
 });
@@ -183,15 +182,12 @@ test('autofill/pageMatches: needs both frame and top URL to match', async () => 
   assert.equal(ok.locked, false);
   assert.deepEqual(ok.items.map((i) => i.id), ['i1']);
 
-  // frame from another site inside a github.com tab
   const evilFrame = await svc.pageMatches({}, sender('https://evil.example/f', 'https://github.com/login', { frameId: 3 }));
   assert.deepEqual(evilFrame.items, []);
 
-  // github.com framed inside another site's tab
   const evilTop = await svc.pageMatches({}, sender('https://github.com/login', 'https://evil.example/', { frameId: 3 }));
   assert.deepEqual(evilTop.items, []);
 
-  // same-site subframe is fine
   const sub = await svc.pageMatches({}, sender('https://gist.github.com/x', 'https://github.com/login', { frameId: 3 }));
   assert.equal(sub.items.length, 1);
 });
@@ -279,11 +275,9 @@ test('autofill/offerSave: validation and locked', async () => {
 test('pending candidate is exposed without its password and survives a same-origin navigation', async () => {
   const { svc } = setup();
   await svc.offerSave({ username: 'alice', password: 'changed' }, sender('https://github.com/login'));
-  // next page on the same tab and origin
   const pm = await svc.pageMatches({}, sender('https://github.com/dashboard'));
   assert.deepEqual(pm.pendingSave, { action: 'update', username: 'alice', host: 'github.com' });
   assert.ok(!JSON.stringify(pm).includes('changed'));
-  // iframes never get it
   const sub = await svc.pageMatches({}, sender('https://github.com/f', 'https://github.com/', { frameId: 5 }));
   assert.equal(sub.pendingSave, undefined);
 });
@@ -296,7 +290,6 @@ test('pending candidate is tied to the origin it was captured on', async () => {
     assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender(other)), { saved: false }, other);
   }
   assert.equal(vault.state.data.items[0].password, 'pw-alice');
-  // not consumed by the mismatches: back on the original origin it is still there
   assert.ok((await svc.pageMatches({}, sender('https://github.com/home'))).pendingSave);
   assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://github.com/home')), { saved: true, action: 'update' });
   const updated = vault.state.data.items[0];
@@ -324,7 +317,6 @@ test('pending candidate is dropped when the vault locks (seen on access) or unlo
   assert.equal((await a.svc.pageMatches({}, sender('https://github.com/'))).pendingSave, undefined);
   assert.deepEqual(await a.svc.confirmSave({ decision: 'save' }, sender('https://github.com/')), { saved: false });
 
-  // a lock + unlock cycle nobody observed is caught by the unlock hook
   const b = setup();
   await b.svc.offerSave({ username: 'alice', password: 'changed' }, sender('https://github.com/login'));
   b.vault.state.locked = true;
@@ -362,7 +354,6 @@ test('autofill/confirmSave: new login is created in the personal vault', async (
   assert.equal(created.username, 'mallory');
   assert.equal(created.password, 's3cret');
   assert.equal(created.vault, 'personal');
-  // cleared
   assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://example.org/')), { saved: false });
   assert.equal(vault.state.data.items.length, 2);
 });
@@ -447,17 +438,14 @@ test('shortcut: nothing to fill on non-matching or non-web tabs', async () => {
   assert.equal(b.chrome.calls.sendMessage.length, 0);
 });
 
-// Signing in with a login Akari already has must not end in "Akari に保存しますか？".
 const twoLogins = () => setup({ items: [login(), login({ id: 'i2', username: 'bob', password: 'pw-bob' })] });
 
 test('autofill/offerSave: two-step login — the username step is remembered for the password page', async () => {
   const { svc, clock } = twoLogins();
-  // page 1 (username only), page 2 (password only, a new document on the same site)
   assert.deepEqual(svc.noteUsername({ username: ' bob ' }, sender('https://github.com/login')), {});
   assert.deepEqual(await svc.offerSave({ username: '', password: 'pw-bob' }, sender('https://github.com/session')), { action: 'none' });
   const upd = await svc.offerSave({ username: '', password: 'new-bob' }, sender('https://github.com/session'));
   assert.deepEqual([upd.action, upd.itemId, upd.username], ['update', 'i2', 'bob']);
-  // another site, another tab, or ten minutes later: not used
   const elsewhere = await svc.offerSave({ username: '', password: 'pw-x' }, sender('https://example.org/'));
   assert.deepEqual([elsewhere.action, elsewhere.username], ['new', '']);
   const tab2 = await svc.offerSave({ username: '', password: 'new-bob' },
@@ -468,17 +456,14 @@ test('autofill/offerSave: two-step login — the username step is remembered for
 });
 
 test('autofill/offerSave: a login Akari filled into the tab is not offered again', async () => {
-  // inline menu (requestFill)
   const a = twoLogins();
   await a.svc.requestFill({ itemId: 'i2' }, sender('https://github.com/login'));
   assert.deepEqual(await a.svc.offerSave({ username: '', password: 'pw-bob' }, sender('https://github.com/session')), { action: 'none' });
   const changed = await a.svc.offerSave({ username: '', password: 'edited-after-fill' }, sender('https://github.com/session'));
   assert.deepEqual([changed.action, changed.itemId], ['update', 'i2'], 'a changed password updates the login that was filled');
-  // popup / shortcut (fill)
   const b = twoLogins();
   assert.deepEqual(await b.svc.fill({ tabId: 1, itemId: 'i2' }), { filled: true });
   assert.deepEqual(await b.svc.offerSave({ username: 'bob', password: 'pw-bob' }, sender('https://github.com/login')), { action: 'none' });
-  // a different account typed by hand after the fill is still offered
   const other = await b.svc.offerSave({ username: 'carol', password: 'pw-carol' }, sender('https://github.com/login'));
   assert.deepEqual([other.action, other.username], ['new', 'carol']);
 });

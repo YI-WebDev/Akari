@@ -1,8 +1,3 @@
-// Common Japanese words in lowercase Hepburn romaji for the "ことば" passphrase mode.
-// Rules: a-z only, 3-8 letters, unique, no offensive or violent words. Words are always
-// joined by a separator, so prefix overlaps cannot make a phrase ambiguous.
-// The list is validated by tests/unit/generator.test.js; keep it free of duplicates when editing.
-
 const GROUPS = `
 sora kumo hoshi umi yama kaze hana mori tsuki yuki ame niji kawa hikari akari neko tori sakura kaede shiro aoi midori hotaru nami yoru asa tane michi
 taiyou kiri shimo arare hyou kaminari arashi yuudachi tsuyu kosame yuuyake yuuhi asahi akebono tasogare yoake mayonaka hiru yuugata kinou kyou

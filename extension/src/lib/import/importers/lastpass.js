@@ -1,11 +1,3 @@
-// LastPass CSV: url,username,password,totp,extra,name,grouping,fav
-// - secure notes have url "http://sn"; structured ones ("NoteType:Credit Card" …) keep their
-//   "Key:Value" lines in `extra`. Those whose NoteType Akari has a type for (cards, bank accounts,
-//   addresses, …) become that type; keys with no template slot become custom fields, and the
-//   free text after "Notes:" is the note. Other NoteTypes (Email Account, Insurance, Custom_…)
-//   stay secure notes listing their lines.
-// - `extra` of a normal login is its note, fav is "1" for favourites
-
 import { isTruthy } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { collect, fits, otpOf, readCsv, routeToTemplate } from './_csv.js';
@@ -15,8 +7,9 @@ const SHAPE = { all: ['url', 'username', 'password', 'name'], any: ['extra', 'gr
 export const accepts = (headers) => fits(headers, SHAPE);
 
 const SECURE_NOTE_URL = 'http://sn';
+const EMPTY_URL = 'http://';
+const NO_GROUP = '(none)';
 
-/** NoteType (normalised) → Akari type. */
 const NOTE_TYPES = {
   creditcard: 'card',
   bankaccount: 'bankAccount',
@@ -33,7 +26,6 @@ const NOTE_TYPES = {
   healthinsurance: 'medicalRecord',
 };
 
-/** Akari template key → the LastPass labels it is filled from (besides its own key and label). */
 const ALIASES = {
   card: {
     cardholder: ['Name on Card'], number: ['Number'], expiry: ['Expiration Date'], cvv: ['Security Code'],
@@ -96,11 +88,6 @@ const ALIASES = {
 
 const isNoteType = (line) => /^NoteType:/i.test(line);
 
-/**
- * Old-style rendering for NoteTypes Akari has no type for: "NoteType: X", then "Key: Value"
- * lines, then optionally a "Notes:" line that starts free text running to the end. The Language
- * line is dropped; anything that is not a Key:Value line is kept as-is.
- */
 function noteFromExtra(extra) {
   const text = String(extra ?? '').replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
@@ -119,11 +106,6 @@ function noteFromExtra(extra) {
   return out.join('\n');
 }
 
-/**
- * Lines after "NoteType:X" → { pairs: [label, value][], notes, loose }. A line without a "Key:"
- * continues the previous value; inside a PEM block every line does (its headers contain
- * colons). "Notes:" starts the free text; "Language" is dropped.
- */
 function structuredLines(lines) {
   const pairs = [];
   const loose = [];
@@ -153,7 +135,6 @@ function structuredLines(lines) {
   return { pairs, notes, loose };
 }
 
-/** A structured secure note as an Akari item, or null when its NoteType has no Akari type. */
 function structuredItem(r, lines) {
   const kind = normKey(lines[0].slice(lines[0].indexOf(':') + 1));
   const type = Object.hasOwn(NOTE_TYPES, kind) ? NOTE_TYPES[kind] : null;
@@ -175,7 +156,7 @@ export async function parse(file) {
   let foldered = false;
   const out = collect(records, (r) => {
     const group = String(r.grouping ?? '').trim();
-    if (group && group !== '(none)') foldered = true;
+    if (group && group !== NO_GROUP) foldered = true;
     const url = String(r.url ?? '').trim();
     if (url.toLowerCase() === SECURE_NOTE_URL) {
       const lines = String(r.extra ?? '').replace(/\r\n?/g, '\n').split('\n');
@@ -185,7 +166,7 @@ export async function parse(file) {
     const { totp, extra } = otpOf(r.totp);
     return {
       title: r.name,
-      url: url === 'http://' ? '' : url,
+      url: url === EMPTY_URL ? '' : url,
       username: r.username,
       password: r.password,
       note: r.extra,

@@ -9,8 +9,6 @@ import {
 import { decode as cborDecode } from '../../extension/src/lib/cbor.js';
 import { toB64url, fromB64url, sha256, concat, utf8 } from '../../extension/src/shared/bytes.js';
 
-// passkey-service.js imports vault-service.js (chrome.storage based). The service is
-// built from a factory that takes the vault, so the real module is swapped for an empty stub.
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (/(^|\/)vault-service\.js$/.test(specifier)) {
@@ -25,10 +23,6 @@ const RP_ID = 'example.com';
 const ORIGIN = 'https://example.com';
 const AAGUID_STR = 'ea7f7ba3-3d3b-42cd-8c88-2d82a9548d11';
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
-
-// ---------------------------------------------------------------------------
-// lib/webauthn.js against an independent verifier
-// ---------------------------------------------------------------------------
 
 async function registerOnce({ rpId = RP_ID, origin = ORIGIN } = {}) {
   const challenge = toB64url(rand(32));
@@ -79,7 +73,7 @@ test('createCredential: attestation verifies with @simplewebauthn/server', async
   assert.equal(att.get('attStmt').size, 0);
   assert.equal(cred.credentialId.length, 32);
   assert.deepEqual(cred.authData.subarray(37, 53), AKARI_AAGUID);
-  assert.equal(cred.authData[32], 0x5d); // UP | UV | BE | BS | AT
+  assert.equal(cred.authData[32], 0x5d, 'UP | UV | BE | BS | AT');
 });
 
 test('getAssertion: assertion verifies with @simplewebauthn/server and node:crypto', async () => {
@@ -93,7 +87,7 @@ test('getAssertion: assertion verifies with @simplewebauthn/server and node:cryp
   const clientDataHash = await sha256(clientDataJSON);
   const a = await getAssertion({ passkey, rpId: RP_ID, clientDataHash, uv: true });
   assert.equal(a.authenticatorData.length, 37);
-  assert.equal(a.authenticatorData[32], 0x1d); // UP | UV | BE | BS
+  assert.equal(a.authenticatorData[32], 0x1d, 'UP | UV | BE | BS');
   assert.deepEqual(a.userHandle, reg.userHandle);
 
   const v = await verifyAuthenticationResponse({
@@ -118,7 +112,6 @@ test('getAssertion: assertion verifies with @simplewebauthn/server and node:cryp
   const key = createPublicKey({ key: Buffer.from(reg.cred.spkiPublicKey), format: 'der', type: 'spki' });
   assert.ok(nodeVerify('sha256', concat(a.authenticatorData, clientDataHash), { key, dsaEncoding: 'der' }, a.signature));
 
-  // Negative control: a different challenge must not verify.
   await assert.rejects(verifyAuthenticationResponse({
     response: {
       id: passkey.credentialId, rawId: passkey.credentialId, type: 'public-key', clientExtensionResults: {},
@@ -143,10 +136,6 @@ test('rawSignatureToDer handles high bits and leading zeros', () => {
   assert.deepEqual([...zero], [0x30, 6, 0x02, 1, 0, 0x02, 1, 0]);
   assert.throws(() => rawSignatureToDer(new Uint8Array(63)));
 });
-
-// ---------------------------------------------------------------------------
-// background/passkey-service.js with fake chrome + vault
-// ---------------------------------------------------------------------------
 
 function makeChrome() {
   const on = { windowRemoved: [], tabRemoved: [], connect: [] };
@@ -225,7 +214,6 @@ function createOptions(over = {}) {
   };
 }
 
-/** A create() while locked: the consent window opens, then the user unlocks Akari in it. */
 async function createInWindow(svc, chrome, vault, msg, count) {
   vault.lock();
   const p = svc.handleCreate(msg, contentSender());
@@ -261,7 +249,7 @@ test('service: request validation', async () => {
   await rejectsWith(svc.handleGet({ options: { challenge: 'AQID' }, mediation: 'conditional' }, contentSender()), 'FALLBACK');
   await rejectsWith(svc.handleCreate({ options: createOptions(), mediation: 'conditional' }, contentSender()), 'FALLBACK');
   await rejectsWith(svc.handleCreate({ options: createOptions({ authenticatorSelection: { authenticatorAttachment: 'cross-platform' } }) }, contentSender()), 'FALLBACK');
-  await rejectsWith(svc.handleGet({ options: { challenge: 'AQID' } }, contentSender()), 'FALLBACK'); // unlocked, nothing stored
+  await rejectsWith(svc.handleGet({ options: { challenge: 'AQID' } }, contentSender()), 'FALLBACK');
   assert.equal(chrome.created.length, 0, 'no window for rejected requests');
 });
 
@@ -275,12 +263,10 @@ test('service: excludeCredentials match answers only after the user acts (card o
   const svc = createPasskeyService({ chrome, vault });
   const options = () => createOptions({ excludeCredentials: [{ type: 'public-key', id: credentialId }] });
 
-  // Unlocked: the card is told (the page is not), and saving anyway is refused.
   const { inline } = await svc.handleCreate({ options: options() }, contentSender());
   assert.equal(inline.excluded, true);
   await rejectsWith(svc.handleSave({ options: options() }, contentSender()), 'INVALID_STATE');
 
-  // Locked: confirming the "already saved" notice in the window -> InvalidStateError (no master password needed).
   let settled = false;
   const w1 = await createInWindow(svc, chrome, vault, { options: options() }, 1);
   w1.p.catch(() => {}).finally(() => { settled = true; });
@@ -291,7 +277,6 @@ test('service: excludeCredentials match answers only after the user acts (card o
   await svc.handleRespond({ reqId: w1.reqId, approve: true }, windowSender(w1.win));
   await rejectsWith(w1.p, 'INVALID_STATE');
 
-  // Cancelling -> NotAllowedError, so a refusal reveals nothing.
   const w2 = await createInWindow(svc, chrome, vault, { options: options() }, 2);
   await svc.handleRespond({ reqId: w2.reqId, approve: false }, windowSender(w2.win));
   await rejectsWith(w2.p, 'NOT_ALLOWED');
@@ -303,7 +288,6 @@ test('service: user verification needs the master password in this window', asyn
   const vault = makeVault();
   const svc = createPasskeyService({ chrome, vault });
 
-  // 'preferred' without proof: approved with UV=0.
   const preferred = createOptions({ authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' } });
   const { p: p1, ...w1 } = await createInWindow(svc, chrome, vault, { options: preferred }, 1);
   const info1 = await svc.handleRequest({ reqId: w1.reqId }, windowSender(w1.win));
@@ -311,7 +295,7 @@ test('service: user verification needs the master password in this window', asyn
   assert.equal(info1.verified, false);
   await svc.handleRespond({ reqId: w1.reqId, approve: true }, windowSender(w1.win));
   const { credential: c1 } = await p1;
-  assert.equal(fromB64url(c1.response.authenticatorData)[32], 0x59); // UP | BE | BS | AT, no UV
+  assert.equal(fromB64url(c1.response.authenticatorData)[32], 0x59, 'UP | BE | BS | AT, no UV');
   await assert.rejects(verifyRegistrationResponse({
     response: c1, expectedChallenge: preferred.challenge, expectedOrigin: ORIGIN, expectedRPID: RP_ID, requireUserVerification: true,
   }));
@@ -321,7 +305,6 @@ test('service: user verification needs the master password in this window', asyn
   assert.equal(reg1.verified, true);
   assert.equal(reg1.registrationInfo.userVerified, false);
 
-  // 'required': refused until verified; a wrong password does not count.
   const required = createOptions({ user: { id: toB64url(utf8('user-2')), name: 'bob', displayName: 'Bob' } });
   const { p: p2, ...w2 } = await createInWindow(svc, chrome, vault, { options: required }, 2);
   assert.equal((await svc.handleRequest({ reqId: w2.reqId }, windowSender(w2.win))).uv, 'required');
@@ -333,19 +316,17 @@ test('service: user verification needs the master password in this window', asyn
   assert.equal((await svc.handleRequest({ reqId: w2.reqId }, windowSender(w2.win))).verified, true);
   await svc.handleRespond({ reqId: w2.reqId, approve: true }, windowSender(w2.win));
   const { credential: c2 } = await p2;
-  assert.equal(fromB64url(c2.response.authenticatorData)[32], 0x5d); // UP | UV | BE | BS | AT
+  assert.equal(fromB64url(c2.response.authenticatorData)[32], 0x5d, 'UP | UV | BE | BS | AT');
 
-  // Proof is per request: a later window gets no carried-over proof.
   const { p: p3, ...w3 } = await createInWindow(svc, chrome, vault,
     { options: createOptions({ user: { id: toB64url(utf8('user-3')), name: 'carol', displayName: 'Carol' } }) }, 3);
   assert.equal((await svc.handleRequest({ reqId: w3.reqId }, windowSender(w3.win))).verified, false, 'proof from an earlier request does not carry over');
   await svc.handleRespond({ reqId: w3.reqId, approve: false }, windowSender(w3.win));
   await rejectsWith(p3, 'NOT_ALLOWED');
 
-  // A pick on the page card needs an unlocked vault, which took the master password: UV even for 'preferred' (Google).
   const getOptions = { challenge: toB64url(rand(32)), rpId: RP_ID, userVerification: 'preferred' };
   const { credential: a4 } = await svc.handleAssert({ options: getOptions, credentialId: c2.id }, contentSender());
-  assert.equal(fromB64url(a4.response.authenticatorData)[32], 0x1d); // UP | UV | BE | BS
+  assert.equal(fromB64url(a4.response.authenticatorData)[32], 0x1d, 'UP | UV | BE | BS');
   const bobKey = vault.data.items.find((i) => i.username === 'bob').passkeys[0].publicKey;
   const auth = await verifyAuthenticationResponse({
     response: a4, expectedChallenge: getOptions.challenge, expectedOrigin: ORIGIN, expectedRPID: RP_ID,
@@ -354,14 +335,13 @@ test('service: user verification needs the master password in this window', asyn
   });
   assert.equal(auth.verified, true);
 
-  // Saving on the page card is verified the same way, whatever the site asked for.
   for (const userVerification of ['preferred', 'discouraged']) {
     const o = createOptions({
       user: { id: toB64url(utf8('card-' + userVerification)), name: userVerification, displayName: '' },
       authenticatorSelection: { residentKey: 'required', userVerification },
     });
     const { credential } = await svc.handleSave({ options: o }, contentSender());
-    assert.equal(fromB64url(credential.response.authenticatorData)[32], 0x5d); // UP | UV | BE | BS | AT
+    assert.equal(fromB64url(credential.response.authenticatorData)[32], 0x5d, 'UP | UV | BE | BS | AT');
   }
   assert.equal(chrome.created.length, 3, 'no window for a save on the card');
 });
@@ -372,7 +352,6 @@ test('service: register on the page card, then sign in end to end', async () => 
   const svc = createPasskeyService({ chrome, vault });
   const options = createOptions();
 
-  // Unlocked: no window; the card gets what to show, nothing secret.
   const { inline: info } = await svc.handleCreate({ options, requestId: 'r1' }, contentSender());
   assert.deepEqual(info, {
     rpId: RP_ID,
@@ -384,7 +363,6 @@ test('service: register on the page card, then sign in end to end', async () => 
   });
   assert.equal(svc.pending.size, 0, 'nothing waits on the card');
 
-  // The save from the card is checked like the request itself.
   await rejectsWith(svc.handleSave({ options: createOptions({ rp: { id: 'evil.com', name: 'x' } }) }, contentSender()), 'SECURITY');
   await rejectsWith(svc.handleSave({ options }, contentSender({ frameId: 2 })), 'SECURITY');
   await rejectsWith(svc.handleSave({ options }, contentSender({ origin: 'https://other.example.org', url: 'https://other.example.org/' })), 'SECURITY');
@@ -408,7 +386,6 @@ test('service: register on the page card, then sign in end to end', async () => 
   assert.equal(items[0].passkeys[0].credentialId, credential.id);
   assert.equal(items[0].passkeys[0].userHandle, options.user.id);
 
-  // Registering again for the same user replaces the passkey on the same item.
   const again = createOptions();
   assert.equal((await svc.handleCreate({ options: again }, contentSender())).inline.defaultVault, 'work', 'offered where the login is');
   const { credential: credential2 } = await svc.handleSave({ options: again, vault: 'work' }, contentSender());
@@ -416,7 +393,6 @@ test('service: register on the page card, then sign in end to end', async () => 
   assert.equal(vault.data.items[0].passkeys.length, 1);
   assert.equal(vault.data.items[0].passkeys[0].credentialId, credential2.id);
 
-  // Sign in while unlocked: no window, the page card lists the passkeys and signs the user's pick.
   const getOptions = { challenge: toB64url(rand(32)), rpId: RP_ID, allowCredentials: [], userVerification: 'required' };
   for (const mediation of [undefined, 'conditional']) {
     const { inline } = await svc.handleGet({ options: getOptions, mediation }, contentSender());
@@ -460,8 +436,6 @@ test('service: locked vault opens the window, which lists after unlock', async (
         privateKey: 'secret', publicKey: 'x', alg: -7, createdAt: 5, lastUsedAt: null }] }],
   });
   const svc = createPasskeyService({ chrome, vault });
-  // While locked nothing is known about this site's passkeys: autofill stays with the browser,
-  // and the page card cannot sign.
   await rejectsWith(svc.handleGet({ options: { challenge: 'AQID' }, mediation: 'conditional' }, contentSender()), 'FALLBACK');
   await rejectsWith(svc.handleAssert({ options: { challenge: 'AQID' }, credentialId }, contentSender()), 'LOCKED');
   await rejectsWith(svc.handleSave({ options: createOptions() }, contentSender()), 'LOCKED');
@@ -484,35 +458,30 @@ test('service: locked vault opens the window, which lists after unlock', async (
 
 test('service: cancellation paths', async (t) => {
   const chrome = makeChrome();
-  const svc = createPasskeyService({ chrome, vault: makeVault({ locked: true }) }); // locked: requests open the window
+  const svc = createPasskeyService({ chrome, vault: makeVault({ locked: true }) });
 
-  // Closing the window.
   const p1 = svc.handleCreate({ options: createOptions() }, contentSender());
   const w1 = await nextWindow(chrome, 1);
   chrome.closeWindow(w1.win.id);
   await rejectsWith(p1, 'NOT_ALLOWED');
 
-  // Cancel button.
   const p2 = svc.handleCreate({ options: createOptions() }, contentSender());
   const w2 = await nextWindow(chrome, 2);
   await svc.handleRespond({ reqId: w2.reqId, approve: false }, windowSender(w2.win));
   await rejectsWith(p2, 'NOT_ALLOWED');
   await rejectsWith(svc.handleRequest({ reqId: w2.reqId }, windowSender(w2.win)), 'NOT_FOUND');
 
-  // A second request from the same tab replaces the first.
   const p3 = svc.handleCreate({ options: createOptions() }, contentSender());
   await nextWindow(chrome, 3);
   const p4 = svc.handleCreate({ options: createOptions(), requestId: 'abc' }, contentSender());
   await rejectsWith(p3, 'NOT_ALLOWED');
   await nextWindow(chrome, 4);
 
-  // AbortSignal from the page (via the bridge).
-  svc.handleCancel({ requestId: 'abc' }, contentSender({ tab: { id: 8 } })); // other tab: ignored
+  svc.handleCancel({ requestId: 'abc' }, contentSender({ tab: { id: 8 } }));
   assert.equal(svc.pending.size, 1);
   svc.handleCancel({ requestId: 'abc' }, contentSender());
   await rejectsWith(p4, 'NOT_ALLOWED');
 
-  // Timeout is clamped to at least 30 s.
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const p5 = svc.handleCreate({ options: createOptions({ timeout: 1000 }) }, contentSender());
   await nextWindow(chrome, 5);

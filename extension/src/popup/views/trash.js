@@ -1,7 +1,3 @@
-// ゴミ箱: a sheet opened from the ≡ menu. Deleted items wait here for TRASH_DAYS (lib/vault/trash.js)
-// and can be put back or deleted for good; the toast after a delete offers 元に戻す for the same
-// items. The sheet shows titles and the vault, never a secret, and is emptied when it closes.
-
 import { MSG } from '../../shared/messages.js';
 import { typeLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
@@ -15,20 +11,17 @@ const $ = (id) => document.getElementById(id);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 let restoreFocus = null;
-let asking = null; // id of the row asking 完全に削除しますか, or 'all' for ゴミ箱を空にする
+let asking = null;
 let busy = false;
 
 export const isTrashOpen = () => $('trashSheet').classList.contains('open');
 
-/** Whole days left before the entry is gone (at least 1 while it is listed). */
 const daysLeft = (e, now = Date.now()) => Math.max(1, Math.ceil((e.deletedAt + TRASH_MS - now) / DAY_MS));
 
 function subline(e) {
   const vault = vaultById(e.vault)?.name || t('trash.noVault', null, '削除した保管庫');
   return `${typeLabel(e.type)} · ${vault}`;
 }
-
-/* ── rendering ── */
 
 function rowEl(e, now) {
   const title = e.title || t('(無題)');
@@ -103,7 +96,6 @@ function renderAskAll() {
   setTimeout(() => { if (yes.isConnected && !busy) yes.focus({ preventScroll: true }); }, 0);
 }
 
-/** Where focus goes after a redraw: the same column of the row at `index` (or the one before), else ×. */
 function focusAfter({ index, col }) {
   const rows = [...$('tsList').querySelectorAll('.ts-row')];
   const row = rows[Math.min(index, rows.length - 1)];
@@ -114,9 +106,6 @@ function focusAfter({ index, col }) {
 
 const indexOf = (id) => S.trash.findIndex((e) => e.id === id);
 
-/* ── actions ── */
-
-/** Ask before 完全に削除 (`id`, or 'all'); `ask(null, from)` cancels and puts focus back. */
 function ask(id, from = null) {
   if (busy) return;
   asking = id;
@@ -150,7 +139,6 @@ async function restore(ids) {
   }
 }
 
-/** 完全に削除: these ids, or everything when `ids` is null. */
 async function purge(ids) {
   if (busy) return;
   const index = ids ? Math.max(0, indexOf(ids[0])) : 0;
@@ -176,8 +164,6 @@ async function purge(ids) {
   }
 }
 
-/* ── keyboard: ↑↓ move between rows in the same column ── */
-
 function onKeys(e) {
   if (e.isComposing || e.keyCode === 229) return;
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -191,7 +177,6 @@ function onKeys(e) {
   (next.querySelector(`[data-col="${btn.dataset.col}"]`) || next.querySelector('[data-col]'))?.focus({ preventScroll: true });
 }
 
-/** Esc: a pending 完全に削除 first, then the sheet. */
 export function escapeTrash() {
   if (asking && !busy) {
     ask(null, asking);
@@ -200,11 +185,9 @@ export function escapeTrash() {
   closeTrash();
 }
 
-/* ── the sheet ── */
-
 export function openTrash() {
   restoreFocus = keepFocus();
-  asking = null; // busy stays as it is: a request started before the sheet was closed may still be running
+  asking = null;
   render();
   const sheet = $('trashSheet');
   $('scrim').classList.add('on');
@@ -215,7 +198,6 @@ export function openTrash() {
   setTimeout(() => (sheet.querySelector('[data-col="restore"]') || sheet.querySelector('[data-close]')).focus({ preventScroll: true }), 60);
 }
 
-/** Close and drop what the sheet showed. `restore: false` when the caller moves focus itself. */
 export function closeTrash({ restore: back = true } = {}) {
   const sheet = $('trashSheet');
   asking = null;
@@ -230,7 +212,6 @@ export function closeTrash({ restore: back = true } = {}) {
   restoreFocus = null;
 }
 
-/** Redraw when the trash changed elsewhere (a delete or 元に戻す from the toast) while it is open. */
 export function refreshTrash() {
   if (isTrashOpen() && !busy) render();
 }

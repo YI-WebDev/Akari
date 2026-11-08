@@ -1,9 +1,3 @@
-// Drives the real popup page against the real service worker (unpacked extension in Chrome).
-// setup → add login (generator + TOTP) → weak password → 強化する → a credit card (＋ menu, reveal / copy,
-// edit + extra field, 種類 filter, delete) → lock/unlock (boot log) → settings/export
-// → import a Chrome CSV (インポート) → export CSV with the master password (エクスポート) → autofill → remote lock.
-// Screenshots go to tests/ui/screenshots/ext-*.png. Usage: node tests/ui/extension-smoke.mjs
-
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -19,7 +13,7 @@ const steps = [];
 const step = (name) => { steps.push(name); console.log('…', name); };
 
 try {
-  let page = await ext.context.newPage(); // replaced by a fresh popup in the 「しない」 restart step
+  let page = await ext.context.newPage();
   await page.setViewportSize({ width: 680, height: 480 });
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -84,7 +78,6 @@ try {
   assert.match(await page.locator('#genCmd').textContent(), /^akari gen (--length \d+|--words \d+ --dict ja-romaji)/);
   await page.waitForTimeout(600);
   {
-    // The login's saved URL opens in a new tab (answered locally: no network in tests).
     await ext.context.route('https://example.com/login', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<title>login</title>' }));
     const opened = ext.context.waitForEvent('page');
     await page.click('#genApply');
@@ -99,7 +92,7 @@ try {
     assert.ok(it, 'the current password stays until the change is confirmed');
     const next = it.pendingPassword?.password;
     assert.ok(next && next !== 'abc12345', 'the new password is held');
-    await page.click('.pend .btn-mini.primary'); // 確定する
+    await page.click('.pend .btn-mini.primary');
     await page.waitForSelector('.pend', { state: 'detached' });
     await page.waitForTimeout(900);
     assert.match(await toastText(), /example\.com のパスワードを更新しました/);
@@ -156,7 +149,6 @@ try {
     assert.equal(await page.locator('#toastSub').textContent(), '30秒後にクリップボードから自動で消去します');
     await shot('card');
 
-    // edit: a new expiry and an extra field
     await page.click('.d-head .ibtn[title="編集"]');
     assert.equal(await page.inputValue('#edF-expiry'), '09/2029', 'months are edited as MM/YYYY');
     await page.fill('#edF-expiry', '2030-01');
@@ -172,7 +164,6 @@ try {
     assert.deepEqual(card.extra, [{ label: 'カード会社 電話', value: '0120-000-000', secret: false }]);
     assert.equal(await page.locator('.f-row:has-text("カード会社 電話") .f-value').textContent(), '0120-000-000');
 
-    // 種類 filter
     assert.equal(await page.locator('.row').count(), 2);
     await page.click('#typeBtn');
     await page.waitForSelector('#typeMenu.open');
@@ -184,7 +175,6 @@ try {
     await page.click('#typeMenu .tp-cell[data-type="all"]');
     assert.equal(await page.locator('.row').count(), 2);
 
-    // delete: to the ゴミ箱, and back with the toast's 元に戻す
     const del = async () => {
       await page.click(`.row[data-id="${card.id}"]`);
       await page.click('.d-head .ibtn[title="編集"]');
@@ -216,7 +206,6 @@ try {
   assert.equal(await page.locator('#lockStatus').textContent(), 'パスワードが違います');
   await page.fill('#lockInput', MASTER);
   await page.keyboard.press('Enter');
-  // the boot log follows the real steps: derive (vault/unlock) → decrypt (vault/getAll) → items
   await page.waitForSelector('.boot-line[data-state="ok"]:has-text("アイテムを読込")', { timeout: 30000 });
   assert.deepEqual(await page.locator('.boot-line .boot-k').allTextContents(), ['鍵を導出', '保管庫を復号', 'アイテムを読込']);
   assert.match(await page.locator('.boot-line').first().locator('.boot-v').textContent(), /^PBKDF2-SHA256 600k · \d+\.\d\ds$/);
@@ -252,9 +241,9 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
   assert.match(download.suggestedFilename(), /^akari-backup-\d{8}\.json$/);
   assert.equal(JSON.parse(await readFile(await download.path(), 'utf8')).format, 'akari-backup');
-  await page.keyboard.press('Escape'); // Esc steps back: エクスポート → the settings list
+  await page.keyboard.press('Escape');
   await page.waitForSelector('#setMain:not([hidden])');
-  await page.keyboard.press('Escape'); // and closes the sheet from the list
+  await page.keyboard.press('Escape');
   await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
 
   step('reopen popup restores unlocked state');
@@ -291,15 +280,14 @@ try {
     assert.match(await page.locator('.io-alert').textContent(), /Chrome Passwords\.csv」は削除してください/);
     await page.waitForTimeout(400);
     await shot('import-result');
-    // the same file again: everything is a duplicate
-    await page.click('.io-foot .btn-line'); // 続けて読み込む
+    await page.click('.io-foot .btn-line');
     await page.click('.src[data-id="chrome"]');
     await page.setInputFiles('#impFile', file);
     await page.waitForSelector('.io-stats', { timeout: 15000 });
     await page.click('.io-foot .btn-primary');
     await page.waitForSelector('.io-result', { timeout: 15000 });
     assert.equal(await page.locator('.io-result .boot-k').textContent(), '0 件を追加 · 重複 2 · 無効 0');
-    await page.click('.io-foot .btn-primary'); // 閉じる
+    await page.click('.io-foot .btn-primary');
     await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
     assert.equal(await page.locator('#importPage').innerHTML(), '', 'parsed items dropped with the sheet');
     await page.waitForSelector('.row[data-id] .row-title:has-text("import-alpha.test")');
@@ -371,8 +359,6 @@ try {
     await page.waitForSelector('#vaultsPage .vm-row:has-text("テスト用2")');
     assert.equal((await vaults()).find((v) => v.id === made.id)?.name, 'テスト用2', 'renamed in the vault');
 
-    // An item lands in it behind this page's back (another popup, an import): the page still
-    // shows it empty, so its delete must be refused instead of taking the item along.
     const item = (await getAll()).find((i) => i.url === 'https://localhost:3000');
     assert.equal((await sendMsg('vault/saveItem', { item: { id: item.id, vault: made.id } })).ok, true);
     await page.click('#vaultsPage .vm-row:has-text("テスト用2") [data-act="delete"]');
@@ -397,7 +383,7 @@ try {
       assert.equal((await sendMsg('vault/saveItem', { item: { type: 'note', title: `まとめて削除 ${n}`, note: 'x' } })).ok, true);
     }
     const keep = (await getAll()).length - 3;
-    await page.reload(); // the popup reads the vault again, the three notes included
+    await page.reload();
     await page.waitForSelector('#app[data-phase="main"] .row');
     await page.fill('#search', 'まとめて削除');
     await page.waitForFunction(() => document.querySelectorAll('.row').length === 3);
@@ -421,14 +407,12 @@ try {
     const loginUrl = fx.origin + '/login.html';
     const site = await ext.context.newPage();
     await site.goto(loginUrl);
-    // 個人 first, then 仕事: the SW lists the newer (仕事) match first, which the old code filled
     const home = (await sendMsg('vault/saveItem', { item: { type: 'login', vault: 'personal', title: 'fixture', url: loginUrl, username: 'bob-home', password: 'Home-Pass-456!x' } })).data.item;
     await sendMsg('vault/saveItem', { item: { type: 'login', vault: 'work', title: 'fixture', url: loginUrl, username: 'alice-work', password: 'Work-Pass-123!x' } });
     const tab = await ext.sw.evaluate(async (u) => {
       const t = (await chrome.tabs.query({})).find((x) => x.url === u);
       return { id: t.id, url: t.url };
     }, loginUrl);
-    // the popup was opened as a tab, so point its "active tab" at the fixture and record fills
     await page.addInitScript((t) => {
       chrome.tabs.query = async () => [{ ...t, active: true }];
       window.close = () => { window.__closed = true; };
@@ -451,12 +435,11 @@ try {
     assert.equal(await site.inputValue('#username'), 'bob-home', 'the page got the 個人 account');
     await page.waitForTimeout(300);
     await shot('autofill');
-    await page.waitForFunction(() => window.__closed === true, null, { timeout: 2000 }); // ~700 ms after "done"
+    await page.waitForFunction(() => window.__closed === true, null, { timeout: 2000 });
     await site.close();
   }
 
   step('a lock from elsewhere reaches the popup at once (storage.onChanged, not the 10 s poll)');
-  // a second extension page stands in for the SW's auto-lock alarm
   const other = await ext.context.newPage();
   await other.goto(ext.url('src/popup/popup.html'));
   await other.waitForSelector('#app[data-phase="main"]', { timeout: 15000 });
@@ -484,8 +467,6 @@ try {
     await page.click('#neverSubmit');
     await page.waitForSelector('#neverForm[hidden]', { state: 'attached' });
     await shot('settings-never');
-    // A browser restart in miniature: storage.session emptied, the service worker stopped (its
-    // memory goes with it), then a fresh popup. (chrome.runtime.reload would unload a CDP-loaded extension.)
     const cdp = await ext.context.newCDPSession(other);
     const restart = async () => {
       await page.close();
@@ -520,6 +501,5 @@ try {
     for (const e of errors) console.log('  ' + e);
   }
   await withTimeout(ext.close(), 20000, 'browser close').catch((e) => console.log(e.message));
-  // after the browser is gone no keep-alive connection holds the fixture server open
   if (fx) await withTimeout(fx.close(), 10000, 'fixture server close').catch((e) => console.log(e.message));
 }

@@ -1,8 +1,3 @@
-// KeePass 2.x XML export (KeePassFile/Meta + Root/Group/…/Entry).
-// DOMParser exists neither in Node nor in service workers, so a small non-validating
-// XML reader is included: elements, attributes, text, CDATA, comments, PIs, DOCTYPE,
-// and the predefined + numeric character entities.
-
 import { ImportError, parseOtp, bytesToText } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { L, looksSecret } from './_fields.js';
@@ -24,33 +19,24 @@ const badXml = () => new ImportError('INVALID_FORMAT', t('XML として読めま
 const tooLarge = () => new ImportError('UNSUPPORTED', t('ファイルが大きすぎます'));
 const NAME = /[^\s/>=]+/y;
 
-// Limits keep a hostile file from exhausting the popup's memory or stack. Real KeePass
-// exports use ~20 elements per entry and nest groups a handful of levels deep.
 export const MAX_XML_CHARS = 64 * 1024 * 1024;
 const MAX_NODES = 1_000_000;
 const MAX_DEPTH = 256;
 
-// Leaf elements (most of a KeePass file) share these until they get attributes / children.
 const NO_ATTRS = Object.freeze({});
 const NO_CHILDREN = Object.freeze([]);
 const isBlank = (s) => !/\S/.test(s);
 const normEol = (s) => (s.indexOf('\r') < 0 ? s : s.replace(/\r\n?/g, '\n'));
 
-/** Append character data; whitespace between child elements is formatting and is dropped. */
 function addText(node, s) {
   if (s && !(node.children.length && isBlank(s))) node.text += s;
 }
 
-/**
- * Parse an XML document into `{ name, attrs, children, text }` element nodes
- * (`text` is the concatenated direct character data). Returns the document node.
- * Throws ImportError: INVALID_FORMAT when malformed, UNSUPPORTED past the size limits.
- */
 export function parseXml(xml) {
   if (xml.length > MAX_XML_CHARS) throw tooLarge();
   const doc = { name: '#document', attrs: NO_ATTRS, children: [], text: '' };
   const stack = [doc];
-  const names = new Map(); // share one string per distinct element name
+  const names = new Map();
   const n = xml.length;
   let i = 0, nodes = 0;
   const skipTo = (token, from) => {
@@ -72,7 +58,7 @@ export function parseXml(xml) {
       continue;
     }
     if (xml.startsWith('<?', lt)) { i = skipTo('?>', lt + 2); continue; }
-    if (xml.startsWith('<!', lt)) { // DOCTYPE, possibly with an internal subset [...]
+    if (xml.startsWith('<!', lt)) {
       let j = lt + 2, depth = 0;
       for (; j < n; j++) {
         const c = xml[j];
@@ -91,7 +77,6 @@ export function parseXml(xml) {
       i = gt + 1;
       continue;
     }
-    // Start tag.
     if (++nodes > MAX_NODES) throw tooLarge();
     NAME.lastIndex = lt + 1;
     const nm = NAME.exec(xml);
@@ -124,7 +109,7 @@ export function parseXml(xml) {
     }
     if (top.children === NO_CHILDREN) {
       top.children = [];
-      if (isBlank(top.text)) top.text = ''; // indentation before the first child
+      if (isBlank(top.text)) top.text = '';
     }
     top.children.push(el);
     if (!selfClosing) {
@@ -141,15 +126,17 @@ const kids = (node, name) => (node ? node.children.filter((c) => c.name === name
 const kid = (node, name) => (node ? node.children.find((c) => c.name === name) : undefined);
 const textOf = (node, name) => kid(node, name)?.text ?? '';
 
-/** KDBX 4 stores times as base64 int64 seconds since 0001-01-01; XML exports use ISO 8601. */
+const SECONDS_FROM_YEAR_1_TO_UNIX_EPOCH = 62135596800;
+const BASE64_INT64 = /^[A-Za-z0-9+/]{11}=$/;
+
 function keepassTime(s) {
   const v = s.trim();
   if (!v) return undefined;
-  if (/^[A-Za-z0-9+/]{11}=$/.test(v)) {
+  if (BASE64_INT64.test(v)) {
     try {
       const b = fromB64(v);
       const secs = Number(new DataView(b.buffer, b.byteOffset, 8).getBigInt64(0, true));
-      const ms = (secs - 62135596800) * 1000;
+      const ms = (secs - SECONDS_FROM_YEAR_1_TO_UNIX_EPOCH) * 1000;
       return ms > 0 ? ms : undefined;
     } catch {
       return undefined;
@@ -173,12 +160,7 @@ function otpConfig(secret, { digits = 6, period = 30, algorithm = 'SHA1' }, labe
   return { secret: s, algorithm, digits, period, issuer: '', label };
 }
 
-/**
- * TOTP from the strings the common KeePass flavours use. Returns the config and the keys it
- * consumed, so anything that could not be understood stays in the note.
- */
 function findTotp(strings, label) {
-  // KeePassXC: otpauth:// URI in "otp"; KeeOTP plugin: "key=…&step=…&size=…" in "otp".
   const otp = strings.get('otp');
   if (otp) {
     let cfg = parseOtp(otp, label);
@@ -192,7 +174,6 @@ function findTotp(strings, label) {
     }
     if (cfg) return { totp: cfg, used: ['otp'] };
   }
-  // KeePass 2.47+: TimeOtp-Secret[-Base32|-Hex|-Base64] + TimeOtp-Length/Period/Algorithm.
   const secretKey = ['TimeOtp-Secret-Base32', 'TimeOtp-Secret', 'TimeOtp-Secret-Hex', 'TimeOtp-Secret-Base64'].find((k) => strings.get(k));
   if (secretKey) {
     const raw = strings.get(secretKey);
@@ -213,7 +194,6 @@ function findTotp(strings, label) {
     }, label);
     if (cfg) return { totp: cfg, used: [secretKey, 'TimeOtp-Length', 'TimeOtp-Period', 'TimeOtp-Algorithm'] };
   }
-  // KeePassXC (old): "TOTP Seed" + "TOTP Settings" = "period;digits" ("S" digits = Steam).
   const seed = strings.get('TOTP Seed');
   if (seed) {
     const [period, digits] = (strings.get('TOTP Settings') || '30;6').split(';');
@@ -223,11 +203,11 @@ function findTotp(strings, label) {
   return { totp: null, used: [] };
 }
 
+const OTP_SETTING_KEYS = ['otp', 'TimeOtp-Secret-Base32', 'TimeOtp-Secret', 'TimeOtp-Secret-Hex', 'TimeOtp-Secret-Base64', 'TOTP Seed'];
 const STANDARD = new Set(['Title', 'UserName', 'Password', 'URL', 'Notes']);
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file) {
-  if (file.bytes.length > MAX_XML_CHARS) throw tooLarge(); // encoded text has at least as many bytes as chars
+  if (file.bytes.length > MAX_XML_CHARS) throw tooLarge();
   const text = bytesToText(file.bytes);
   if (!/<KeePassFile[\s>]/.test(text)) {
     throw new ImportError('INVALID_FORMAT', t('KeePass の XML（2.x）ではありません。KeePass の「エクスポート → KeePass XML (2.x)」で書き出したファイルを選んでください'));
@@ -238,8 +218,9 @@ export async function parse(file) {
   const meta = kid(kp, 'Meta');
   const binEl = kid(meta, 'RecycleBinUUID');
   const binUuid = (binEl?.text || '').trim();
+  const EMPTY_UUID = /^A+=*$/;
   const isRecycleBin = (g) => (binEl
-    ? !!binUuid && !/^A+=*$/.test(binUuid) && textOf(g, 'UUID').trim() === binUuid
+    ? !!binUuid && !EMPTY_UUID.test(binUuid) && textOf(g, 'UUID').trim() === binUuid
     : /^(Recycle Bin|ごみ箱|Trash)$/i.test(textOf(g, 'Name').trim()));
 
   const items = [];
@@ -248,7 +229,7 @@ export async function parse(file) {
 
   const toItem = (entry) => {
     const strings = new Map();
-    const hidden = new Set(); // "protect in memory" values: password-like by the user's own choice
+    const hidden = new Set();
     for (const s of kids(entry, 'String')) {
       const key = textOf(s, 'Key').trim();
       const val = kid(s, 'Value');
@@ -263,9 +244,8 @@ export async function parse(file) {
     const username = (strings.get('UserName') || '').trim();
     const title = (strings.get('Title') || '').trim();
     const { totp, used } = findTotp(strings, username || title);
-    const hadOtp = ['otp', 'TimeOtp-Secret-Base32', 'TimeOtp-Secret', 'TimeOtp-Secret-Hex', 'TimeOtp-Secret-Base64', 'TOTP Seed'].some((k) => strings.get(k));
+    const hadOtp = OTP_SETTING_KEYS.some((k) => strings.get(k));
     if (!totp && hadOtp) badTotp++;
-    // Custom strings become extra fields (an OTP setting that could not be used stays there too).
     const extra = [];
     for (const [k, v] of strings) {
       if (STANDARD.has(k) || used.includes(k)) continue;
@@ -291,7 +271,6 @@ export async function parse(file) {
 
   const walk = (group) => {
     if (isRecycleBin(group)) { skipped += countEntries(group); return; }
-    // Entry/History holds older revisions of an entry; only direct entries are read.
     for (const e of kids(group, 'Entry')) items.push(toItem(e));
     for (const g of kids(group, 'Group')) walk(g);
   };

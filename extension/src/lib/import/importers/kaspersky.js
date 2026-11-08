@@ -1,23 +1,3 @@
-// Kaspersky Password Manager "Export to TXT":
-//
-//   Websites
-//
-//   Website name: Example
-//   Website URL: https://example.com
-//   Login name: Work            (a label for the account)
-//   Login: alice@example.com    (the user name)
-//   Password: secret
-//   Comment: free text, may span
-//   several lines
-//   ---
-//   Applications           -> Application / Login name / Login / Password / Comment
-//   Notes                  -> Name / Text (multi-line)
-//
-// Only the English headings and keys are known (not confirmed for localized exports).
-// Entries are told apart by their keys, so the section headings only mark boundaries.
-// "Key: value" lines with a key we do not know become custom fields; lines without a key
-// are appended to the note.
-
 import { ImportError, bytesToText, makeImported } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { entry } from './_csv.js';
@@ -30,56 +10,59 @@ const ROLES = {
 };
 const MULTILINE = new Set(['comment', 'text']);
 
-// Everything here is a single linear pass over the lines: untrusted files can be huge and
-// full of blank lines, so no per-line rescans of the current block and no regex that lets
-// \s run across line breaks.
 function splitBlocks(text) {
   const lines = text.split(/\r\n|\r|\n/);
   const blocks = [];
-  let cur = [];
-  let filled = false; // does `cur` hold a non-blank line yet?
+  let currentBlock = [];
+  let hasContent = false;
   const flush = () => {
-    if (filled) blocks.push(cur);
-    cur = [];
-    filled = false;
+    if (hasContent) blocks.push(currentBlock);
+    currentBlock = [];
+    hasContent = false;
   };
   lines.forEach((line, i) => {
-    const t = line.trim();
-    if (SEPARATOR.test(t)) return flush();
-    if (HEADING.test(t) && (!filled || !(lines[i - 1] ?? '').trim())) return flush();
-    if (t) filled = true;
-    if (filled) cur.push(line); // blank lines before the first entry line are not kept
+    const trimmed = line.trim();
+    if (SEPARATOR.test(trimmed)) return flush();
+    const followsBlankLine = !(lines[i - 1] ?? '').trim();
+    if (HEADING.test(trimmed) && (!hasContent || followsBlankLine)) return flush();
+    if (trimmed) hasContent = true;
+    if (hasContent) currentBlock.push(line);
   });
   flush();
   return blocks;
 }
 
+function blockKind(fields) {
+  if ('site' in fields || 'url' in fields) return 'site';
+  if ('app' in fields) return 'app';
+  if ('text' in fields || 'name' in fields) return 'note';
+  return null;
+}
+
 function parseBlock(lines) {
   const f = {};
-  const extra = []; // unknown "Key: value" lines → custom fields
-  const loose = []; // lines with no key at all
-  let multi = null;
+  const extra = [];
+  const loose = [];
+  let multilineRole = null;
   let keyed = false;
   for (const line of lines) {
-    if (multi) { f[multi] += '\n' + line; continue; }
-    const colon = line.indexOf(':'); // "Key: value", split at the first colon
+    if (multilineRole) { f[multilineRole] += '\n' + line; continue; }
+    const colon = line.indexOf(':');
     if (colon > 0) keyed = true;
     const key = colon > 0 ? line.slice(0, colon).trim().toLowerCase() : '';
     const role = Object.hasOwn(ROLES, key) ? ROLES[key] : null;
     if (role) {
       f[role] = line.slice(colon + 1).replace(/^\s/, '');
-      if (MULTILINE.has(role)) multi = role;
+      if (MULTILINE.has(role)) multilineRole = role;
     } else if (colon > 0) {
       extra.push(entry(line.slice(0, colon), line.slice(colon + 1).trim()));
     } else if (line.trim()) {
       loose.push(line.trim());
     }
   }
-  const kind = 'site' in f || 'url' in f ? 'site' : 'app' in f ? 'app' : 'text' in f || 'name' in f ? 'note' : null;
-  return { f, extra, loose, kind, keyed };
+  return { f, extra, loose, kind: blockKind(f), keyed };
 }
 
-/** True when `text` has a Kaspersky section heading and at least one recognisable entry. */
 export function looksLikeKaspersky(text) {
   return /^[ \t]*(websites|applications|notes)[ \t]*$/im.test(text)
     && splitBlocks(text).some((b) => parseBlock(b).kind);
@@ -93,7 +76,7 @@ export async function parse(file) {
     const { f, extra, loose, kind, keyed } = parseBlock(b);
     if (!kind) { if (keyed) skipped++; continue; }
     recognised++;
-    const rest = loose.join('\n'); // lines with no key at all: kept, not dropped
+    const rest = loose.join('\n');
     let raw;
     if (kind === 'note') {
       raw = { type: 'note', title: f.name, note: [String(f.text ?? '').trim(), rest].filter(Boolean).join('\n\n'), extra };
@@ -101,7 +84,6 @@ export async function parse(file) {
       const name = (kind === 'site' ? f.site : f.app) ?? '';
       const loginName = String(f.loginName ?? '').trim();
       const user = String(f.username ?? '').trim();
-      // "Login name" labels the account; with no separate "Login" it is the user name itself.
       raw = {
         title: user && loginName ? `${String(name).trim()} (${loginName})` : name,
         url: f.url,

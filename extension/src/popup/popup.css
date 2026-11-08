@@ -1,9 +1,3 @@
-/* Akari popup — design 1a "Akari Terminal" (design/Akari Terminal.dc.html).
-   Monospace, a 16px grid, warm dark. Colours come from ../shared/tokens.css. */
-
-/* Motion confirms a state change. What loops: the cursor of the terminal command lines,
-   and what shows work in progress (a spinner, the "saving" lamp, a "[ .. ]" line).
-   No overshoot, no glow. */
 @keyframes akt-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @keyframes akt-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 @keyframes akt-spin { to { transform: rotate(360deg) } }
@@ -26,7 +20,7 @@ svg { display: block; }
 .app {
   position: relative; width: 680px; height: 480px; overflow: clip;
   background: var(--bg); color: var(--text);
-  font-family: var(--font-ui); font-size: 13px; line-height: 1.45; /* one step above --fs-base: the popup is read at a glance */
+  font-family: var(--font-ui); font-size: 13px; line-height: 1.45;
   display: flex; flex-direction: column;
   -webkit-font-smoothing: antialiased; user-select: none;
 }
@@ -41,10 +35,8 @@ svg { display: block; }
 .app ::selection { background: var(--accent); color: var(--on-accent); }
 .app[data-phase="boot"] .hdr, .app[data-phase="boot"] .body { visibility: hidden; }
 
-/* stroke icons */
 .app svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
 
-/* ───────── shared controls ───────── */
 .kbd, .kbd-btn {
   height: 22px; min-width: 22px; flex: none; display: grid; place-items: center; padding: 0 6px; border-radius: 4px;
   border: 1px solid rgb(var(--ink-rgb) / .14); background: transparent; font-size: 11px; line-height: 1; white-space: nowrap;
@@ -53,7 +45,6 @@ svg { display: block; }
 .kbd-btn { color: var(--text-muted); cursor: pointer; transition: border-color .15s, color .15s; }
 .kbd-btn:hover { border-color: var(--accent-line); color: var(--accent-strong); }
 
-/* square icon button: 26px inside boxes, 28px in the detail head */
 .ibtn {
   width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 5px; border: 0;
   background: transparent; color: var(--text-muted); cursor: pointer; transition: background .15s, color .15s, border-color .15s;
@@ -106,7 +97,6 @@ svg { display: block; }
 .busy > .spinner, .af-btn .spinner { display: block; }
 .busy > .go-label { display: none; }
 
-/* the 12-segment strength meter (segments are built by views/meter.js) */
 .meter { display: flex; align-items: center; gap: 8px; --lv-c: var(--lv0); }
 .meter[data-lv="1"] { --lv-c: var(--lv1); }
 .meter[data-lv="2"] { --lv-c: var(--lv2); }
@@ -118,7 +108,6 @@ svg { display: block; }
 .lv-label { font-size: 11px; white-space: nowrap; color: var(--lv-c); transition: color .3s; font-variant-numeric: tabular-nums; }
 .meter[data-lv="0"] .lv-label { color: var(--text-soft); }
 
-/* item tiles: hue per item in --h */
 .tile {
   --h: 30;
   position: relative; width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 6px;
@@ -128,7 +117,6 @@ svg { display: block; }
 .tile.sm { width: 26px; height: 26px; border-radius: 5px; font-size: 12px; }
 .tile.lg { width: 40px; height: 40px; border-radius: 8px; font-size: 18px; }
 
-/* ───────── header ───────── */
 .hdr {
   height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px;
   border-bottom: 1px solid var(--rule); background: var(--bg-raised); position: relative; z-index: 20;
@@ -176,10 +164,8 @@ svg { display: block; }
 .plus-btn svg { stroke-width: 2.6; transition: transform .3s var(--spring); }
 .plus-btn[aria-expanded="true"] svg { transform: rotate(45deg); }
 
-/* ───────── body ───────── */
 .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 264px minmax(0, 1fr); position: relative; }
 .col-list { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--rule); }
-/* list bar, one row: the 表示 chip (a view or a type, with its count), then sort and select */
 .list-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px; }
 .view-btn {
   flex: 0 1 auto; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 7px; border-radius: 5px;
@@ -196,7 +182,6 @@ svg { display: block; }
 .view-btn.on { background: rgb(var(--accent-rgb) / .14); border-color: rgb(var(--accent-rgb) / .5); color: var(--accent-ink); }
 .view-btn.on .view-ico, .view-btn.on .view-n { color: var(--accent); }
 .sort-btn { height: 28px; margin-left: auto; padding: 0 6px; font-size: 11.5px; }
-/* 選択 (select several to delete) */
 .pick-btn { width: 28px; height: 28px; padding: 0; }
 .pick-btn svg { stroke-width: 2.2; }
 .pick-btn[aria-pressed="true"] { background: rgb(var(--accent-rgb) / .14); border-color: rgb(var(--accent-rgb) / .5); color: var(--accent-ink); }
@@ -207,7 +192,6 @@ svg { display: block; }
 }
 .app .list:focus-visible { outline-offset: -1px; }
 
-/* 現在のタブ (autofill) */
 .af { margin: 4px 8px 6px; padding: 8px; border-radius: 6px; border: 1px dashed rgb(var(--accent-rgb) / .5); background: rgb(var(--accent-rgb) / .06); }
 .af-head { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; margin-bottom: 7px; min-width: 0; }
 .af-label { flex: none; color: var(--text-soft); }
@@ -223,7 +207,6 @@ svg { display: block; }
 .af-btn:disabled { cursor: default; }
 .af-btn .spinner { width: 9px; height: 9px; }
 .af-btn svg { stroke-width: 3.2; animation: akt-pop .4s ease-out; }
-
 
 .group { display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; font-size: 11.5px; color: var(--text-soft); }
 .group-line { flex: 1; height: 1px; background: rgb(var(--ink-rgb) / .07); }
@@ -251,7 +234,6 @@ svg { display: block; }
 .row-weak { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--danger); }
 .tag { font-size: 11px; line-height: 16px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
 
-/* selection mode: a check box per row; checked rows keep the highlight, the caret marks the keyboard row */
 .row-check {
   width: 14px; height: 14px; flex: none; display: grid; place-items: center; border-radius: 3px;
   border: 1px solid rgb(var(--ink-rgb) / .3); color: transparent; transition: background .15s, border-color .15s, color .15s;
@@ -260,7 +242,6 @@ svg { display: block; }
 .list[aria-multiselectable] .row[aria-selected] .row-caret { opacity: 0; transform: translateX(-5px); }
 .list[aria-multiselectable] .row.cur .row-caret { opacity: 1; transform: none; }
 
-/* selection pane (views/picker.js) */
 .pick-head { display: flex; align-items: center; gap: 6px; }
 .pick-n { font-size: 22px; font-weight: 700; line-height: 1; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .pick-unit { font-size: 12.5px; color: var(--text-2); }
@@ -287,7 +268,6 @@ svg { display: block; }
 .empty-msg { color: var(--text-soft); font-size: 12px; line-height: 1.7; }
 .empty-hero .btn-primary { margin-top: 6px; }
 
-/* ───────── detail pane ───────── */
 .pane {
   min-height: 0; display: flex; flex-direction: column; position: relative;
   background-color: var(--bg);
@@ -297,13 +277,12 @@ svg { display: block; }
 .pane-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgb(var(--ink-rgb) / .16) transparent; }
 .detail { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .detail > * { flex: none; }
-/* tile | title (≤ 2 lines) | actions, then the meta line under title and actions */
 .d-head {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'tile title acts' 'tile meta meta';
   column-gap: 12px; row-gap: 5px; align-items: start;
 }
 .d-head > .tile { grid-area: tile; }
-.d-titles { flex: 1; min-width: 0; } /* the editor's head (.ed-head) is still a flex row */
+.d-titles { flex: 1; min-width: 0; }
 .d-title {
   grid-area: title; align-self: center; font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -.01em;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; user-select: text;
@@ -347,7 +326,6 @@ svg { display: block; }
 .f-link { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .f-note { font-size: 12px; color: var(--text-2); line-height: 1.6; user-select: text; white-space: pre-wrap; word-break: break-word; }
 .f-btns { display: flex; gap: 2px; }
-/* ウェブサイト: every address of a login in one box, each a pill that opens it */
 .w-list { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .w-url {
   min-width: 0; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 5px;
@@ -360,7 +338,6 @@ svg { display: block; }
 .app .w-url:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent-line); }
 .w-url.plain { color: var(--text-2); }
 .w-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* template field names run longer than ユーザー名 / パスワード (セキュリティコード is 9 wide) */
 .box.tpl .f-row { grid-template-columns: 108px minmax(0, 1fr) auto; }
 .box.tpl .f-row.wide { grid-template-columns: 108px minmax(0, 1fr); }
 .f-label:has(.f-sub) { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -371,7 +348,6 @@ svg { display: block; }
 .exp-tag.over { color: var(--danger); border-color: var(--danger-border); }
 .exp-tag.soon { color: var(--fav); border-color: rgb(var(--fav-rgb) / .35); }
 
-/* multiline values: a scrollable mono box (secret ones stay dots until revealed) */
 .ml-col { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 3px; }
 .ml-box {
   min-width: 0; max-height: 108px; overflow: auto; padding: 6px 8px; border-radius: 4px; background: var(--bg-deep); border: 1px solid var(--line);
@@ -386,7 +362,6 @@ svg { display: block; }
 .ml-box.secret.revealed { animation: akt-rise .2s var(--ease-out); }
 .ml-hint { font-size: 11px; color: var(--text-soft); }
 
-/* the card's face in one line: brand · •••• 1234 · EXP MM/YY */
 .cardline {
   --h: 30; position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 6px; overflow: hidden;
   border: 1px solid oklch(var(--tile-bg-l) var(--tile-bg-c) var(--h) / .3);
@@ -433,17 +408,14 @@ svg { display: block; }
 .stat-k { font-size: 11px; color: var(--text-soft); }
 .stat-v { font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* passkeys */
 .sect { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-soft); margin-bottom: -4px; }
 .sect-line { flex: 1; height: 1px; background: rgb(var(--ink-rgb) / .07); }
-/* a section heading that folds its box (以前のパスワード) */
 .sect-btn { width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: 11.5px; color: var(--text-soft); cursor: pointer; text-align: left; }
 .sect-btn:hover { color: var(--text); }
 .sect-btn svg { flex: none; transition: transform .2s var(--ease-out); }
 .sect-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
 .sect-btn[aria-expanded="false"] { margin-bottom: 0; }
 
-/* new password held for the change on the site */
 .pend {
   display: flex; flex-direction: column; gap: 6px; padding: 9px 10px; border-radius: 6px;
   border: 1px dashed rgb(var(--accent-rgb) / .55); background: rgb(var(--accent-rgb) / .07);
@@ -455,7 +427,6 @@ svg { display: block; }
 .pend-acts .btn-mini { display: inline-flex; align-items: center; gap: 4px; }
 .pend-q { font-size: 11.5px; color: var(--danger-text); }
 
-/* 以前のパスワード */
 .hist-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; min-height: 42px; }
 .hist-row + .hist-row { border-top: 1px solid var(--line); }
 .hist-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -472,7 +443,6 @@ svg { display: block; }
 .pk-confirm { display: flex; align-items: center; gap: 4px; animation: akt-rise .2s var(--ease-out); }
 .pk-q { color: var(--danger); font-weight: 700; margin-right: 2px; }
 
-/* empty detail */
 .detail.is-empty { min-height: 100%; justify-content: center; }
 .welcome { display: flex; flex-direction: column; gap: 14px; padding: 0 10px; }
 .welcome-head { display: flex; flex-direction: column; gap: 4px; }
@@ -489,7 +459,6 @@ svg { display: block; }
 .cmd-key { font-size: 11px; color: var(--text-soft); }
 .hint-line { font-size: 11.5px; color: var(--text-soft); text-align: center; line-height: 1.7; }
 
-/* ───────── editor ───────── */
 .editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ed-form { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; }
 .ed-scroll {
@@ -547,7 +516,6 @@ svg { display: block; }
 .opt-pick .vault-chip { padding: 0 9px; }
 .vault-chip:hover { border-color: rgb(var(--ink-rgb) / .2); color: var(--text); }
 
-/* 追加の項目: label | value [eye] [x] 秘密 [×] */
 .ex-head { align-items: center; min-height: 36px; }
 .ex-head .ed-label { padding-top: 0; white-space: nowrap; }
 .ex-count { color: var(--accent); }
@@ -567,7 +535,6 @@ svg { display: block; }
 .tgl.ex-secret { height: 28px; flex: none; gap: 4px; padding: 0 6px; font-size: 11px; }
 .tgl.ex-secret .tgl-mark { font-size: 11px; }
 
-/* ───────── menus ───────── */
 .catcher { position: absolute; inset: 0; z-index: 25; pointer-events: none; }
 .catcher.on { pointer-events: auto; }
 .menu {
@@ -578,11 +545,10 @@ svg { display: block; }
 }
 .menu.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity .18s, transform .25s var(--spring-soft), visibility 0s; }
 .menu-main { left: 10px; width: 230px; transform-origin: top left; }
-.menu-vault { left: 50px; width: 250px; transform-origin: top left; } /* under the vault button, right of ≡ */
+.menu-vault { left: 50px; width: 250px; transform-origin: top left; }
 .menu-types { padding: 8px 8px 6px; max-height: 420px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgb(var(--ink-rgb) / .16) transparent; }
 .menu-type { left: 8px; right: 8px; transform-origin: top left; }
 
-/* ＋ menu: the 基本 types as an icon list; その他 swaps in the other groups (wider, 2 columns) */
 .menu-plus {
   right: 10px; width: 256px; max-height: 420px; overflow-y: auto; transform-origin: top right;
   scrollbar-width: thin; scrollbar-color: rgb(var(--ink-rgb) / .16) transparent;
@@ -633,7 +599,7 @@ svg { display: block; }
 .tp-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-cell .tag, .tp-cell .menu-key, .tp-cell .v-count { flex: none; }
 .tp-cell .v-mark { width: 9px; flex: none; }
-.tp-cell .v-mark:empty { display: none; } /* room for long names (ソフトウェアライセンス) */
+.tp-cell .v-mark:empty { display: none; }
 .tp-cell[aria-checked="true"] { background: rgb(var(--accent-rgb) / .12); border-color: rgb(var(--accent-rgb) / .5); }
 .tp-cell[aria-checked="true"] .tp-name { color: var(--accent-ink); }
 .tp-cell[aria-checked="true"] .v-count { color: var(--accent); }
@@ -643,7 +609,6 @@ svg { display: block; }
 .tp-ico { flex: none; display: grid; place-items: center; color: var(--text-soft); transition: color .15s; }
 .tp-cell:hover .tp-ico, .tp-cell:focus-visible .tp-ico, .tp-cell[aria-checked="true"] .tp-ico { color: var(--accent); }
 .tp-cell.zero .tp-ico { color: var(--text-faint); }
-/* すべて / 最近 / お気に入り: the first row, a little taller, apart from the type groups */
 .tp-views .tp-cell { height: 32px; }
 .tp-views + .tp-group { margin-top: 3px; }
 .menu-types .menu-sep { margin: 7px 2px 4px; }
@@ -663,7 +628,6 @@ svg { display: block; }
 .v-count { font-size: 11.5px; color: var(--text-soft); }
 .v-mark { width: 12px; display: grid; place-items: center; color: var(--accent); }
 
-/* ───────── sheets (generator, settings) ───────── */
 .scrim { position: absolute; inset: 0; z-index: 35; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .3s; }
 .scrim.on { opacity: 1; pointer-events: auto; }
 .sheet {
@@ -731,10 +695,8 @@ svg { display: block; }
 }
 #genApply svg { stroke-width: 2.6; }
 
-/* settings sheet */
 .settings { top: 52px; padding-bottom: 6px; }
 
-/* パスワード診断 (views/health.js): tabs per issue, the logins on the left, the chosen one on the right */
 [data-issue] { --issue-c: var(--text-soft); }
 [data-issue="action"] { --issue-c: var(--accent); }
 [data-issue="weak"] { --issue-c: var(--danger); }
@@ -789,7 +751,6 @@ svg { display: block; }
 .hs-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .hs-acts .btn-mini { display: inline-flex; align-items: center; gap: 5px; }
 
-/* ゴミ箱 (views/trash.js): one boxed list, a row per deleted item with its days left and two actions */
 .trash { top: 52px; padding-bottom: 12px; }
 .ts-empty { height: 26px; padding: 0 8px; font-size: 11.5px; }
 .ts-ask-all { flex: none; }
@@ -828,13 +789,10 @@ svg { display: block; }
 }
 .chips button:hover { border-color: rgb(var(--ink-rgb) / .2); color: var(--text); }
 .chips button[aria-checked="true"] { background: rgb(var(--accent-rgb) / .14); border-color: var(--accent); color: var(--accent-ink); }
-/* chips split into sets (the durations, then the special choices): a set that does not fit wraps whole,
-   starting at the left edge like the first line, never one chip alone and indented */
 .chips:has(> .chip-set) { column-gap: 12px; }
 .chip-set { display: flex; flex-wrap: wrap; gap: 4px; }
 .chips .chip-danger { color: var(--danger); }
 .chips .chip-danger:hover { border-color: var(--danger-border); color: var(--danger); }
-/* しない while its password form is open: chosen, not yet set */
 .chips .chip-danger.pending { border-style: dashed; border-color: var(--danger); background: var(--danger-soft); color: var(--danger-text); }
 .set-expander {
   align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 24px; padding: 0; border: 0; background: transparent;
@@ -866,7 +824,6 @@ svg { display: block; }
 .file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .file-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .set-cmds { display: flex; flex-direction: column; }
-/* the same columns as .set-row: name (with its icon) in the 120px column, then the description */
 .set-cmd-row {
   display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; height: 36px; padding: 0 12px;
   border: 0; background: transparent; color: var(--text); font-size: 12.5px; text-align: left; cursor: pointer; transition: background .15s;
@@ -880,12 +837,10 @@ svg { display: block; }
 .set-cmd-row:hover .sc-arrow, .set-cmd-row:focus-visible .sc-arrow { color: var(--accent); transform: translateX(2px); }
 .set-version { margin: 0; padding: 7px 0 0; font-size: 11px; color: var(--text-faint); }
 
-/* 自動ロック「しない」: warning + master password */
 .set-warn { margin: 0; padding: 8px 10px; border: 1px solid var(--danger-border); border-radius: 5px; background: var(--danger-soft);
   font-size: 11.5px; line-height: 1.65; color: var(--danger-text); }
 .set-warn::before { content: '! '; color: var(--danger); font-weight: 700; }
 
-/* ───────── settings page: 保管庫 ───────── */
 .vm-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .vm-list > * + * { border-top: 1px solid var(--line); }
 .vm-row { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 6px 0 12px; }
@@ -912,7 +867,6 @@ svg { display: block; }
 .btn-primary.danger, .btn-primary.danger:hover, .btn-primary.danger:disabled { background: var(--danger); color: var(--on-danger); }
 .btn-primary.danger:hover { filter: brightness(1.1); }
 
-/* ───────── settings pages: インポート / エクスポート ───────── */
 .set-back { width: 26px; height: 26px; border-radius: 5px; }
 .set-back svg { stroke-width: 2.4; }
 .trail { list-style: none; margin: 0 2px 0 0; padding: 0; display: flex; align-items: center; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
@@ -961,11 +915,10 @@ svg { display: block; }
 .io-alert .bang { flex: none; line-height: 1.5; }
 .io-alert b { color: var(--text); font-weight: 700; user-select: text; }
 .io-alert-title { color: var(--text); }
-.io-alert, .set-warn, .set-note, .set-hint { text-wrap: pretty; } /* no lone last character */
+.io-alert, .set-warn, .set-note, .set-hint { text-wrap: pretty; }
 .io-alert.safe { background: var(--ok-soft); border-color: rgb(var(--ok-rgb) / .3); color: var(--text-2); }
 .io-alert.safe .bang { color: var(--success); }
 
-/* import · 1 読み込み元 */
 .src-wrap { position: relative; }
 .src-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .src {
@@ -991,7 +944,6 @@ svg { display: block; }
 }
 .settings.dragging .drop-veil { display: grid; animation: akt-rise .2s var(--ease-out); }
 
-/* import · 2 ファイル */
 .drop {
   position: relative; height: 84px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-radius: 6px;
   border: 1px dashed var(--border-strong); background: var(--bg-deep); cursor: pointer;
@@ -1020,7 +972,6 @@ svg { display: block; }
 .io-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--text-soft); line-height: 1.6; }
 .io-notes li::before { content: '# '; color: var(--accent); }
 
-/* import · 3 確認 */
 .io-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .io-stats .stat { padding: 6px 10px 7px; }
 .io-stats .stat-v { font-size: 18px; font-weight: 700; line-height: 1.25; margin-top: 2px; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -1041,7 +992,6 @@ svg { display: block; }
 }
 .io-more { flex: none; font-size: 11.5px; color: var(--text-soft); white-space: nowrap; }
 
-/* export */
 .fmt-list { display: flex; flex-direction: column; border: 1px solid rgb(var(--ink-rgb) / .1); border-radius: 6px; background: rgb(var(--soot-rgb) / .9); overflow: hidden; }
 .fmt {
   display: grid; grid-template-columns: 32px 156px minmax(0, 1fr) auto; align-items: center; height: 36px; padding: 0 12px 0 10px;
@@ -1064,14 +1014,12 @@ svg { display: block; }
 .io-pair { display: flex; align-items: center; gap: 8px; }
 .io-pair .tgl { height: 30px; flex: none; }
 
-/* ───────── toast ───────── */
 .toast {
   position: absolute; left: 50%; bottom: 14px; z-index: 45; min-width: 240px; max-width: 360px;
   transform: translateX(-50%) translateY(14px); opacity: 0; pointer-events: none;
   transition: opacity .25s, transform .4s var(--spring-soft);
   background: var(--toast-bg); color: var(--toast-text); border-radius: 6px; box-shadow: var(--shadow-toast); overflow: hidden;
 }
-/* takes the pointer while it is up: hovering it holds it (views/toast.js) */
 .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 .toast-body { display: flex; align-items: center; gap: 9px; padding: 8px 12px 7px; }
 .toast-ico { width: 18px; height: 18px; flex: none; border-radius: 4px; background: var(--accent); display: grid; place-items: center; color: var(--on-accent); }
@@ -1083,7 +1031,6 @@ svg { display: block; }
 .toast-msg { font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
 .toast-sub { font-size: 11px; color: var(--toast-sub); overflow: hidden; text-overflow: ellipsis; }
 .toast-sub:empty { display: none; }
-/* 元に戻す: a line button in the toast's own ink */
 .toast-act {
   flex: none; height: 24px; margin-left: auto; padding: 0 9px; border-radius: 4px;
   border: 1px solid var(--toast-line); background: transparent; color: var(--toast-text);
@@ -1094,7 +1041,6 @@ svg { display: block; }
 .toast-bar { height: 2px; background: var(--accent); transform-origin: left; }
 .toast.err .toast-bar { background: var(--danger); }
 
-/* ───────── lock / setup gate ───────── */
 .gate {
   position: absolute; inset: 0; z-index: 50; overflow: hidden;
   background-color: var(--bg);
@@ -1106,7 +1052,6 @@ svg { display: block; }
 }
 .gate.on { opacity: 1; pointer-events: auto; visibility: visible; transition: opacity .2s var(--ease-out), visibility 0s; }
 .gate.instant { transition: none; }
-/* the lock screen's own atmosphere: a faint lamp-coloured scan line and the lamp's glow in a corner */
 .gate-scan {
   position: absolute; left: 0; right: 0; top: 0; height: 60px; pointer-events: none;
   background: linear-gradient(180deg, transparent, var(--scan), transparent); animation: akt-scan 5s linear infinite;
@@ -1141,7 +1086,6 @@ svg { display: block; }
 }
 .gate-field input::placeholder { letter-spacing: .2em; }
 .app .gate-field input:focus-visible { outline: none; }
-/* shown master password: tighter, so it reads as text (the Spaced Secret Rule) */
 .gate-field input.shown { letter-spacing: .03em; }
 .gate-field:has(.gate-eye) { padding-right: 5px; }
 .gate-eye {
@@ -1150,7 +1094,6 @@ svg { display: block; }
 }
 .gate-eye:hover { color: var(--accent-strong); background: var(--accent-tint); }
 .gate-eye[aria-pressed="true"] { color: var(--accent-strong); }
-/* Caps Lock: a caution, not an error (no alarm red) */
 .gate-caps { margin: -2px 0 0; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2); }
 .gate-caps:empty { display: none; }
 .gate-caps .bang { color: var(--fav); }
@@ -1173,7 +1116,6 @@ svg { display: block; }
 .boot-dots { flex: 1; min-width: 16px; border-bottom: 1px dotted rgb(var(--ink-rgb) / .22); transform: translateY(-3px); }
 .boot-v { color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; }
 
-/* first-run setup shares the gate */
 .gate[data-mode="setup"] .gate-inner { gap: 14px; }
 .gate[data-mode="setup"] .gate-field { height: 34px; }
 .gate[data-mode="setup"] .gate-field input { font-size: 14px; letter-spacing: .14em; }
@@ -1189,12 +1131,10 @@ svg { display: block; }
 .setup-warn { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--danger-text); }
 .bang { color: var(--danger); font-weight: 700; font-size: 13px; }
 
-/* reduced motion: keep state changes, drop the travel */
 @media (prefers-reduced-motion: reduce) {
   .app *, .app *::before, .app *::after {
     animation-duration: .01ms !important; animation-iteration-count: 1 !important;
     transition-duration: .05s !important; transition-delay: 0s !important;
   }
-  /* a busy indicator still has to read as busy */
   .app .spinner { animation-duration: 1.2s !important; animation-iteration-count: infinite !important; }
 }

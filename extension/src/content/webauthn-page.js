@@ -1,9 +1,3 @@
-// Akari WebAuthn shim (MAIN world, top frame, document_start). Classic script, self-contained.
-// navigator.credentials.create/get calls with `publicKey` go to Akari through the
-// ISOLATED-world bridge (webauthn-bridge.js); anything else runs on the browser's own
-// implementation, and requests Akari declines with FALLBACK go on to whatever is next:
-// another passkey manager that set its own navigator.credentials.get/create (Proton Pass
-// does), or the browser.
 (() => {
   'use strict';
 
@@ -13,7 +7,6 @@
   const AsrResp = window.AuthenticatorAssertionResponse;
   if (!CC || !PKC || !AttResp || !AsrResp || !window.isSecureContext) return;
 
-  // Capture everything we rely on before page scripts can patch it.
   const nativeCreate = CC.prototype.create;
   const nativeGet = CC.prototype.get;
   const DOMExc = window.DOMException;
@@ -37,8 +30,8 @@
   const TO_EXT = 'page→ext';
   const TO_PAGE = 'ext→page';
   const pending = new Map();
-
-  // ---------- bytes ----------
+  const BYTES_PER_FROMCHARCODE_CHUNK = 0x8000;
+  const FOCUS_WAIT_MS = 3000;
 
   function bufferSourceToB64url(src) {
     let bytes;
@@ -46,7 +39,7 @@
     else if (isView(src)) bytes = new Uint8Array(src.buffer, src.byteOffset, src.byteLength);
     else throw new TypeErr('Expected a BufferSource');
     let s = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    for (let i = 0; i < bytes.length; i += BYTES_PER_FROMCHARCODE_CHUNK) s += String.fromCharCode.apply(null, bytes.subarray(i, i + BYTES_PER_FROMCHARCODE_CHUNK));
     return btoaRef(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
@@ -57,8 +50,6 @@
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out.buffer;
   }
-
-  // ---------- options → JSON-safe ----------
 
   const optStr = (v) => (v === undefined ? undefined : String(v));
 
@@ -107,8 +98,6 @@
     };
   }
 
-  // ---------- JSON → PublicKeyCredential-like object ----------
-
   function own(obj, props) {
     for (const k of Object.keys(props)) {
       defineProperty(obj, k, { value: props[k], enumerable: true, configurable: true, writable: false });
@@ -153,7 +142,6 @@
     defineProperty(cred, 'getClientExtensionResults', method(function getClientExtensionResults() {
       return JSON.parse(JSON.stringify(extResults));
     }));
-    // WebAuthn L3 RegistrationResponseJSON / AuthenticationResponseJSON.
     defineProperty(cred, 'toJSON', method(function toJSON() {
       const out = JSON.parse(JSON.stringify(json));
       if (out.response && out.response.userHandle == null) delete out.response.userHandle;
@@ -161,8 +149,6 @@
     }));
     return cred;
   }
-
-  // ---------- errors ----------
 
   function toError(code) {
     switch (code) {
@@ -179,19 +165,16 @@
     }
   }
 
-  // After Akari's window closes, Chrome refuses WebAuthn until the page has focus again.
   function whenFocused() {
     if (document.hasFocus()) return Promise.resolve();
     return new Promise((resolve) => {
       const done = () => { removeListener('focus', done); clearTimeoutRef(timer); resolve(); };
-      const timer = setTimeoutRef(done, 3000);
+      const timer = setTimeoutRef(done, FOCUS_WAIT_MS);
       addListener('focus', done);
     });
   }
 
   const abortReason = (signal) => (signal.reason !== undefined ? signal.reason : new DOMExc('signal is aborted without reason', 'AbortError'));
-
-  // ---------- bridge messaging ----------
 
   addListener('message', (event) => {
     if (event.source !== window || event.origin !== ORIGIN) return;
@@ -219,10 +202,7 @@
     return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   }
 
-  // Where requests Akari declines go: the browser, or another manager's get/create.
   const next = { create: nativeCreate, get: nativeGet };
-  // Options objects Akari has passed on. A manager that captured Akari's function as its
-  // own fallback hands the same object back; that call goes to the browser, not round again.
   const declined = new WeakSetRef();
 
   function viaAkari(kind, thisArg, args) {
@@ -235,7 +215,7 @@
     try {
       payload = kind === 'create' ? serializeCreate(options.publicKey) : serializeGet(options.publicKey);
     } catch {
-      return fallback(); // malformed options: let the browser raise the right error
+      return fallback();
     }
     const signal = options.signal;
     if (signal && signal.aborted) return Promise.reject(abortReason(signal));
@@ -258,7 +238,6 @@
     });
   }
 
-  // Proxies keep name/length and give a native-looking toString().
   function wrap(kind, native) {
     return new Proxy(native, {
       apply(target, thisArg, args) {
@@ -277,9 +256,6 @@
   defineProperty(CC.prototype, 'create', desc(wrapped.create));
   defineProperty(CC.prototype, 'get', desc(wrapped.get));
 
-  // A get/create set on navigator.credentials itself hides the prototype, so other managers
-  // would always be asked before Akari. Akari keeps an accessor there instead: a function
-  // that was already set, or is assigned later, becomes `next` and Akari stays first.
   const container = window.navigator.credentials;
   for (const kind of ['create', 'get']) {
     const own = getOwnPropertyDescriptor(container, kind);

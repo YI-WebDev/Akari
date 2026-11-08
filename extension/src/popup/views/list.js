@@ -1,6 +1,3 @@
-// Left column (design 1a): 現在のタブ autofill card, grouped rows with counts, empty states,
-// plus the counters that live outside the list (filter counts, status bar).
-
 import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import {
@@ -14,16 +11,12 @@ const $ = (id) => document.getElementById(id);
 const $list = () => $('list');
 let afButton = null;
 
-// Rows kept between redraws, by item id: a row is reused while its item object, the highlighted
-// text, selection mode and the weak flag are unchanged, so typing in the search box moves rows
-// instead of building every one again. Holds decrypted items: dropped on lock (resetListCache).
 let rowCache = new Map();
 
 export function resetListCache() {
   rowCache = new Map();
 }
 
-/** q is already normalised; offsets come from the same normalisation map, so they map back exactly. */
 function highlight(text, q) {
   const s = String(text || '');
   const r = q ? matchRange(normOf(s), q) : null;
@@ -31,7 +24,6 @@ function highlight(text, q) {
   return [s.slice(0, r[0]), h('mark', null, s.slice(r[0], r[1])), s.slice(r[1])];
 }
 
-/** Second line: subtitleOf (never secret), or the type's name when that is empty. */
 function subtitle(it) {
   const s = subtitleOf(it);
   if (s || it.type === 'login') return { text: s, plain: false };
@@ -42,14 +34,11 @@ export function tileEl(it, size = '') {
   return h('span', { class: ('tile ' + size).trim(), vars: { '--h': String(hueOf(it)) }, 'aria-hidden': 'true' }, letterOf(it.title));
 }
 
-/**
- * A plain click opens the item. In selection mode a click checks it; Ctrl/⌘+click and
- * Shift+click (a range from the last checked row) start selection mode from anywhere.
- */
 function onRowClick(e, id) {
-  if (S.picking || e.ctrlKey || e.metaKey || e.shiftKey) {
-    if (e.shiftKey) window.getSelection()?.removeAllRanges(); // Shift+click also selects text
-    emit('pick', id, { range: e.shiftKey });
+  const extendsRange = e.shiftKey;
+  if (S.picking || e.ctrlKey || e.metaKey || extendsRange) {
+    if (extendsRange) window.getSelection()?.removeAllRanges();
+    emit('pick', id, { range: extendsRange });
   } else {
     emit('select', id);
   }
@@ -66,7 +55,6 @@ function rowFlags(it) {
     tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null);
 }
 
-/** The row for `it`: the cached one when nothing it shows has changed. */
 function cachedRow(it, q, next) {
   const sig = `${q}\u0000${S.picking ? 1 : 0}\u0000${isWeak(it) ? 1 : 0}`;
   const hit = rowCache.get(it.id);
@@ -116,7 +104,6 @@ export function afButtonEl() {
   return afButton;
 }
 
-/** The first autofill match that is in the loaded items and the current vault. */
 export function afCandidate() {
   if (!S.af?.items?.length) return null;
   for (const m of S.af.items) {
@@ -174,7 +161,6 @@ function groupEl(label, count) {
     h('span', null, label), h('span', { class: 'group-line' }), h('span', null, String(count)));
 }
 
-/** Items per view in the current vault, ignoring the search: { all, recent, fav, types: Map }. */
 export function viewCounts(now = Date.now()) {
   const inV = S.items.filter(inVault);
   const types = new Map();
@@ -187,10 +173,8 @@ export function viewCounts(now = Date.now()) {
   };
 }
 
-/** What the list shows: 'all' | 'recent' | 'fav', or a type id (one at a time). */
 export const currentView = () => (S.type !== 'all' && typeOf(S.type) ? S.type : S.filter);
 
-/** The 表示 chip: icon, name and count of the current view; accented unless it is すべて. */
 export function renderViewButton(counts = viewCounts()) {
   const id = currentView();
   const n = isView(id) ? counts[id] : counts.types.get(id) || 0;
@@ -207,7 +191,6 @@ export function renderViewButton(counts = viewCounts()) {
   btn.setAttribute('aria-label', label);
 }
 
-/** The 表示 chip: the current view and its count. */
 export function renderCounts(now = Date.now()) {
   renderViewButton(viewCounts(now));
 }
@@ -218,48 +201,44 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
   afButton = null;
   const q = searchQuery();
   const now = Date.now();
-  const out = []; // the list's new children, built off-screen and swapped in at once
+  const children = [];
   const next = new Map();
 
   const af = S.picking ? null : afCandidate();
-  // the tab's own site in the search box (put there on open) keeps the autofill card; an operator hides it
   const siteOnly = !searching() || q === normQuery(S.siteQuery);
-  if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) out.push(afCard(af));
+  const unfiltered = S.filter === 'all' && (S.type === 'all' || S.type === 'login');
+  if (af && siteOnly && unfiltered) children.push(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
   renderCounts(now);
   L.toggleAttribute('aria-multiselectable', S.picking);
   if (S.picking) {
-    // Only what is on screen can be deleted: a filter or search change unchecks the rest.
     if (prunePicked(new Set(vis.map((i) => i.id)))) emit('picked');
   }
   if (!S.items.length) {
-    out.push(emptyHero());
+    children.push(emptyHero());
   } else if (!vis.length) {
-    out.push(emptyMessage(q));
+    children.push(emptyMessage(q));
   } else {
-    // the site put in the search box on open is not something the user typed: no highlight for it
     const hq = siteOnly ? '' : q;
     const row = (it) => cachedRow(it, hq, next);
     if (looseResults()) {
-      // nothing contains the text: these titles have its letters in order
-      out.push(groupEl(t('list.loose', { q: S.query.trim() }, '「{q}」に近いもの'), vis.length));
-      for (const it of vis) out.push(row(it));
+      children.push(groupEl(t('list.loose', { q: S.query.trim() }, '「{q}」に近いもの'), vis.length));
+      for (const it of vis) children.push(row(it));
     } else if (S.sort === 'az') {
-      out.push(groupEl('A–Z', vis.length));
-      for (const it of vis) out.push(row(it));
+      children.push(groupEl('A–Z', vis.length));
+      for (const it of vis) children.push(row(it));
     } else {
-      appendGroups(out, vis, row, vis.map((it) => groupIndex(it.lastUsedAt, now)), groupName);
+      appendGroups(children, vis, row, vis.map((it) => groupIndex(it.lastUsedAt, now)), groupName);
     }
   }
   rowCache = next;
-  L.replaceChildren(...out);
+  L.replaceChildren(...children);
   L.setAttribute('aria-activedescendant', vis.length && S.sel ? 'row-' + S.sel : '');
   if (keepScroll && !animate) L.scrollTop = top;
   else L.scrollTop = 0;
 }
 
-/** Rows under a heading per run of equal keys (vis is sorted so equal keys are adjacent). */
 function appendGroups(out, vis, row, keys, label) {
   const per = new Map();
   for (const g of keys) per.set(g, (per.get(g) || 0) + 1);
@@ -273,7 +252,6 @@ function appendGroups(out, vis, row, keys, label) {
   });
 }
 
-/** Move the selection (or, in selection mode, the checks and the keyboard row) without rebuilding rows. */
 export function markSelected() {
   const L = $list();
   L.querySelectorAll('.row').forEach((r) => {

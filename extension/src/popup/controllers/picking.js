@@ -1,5 +1,3 @@
-// Selection mode (delete several): checking rows, ranges with Shift, select all, and the delete.
-
 import { MSG, ERR } from '../../shared/messages.js';
 import { t } from '../../shared/i18n.js';
 import {
@@ -14,9 +12,8 @@ import { closeMenus } from './menus.js';
 
 const $ = (id) => document.getElementById(id);
 
-let pickAnchor = null; // the row last checked or unchecked: Shift+click spans from here
+let pickAnchor = null;
 
-/** Forget the Shift+click anchor (the view was wiped on lock). */
 export function resetPickAnchor() {
   pickAnchor = null;
 }
@@ -34,7 +31,6 @@ function enterPicking() {
   renderPickMode();
 }
 
-/** The 選択 button, Esc: switch selection mode on or off. */
 export function setPicking(on) {
   if (on === S.picking) return;
   if (on && editorOpen()) {
@@ -53,7 +49,6 @@ export function setPicking(on) {
   renderDetail({ animate: true });
 }
 
-/** Check or uncheck a row; `range` (Shift) checks every row from the last one clicked. */
 export function pick(id, { range = false } = {}) {
   const entering = !S.picking;
   if (entering) {
@@ -61,9 +56,9 @@ export function pick(id, { range = false } = {}) {
       requestClose(() => pick(id, { range }));
       return;
     }
-    const from = range ? S.sel : null; // Shift+click from the normal view spans from the open item
+    const openItemId = range ? S.sel : null;
     enterPicking();
-    pickAnchor = from;
+    pickAnchor = openItemId;
   }
   const vis = visibleItems();
   const at = vis.findIndex((i) => i.id === id);
@@ -87,7 +82,6 @@ export function pick(id, { range = false } = {}) {
   }
 }
 
-/** Check every visible row (Ctrl+A, すべて選択), or none. */
 export function pickAll(all) {
   if (!S.picking) {
     if (editorOpen()) return;
@@ -112,13 +106,12 @@ export async function deletePicked() {
     pickAnchor = null;
     resetPicker();
     renderPickMode();
-    // the list, the selection and the toast with 元に戻す: popup.js onTrashed
     emit('trashed', Array.isArray(res?.ids) ? res.ids : ids, { trash: res?.trash });
   } catch (e) {
     if (!live(token)) return;
     resetPicker();
     renderPicker();
     toastError(t('削除できませんでした'), errText(e));
-    if (e?.code === ERR.NOT_FOUND) emit('reload'); // deleted elsewhere meanwhile: show what is left
+    if (e?.code === ERR.NOT_FOUND) emit('reload');
   }
 }
