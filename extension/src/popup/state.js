@@ -10,15 +10,17 @@ import { estimateStrength } from '../lib/strength.js';
 import { passwordHealth, ISSUES, ACTION_ISSUES } from '../lib/health.js';
 import { typeOf, searchTextOf } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
-import { groupIndex, normQuery, normMap } from './views/format.js';
+import { groupIndex, normMap } from './views/format.js';
+import { compileQuery } from './search.js';
 import { toast, toastError } from './views/toast.js';
 
 export const S = {
   phase: 'boot', // boot | setup | locked | main
   epoch: 0, // bumped on every lock; async work started in an older epoch must not touch state
   settings: { ...DEFAULT_SETTINGS },
-  vaults: [...DEFAULT_VAULTS],
+  vaults: [...DEFAULT_VAULTS], // replaced before anything shows them (setVaults)
   items: [],
+  trash: [], // the ゴミ箱: sanitized items with deletedAt, newest first (lib/vault/trash.js)
   vault: 'all',
   filter: 'all', // all | recent | fav
   type: 'all', // all | an item type id (shared/item-types.js)
@@ -69,8 +71,11 @@ export function putSetting(key, value) {
   return prev;
 }
 
+/** The default vaults in the UI language: what a new vault starts with (lib/vault/schema.js), as a fallback. */
+export const defaultVaults = () => DEFAULT_VAULTS.map((v) => ({ ...v, name: t(`vault.default.${v.id}`, null, v.name) }));
+
 export function setVaults(vaults) {
-  S.vaults = Array.isArray(vaults) && vaults.length ? vaults : [...DEFAULT_VAULTS];
+  S.vaults = Array.isArray(vaults) && vaults.length ? vaults : defaultVaults();
   if (S.vault !== 'all' && !S.vaults.some((v) => v.id === S.vault)) S.vault = 'all';
 }
 
@@ -158,7 +163,8 @@ export const live = (token) => S.phase === 'main' && S.epoch === token;
 
 // Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
 const WRITES = new Set([
-  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+  MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
+  MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
   MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
 ]);
 let writing = 0;
@@ -209,6 +215,18 @@ export function setItems(items) {
   recomputeReuse();
 }
 
+/** The ゴミ箱 as the service worker last sent it. */
+export function setTrash(trash) {
+  S.trash = Array.isArray(trash) ? trash : [];
+}
+
+/** Items back from the ゴミ箱, at the top like new ones. */
+export function addItems(items) {
+  const ids = new Set(items.map((i) => i.id));
+  S.items = [...items, ...S.items.filter((i) => !ids.has(i.id))];
+  recomputeReuse();
+}
+
 export function recomputeReuse() {
   health = null;
   reuse = new Map();
@@ -254,10 +272,6 @@ export function replaceItem(item) {
   recomputeReuse();
 }
 
-export function removeItem(id) {
-  removeItems([id]);
-}
-
 export function removeItems(ids) {
   const gone = new Set(ids);
   S.items = S.items.filter((i) => !gone.has(i.id));
@@ -271,6 +285,7 @@ export function removeItems(ids) {
 
 export function clearSecrets() {
   S.items = [];
+  S.trash = [];
   S.af = null;
   S.sel = null;
   S.query = '';
@@ -296,7 +311,27 @@ export function normOf(text) {
   return m;
 }
 
-export const searchQuery = () => normQuery(S.query);
+/* the search box's operators and text (popup/search.js), compiled once per query */
+let compiled = null;
+function query() {
+  if (compiled?.raw !== S.query) {
+    compiled = compileQuery(S.query, {
+      issuesOf,
+      vaultName: (id) => vaultById(id)?.name || '',
+      textOf: (it) => ({ title: normOf(it.title).norm, rest: normOf(searchTextOf(it)).norm }),
+    });
+    compiled.raw = S.query;
+  }
+  return compiled;
+}
+
+/** The free text of the search (operators removed), normalised: what the list highlights. */
+export const searchQuery = () => query().text;
+/** Whether the search has anything in it (text or operators). */
+export const searching = () => !query().empty;
+let loose = false;
+/** The last visibleItems() found nothing exactly and fell back to a loose title match. */
+export const looseResults = () => loose;
 
 export function inVault(it) {
   return S.vault === 'all' || it.vault === S.vault;
@@ -304,14 +339,22 @@ export function inVault(it) {
 
 export const inType = (it) => S.type === 'all' || it.type === S.type;
 
-/** Title plus the item's non-secret text (searchTextOf never contains secret values). */
-export const matchesQuery = (it, q) => !q || normOf(it.title).norm.includes(q) || normOf(searchTextOf(it)).norm.includes(q);
+const inFilter = (i, now) => S.filter === 'all' || (S.filter === 'recent' && groupIndex(i.lastUsedAt, now) <= 1) || (S.filter === 'fav' && i.fav);
 
+/**
+ * The list: the current vault, view and search. Text is matched against the title and the item's
+ * non-secret text (searchTextOf never contains secret values); when that finds nothing, against
+ * the title loosely (popup/search.js).
+ */
 export function visibleItems(now = Date.now()) {
-  const q = searchQuery();
-  const v = S.items.filter((i) => inVault(i) && inType(i)
-    && (S.filter === 'all' || (S.filter === 'recent' && groupIndex(i.lastUsedAt, now) <= 1) || (S.filter === 'fav' && i.fav))
-    && matchesQuery(i, q));
+  const q = query();
+  const base = S.items.filter((i) => inVault(i) && inType(i) && inFilter(i, now));
+  let v = q.empty ? base : base.filter((i) => q.test(i));
+  loose = false;
+  if (!v.length && q.text) {
+    v = base.filter((i) => q.loose(i));
+    loose = v.length > 0;
+  }
   if (S.sort === 'az') return v.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ja'));
   return v.sort((a, b) => {
     const ga = groupIndex(a.lastUsedAt, now);

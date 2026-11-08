@@ -4,6 +4,7 @@ import { toB64url, randomBytes } from '../../shared/bytes.js';
 import { AkariError } from '../../shared/errors.js';
 import { ERR, VAULT_LIMITS } from '../../shared/messages.js';
 import { invalid, isHue } from './common.js';
+import { trashItems } from './trash.js';
 
 const nameKey = (name) => name.normalize('NFKC').toLowerCase();
 
@@ -40,8 +41,8 @@ export function updateVaultIn(data, id, { name, hue }) {
 }
 
 /**
- * Removes a vault. Its items move to `moveTo` (another vault), or are deleted with it only when
- * `deleteItems` is true: a vault that turns out to hold items the caller did not know about
+ * Removes a vault. Its items move to `moveTo` (another vault), or go to the ゴミ箱 with it only
+ * when `deleteItems` is true: a vault that turns out to hold items the caller did not know about
  * (another popup, an import meanwhile) is refused with NOT_EMPTY instead of emptied silently.
  * The last vault cannot go. Returns how many items were moved / deleted.
  */
@@ -64,9 +65,8 @@ export function deleteVaultIn(data, id, { moveTo = null, deleteItems = false } =
       moved++;
     }
   } else {
-    const keep = data.items.filter((it) => it.vault !== id);
-    deleted = data.items.length - keep.length;
-    data.items = keep;
+    // they go to the ゴミ箱 like any deleted item; restoring one puts it in the first vault
+    deleted = trashItems(data, data.items.filter((it) => it.vault === id).map((it) => it.id), nowMs).length;
   }
   data.vaults.splice(index, 1);
   return { moved, deleted };

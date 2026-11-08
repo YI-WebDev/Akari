@@ -86,7 +86,7 @@
     closeCard();
     const { el, orb } = ui;
     const { host, root } = ui.makeHost();
-    const box = el('div', 'bar');
+    const box = ui.themed(el('div', 'bar'));
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-label', 'Akari — ' + title);
 

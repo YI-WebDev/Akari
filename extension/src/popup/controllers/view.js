@@ -2,7 +2,7 @@
 // changed, the selection, and the search box.
 
 import { t } from '../../shared/i18n.js';
-import { S, ensureSel, visibleItems, setSearch, setSel } from '../state.js';
+import { S, ensureSel, visibleItems, looseResults, setSearch, setSel } from '../state.js';
 import { vaultColor } from '../views/format.js';
 import { renderList, markSelected, scrollToRow, renderViewButton } from '../views/list.js';
 import { renderDetail } from '../views/detail.js';
@@ -62,9 +62,36 @@ export function showQuery(q) {
 
 /** Search for `q` and show it in the search box. */
 export function setQuery(q) {
+  clearTimeout(typingTimer);
   setSearch(q);
   showQuery(q);
   refreshList();
+}
+
+// Typing: the query takes effect at once (↑↓ and ⏎ follow it), the list is redrawn once the keys
+// pause for TYPING_MS, so a fast typist does not rebuild it on every key.
+const TYPING_MS = 50;
+let typingTimer = 0;
+
+/** The search box's own input. */
+export function typeQuery(q) {
+  setSearch(q);
+  showQuery(q);
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => { typingTimer = 0; if (S.phase === 'main') refreshList(); }, TYPING_MS);
+}
+
+/** Drop a redraw that is still waiting (lock). */
+export function cancelTyping() {
+  clearTimeout(typingTimer);
+}
+
+/** Redraw now if typing left one waiting: ↑↓ and ⏎ act on the list the user sees. */
+export function flushTyping() {
+  if (!typingTimer) return;
+  clearTimeout(typingTimer);
+  typingTimer = 0;
+  if (S.phase === 'main') refreshList();
 }
 
 /**
@@ -75,7 +102,8 @@ export function prefillSiteQuery() {
   const q = S.siteQuery;
   if (!q || S.query) return;
   setSearch(q);
-  if (!visibleItems().length) {
+  // a near match (the letters in order) is not this site's login
+  if (!visibleItems().length || looseResults()) {
     setSearch('');
     return;
   }

@@ -31,18 +31,53 @@ function legacyData() {
 
 test('a new vault is written at the current schema', () => {
   assert.equal(defaultData(5).schema, DATA_SCHEMA);
-  assert.equal(DATA_SCHEMA, 1);
+  assert.equal(DATA_SCHEMA, 2);
+  assert.deepEqual(defaultData(5).trash, []);
 });
 
 test('schema 0 → 1: type-less items become logins, notes lose their empty login keys', () => {
   const data = migrateData(legacyData());
-  assert.equal(data.schema, 1);
+  assert.equal(data.schema, DATA_SCHEMA);
   const [a, b, c] = data.items;
   assert.equal(a.type, 'login');
   assert.equal(a.password, 'p');
   assert.deepEqual(Object.keys(b).sort(), ['createdAt', 'extra', 'id', 'note', 'title', 'type', 'updatedAt', 'vault']);
   assert.equal(c.url, 'https://example.com'); // a non-empty legacy value stays
   assert.equal('username' in c, false);
+});
+
+test('schema 1 → 2: the ゴミ箱 starts empty; a malformed one is refused', () => {
+  const v1 = { schema: 1, vaults: [{ id: 'personal', name: '個人', hue: 55 }], items: [], updatedAt: 1 };
+  const data = migrateData(structuredClone(v1));
+  assert.equal(data.schema, 2);
+  assert.deepEqual(data.trash, []);
+  const kept = migrateData({ ...structuredClone(v1), schema: 2, trash: [{ id: 'x', deletedAt: 1 }] });
+  assert.deepEqual(kept.trash, [{ id: 'x', deletedAt: 1 }], 'an existing trash is left alone');
+  assert.throws(() => migrateData({ ...structuredClone(v1), trash: {} }), isInvalid);
+});
+
+test('ゴミ箱: one entry per id, none for a live item, and a restored login drops passkeys the vault has again', async () => {
+  const { trashItems, restoreItems, pruneTrash } = await import('../../extension/src/lib/vault/trash.js');
+  const pk = (id, user) => ({ credentialId: id, rpId: 'example.com', userHandle: user });
+  const data = {
+    vaults: [{ id: 'personal', name: '個人', hue: 55 }],
+    items: [{ id: 'a', type: 'login', vault: 'personal', title: 'A', passkeys: [pk('P', 'u1'), pk('R', 'u2')] }],
+    trash: [],
+  };
+  trashItems(data, ['a'], 10);
+  // meanwhile the site got a new passkey for u1 (Q), and an import brought the same id back once
+  data.items.push({ id: 'b', type: 'login', vault: 'personal', title: 'B', passkeys: [pk('Q', 'u1')] });
+  const [back] = restoreItems(data, ['a'], 20);
+  assert.deepEqual(back.passkeys.map((p) => p.credentialId), ['R'], 'u1 keeps only the newer Q');
+
+  trashItems(data, ['a'], 30);
+  data.items.push({ id: 'a', type: 'login', vault: 'personal', title: 'A (backup)' });
+  pruneTrash(data, 40);
+  assert.deepEqual(data.trash, [], 'a live id is not also in the trash');
+  trashItems(data, ['a'], 50);
+  data.items.push({ id: 'a', type: 'login', vault: 'personal', title: 'A again' });
+  trashItems(data, ['a'], 60);
+  assert.deepEqual(data.trash.map((e) => [e.id, e.deletedAt]), [['a', 60]], 'one entry per id');
 });
 
 test('migrating twice changes nothing more', () => {

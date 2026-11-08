@@ -516,7 +516,10 @@ function footConfirm(text, yesLabel, onYes, noLabel = t('やめる')) {
 
 function confirmDelete() {
   const pk = E.original?.passkeys?.length || 0;
-  const ask = pk ? t('パスキー {n} 件も消えます。元に戻せません', { n: pk }) : t('削除しますか？元に戻せません');
+  // it goes to the ゴミ箱: the toast offers 元に戻す, and the ゴミ箱 keeps it for TRASH_DAYS
+  const ask = pk
+    ? t('trash.askPasskeys', { n: pk }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')
+    : t('trash.ask', null, 'ゴミ箱に移しますか？ 30 日間は元に戻せます');
   footConfirm(ask, t('削除する'), async (btn) => {
     const mine = E;
     if (!mine || mine.busy) return;
@@ -524,10 +527,10 @@ function confirmDelete() {
     btn.disabled = true;
     const { id, title } = mine.original;
     try {
-      await call(MSG.VAULT_DELETE_ITEM, { id });
+      const res = await call(MSG.VAULT_DELETE_ITEM, { id });
       if (E !== mine) return;
       closeEditor();
-      emit('deleted', id, title);
+      emit('trashed', [id], { title, trash: res?.trash });
     } catch (e) {
       if (E !== mine) return;
       mine.busy = false;

@@ -2,7 +2,8 @@
 // Content scripts cannot import shared/i18n.js, so this carries the few page strings itself:
 // keys are the Japanese source text, EN holds their English. The 言語 setting comes from the
 // service worker (settings/language; storage.local is closed to content scripts), 'auto'
-// following the browser's UI language.
+// following the browser's UI language. The same answer carries the テーマ setting, which
+// shadow-ui.js reads through theme() when it builds a piece of UI.
 
 (() => {
   'use strict';
@@ -47,11 +48,28 @@
   };
   const resolve = (pref) => (pref === 'ja' || pref === 'en' ? pref : fromBrowser());
   let lang = fromBrowser();
+  // The テーマ setting, from the same answer: 'dark' (the default) | 'light' | 'auto'.
+  let themePref = 'dark';
 
   try {
     chrome.runtime.sendMessage({ type: 'settings/language' })
-      .then((res) => { if (res?.ok) lang = resolve(res.data?.language); }, () => {});
-  } catch { /* extension reloaded: keep the browser's language */ }
+      .then((res) => {
+        if (!res?.ok) return;
+        lang = resolve(res.data?.language);
+        themePref = res.data?.theme;
+      }, () => {});
+  } catch { /* extension reloaded: keep the browser's language and the dark theme */ }
+
+  /** The in-page UI's theme, 'dark' or 'light'; 'auto' follows the OS at the time of asking. */
+  function theme() {
+    if (themePref === 'light') return 'light';
+    if (themePref !== 'auto') return 'dark';
+    try {
+      return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  }
 
   /** Translate the Japanese `text`; `{name}` placeholders are filled from `params`. */
   function t(text, params = null) {
@@ -60,5 +78,5 @@
     return s;
   }
 
-  globalThis.__akariI18n = Object.freeze({ t, lang: () => lang });
+  globalThis.__akariI18n = Object.freeze({ t, lang: () => lang, theme });
 })();

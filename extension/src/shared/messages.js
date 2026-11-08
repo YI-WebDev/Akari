@@ -10,8 +10,10 @@ export const MSG = Object.freeze({
   VAULT_LOCK: 'vault/lock',
   VAULT_GET_ALL: 'vault/getAll',
   VAULT_SAVE_ITEM: 'vault/saveItem',
-  VAULT_DELETE_ITEM: 'vault/deleteItem',
-  VAULT_DELETE_ITEMS: 'vault/deleteItems', // the popup's selection, in one write
+  VAULT_DELETE_ITEM: 'vault/deleteItem', // to the ゴミ箱 (lib/vault/trash.js)
+  VAULT_DELETE_ITEMS: 'vault/deleteItems', // the popup's selection, in one write; also to the ゴミ箱
+  VAULT_RESTORE_ITEMS: 'vault/restoreItems', // back from the ゴミ箱
+  VAULT_PURGE_ITEMS: 'vault/purgeItems', // out of the ゴミ箱 for good: `ids`, or all when `all` is true
   VAULT_DELETE_PASSKEY: 'vault/deletePasskey',
   VAULT_PENDING_PASSWORD: 'vault/pendingPassword', // a new password waiting for the change on the site: set / confirm / discard
   VAULT_CHANGE_PASSWORD: 'vault/changePassword',
@@ -21,11 +23,11 @@ export const MSG = Object.freeze({
   VAULT_EXPORT_PLAIN: 'vault/exportPlain', // CSV / Bitwarden JSON, master password required
   VAULT_CREATE_VAULT: 'vault/createVault',
   VAULT_UPDATE_VAULT: 'vault/updateVault', // name and/or hue
-  VAULT_DELETE_VAULT: 'vault/deleteVault', // its items move to `moveTo`, or go with it only when `deleteItems` is true
+  VAULT_DELETE_VAULT: 'vault/deleteVault', // its items move to `moveTo`, or to the ゴミ箱 only when `deleteItems` is true
 
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',
-  SETTINGS_LANGUAGE: 'settings/language', // content scripts: the 言語 setting only (they cannot read storage)
+  SETTINGS_LANGUAGE: 'settings/language', // content scripts: the 言語 and テーマ settings only (they cannot read storage)
 
   CLIPBOARD_SCHEDULE_CLEAR: 'clipboard/scheduleClear',
   ACTIVITY_PING: 'activity/ping',
@@ -80,6 +82,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,
   language: 'auto', // 'auto' follows the browser's UI language; 'ja' | 'en' pin one (shared/i18n.js)
+  theme: 'dark', // 'dark' | 'light' | 'auto' (follows the OS); Akari is dark unless the user picks otherwise
 });
 
 // Vaults (保管庫) the user can make: name length in characters, how many in all.

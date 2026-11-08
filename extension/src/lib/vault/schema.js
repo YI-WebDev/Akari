@@ -8,7 +8,7 @@ import { invalid, isObject } from './common.js';
 import { stripLegacyLoginKeys } from './items.js';
 
 /** Schema of VaultData this build writes. Data without `schema` is schema 0. */
-export const DATA_SCHEMA = 1;
+export const DATA_SCHEMA = 2;
 
 /**
  * MIGRATIONS[n] upgrades VaultData from schema n to n + 1, in place. Append a step (and bump
@@ -24,15 +24,21 @@ const MIGRATIONS = [
       stripLegacyLoginKeys(it);
     }
   },
+  // 1 → 2: the ゴミ箱 (lib/vault/trash.js). An older build would store the data back without it,
+  // dropping what is in the trash, which is why this is a schema step.
+  (data) => {
+    if (!Array.isArray(data.trash)) data.trash = [];
+  },
 ];
 
 export function defaultData(nowMs = Date.now()) {
   const vaults = DEFAULT_VAULTS.map((v) => ({ ...v, name: t(`vault.default.${v.id}`, null, v.name) }));
-  return { schema: DATA_SCHEMA, vaults, items: [], updatedAt: nowMs };
+  return { schema: DATA_SCHEMA, vaults, items: [], trash: [], updatedAt: nowMs };
 }
 
 export function checkData(data) {
   if (!isObject(data) || !Array.isArray(data.vaults) || !Array.isArray(data.items)) throw invalid('Malformed vault data');
+  if (data.trash !== undefined && !Array.isArray(data.trash)) throw invalid('Malformed vault data');
   return data;
 }
 

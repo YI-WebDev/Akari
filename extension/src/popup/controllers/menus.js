@@ -1,4 +1,4 @@
-// The header and list-bar menus: ≡ メニュー (main: パスワード診断, 保管庫を管理, 設定), 保管庫 (vault),
+// The header and list-bar menus: ≡ メニュー (main: パスワード診断, ゴミ箱, 保管庫を管理, 設定), 保管庫 (vault),
 // ＋ 新規作成 (plus) and 表示 (type), with the keyboard inside an open menu.
 
 import { typeOf } from '../../shared/item-types.js';
@@ -76,6 +76,9 @@ function renderMainMenu() {
   const n = healthCounts().action;
   $('healthCount').textContent = String(n);
   $('openHealth').setAttribute('aria-label', t('menu.health', { count: n }, 'パスワード診断（要対応 {count} 件）'));
+  const tn = S.trash.length;
+  $('trashCount').textContent = String(tn);
+  $('openTrash').setAttribute('aria-label', t('menu.trash', { count: tn }, 'ゴミ箱（{count} 件）'));
 }
 
 function chooseVault(id) {

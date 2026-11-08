@@ -78,7 +78,7 @@ export function renderPicker({ animate = false } = {}) {
   const warn = passkeys
     ? h('div', { class: 'weak pick-warn', role: 'note' },
       h('span', { class: 'weak-bang', 'aria-hidden': 'true' }, '!'),
-      h('span', { class: 'weak-text' }, t('パスキー {n} 件も一緒に削除されます。そのサイトにはパスキーでサインインできなくなります', { n: passkeys })))
+      h('span', { class: 'weak-text' }, t('trash.askPasskeys', { n: passkeys }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')))
     : null;
 
   let foot;
@@ -87,7 +87,7 @@ export function renderPicker({ animate = false } = {}) {
       busy ? t('削除中…') : t('削除する'));
     foot = h('div', { class: 'ed-confirm pick-confirm', role: 'alert' },
       h('span', { class: 'pk-q', 'aria-hidden': 'true' }, '?'),
-      h('span', { class: 'grow' }, t('{n} 件を削除しますか？ 元に戻せません', { n })),
+      h('span', { class: 'grow' }, t('trash.askN', { n }, '{n} 件をゴミ箱に移しますか？ 30 日間は元に戻せます')),
       yes,
       h('button', { class: 'btn-mini', type: 'button', disabled: busy, onclick: () => { resetPicker(); renderPicker(); } }, t('戻る')));
     setTimeout(() => { if (yes.isConnected && !busy) yes.focus({ preventScroll: true }); }, 0);

@@ -156,7 +156,8 @@
     master: 'akari-master',
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
     items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
-    settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang },
+    trash: [], // the ゴミ箱 (lib/vault/trash.js): items with deletedAt, newest first
+    settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
   };
   // cfg.seedPatch: { [id]: partial item } — `fields` is merged, other keys replace (edge cases for tests)
   Object.keys(cfg.seedPatch || {}).forEach(function (id) {
@@ -171,6 +172,16 @@
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms * cfg.delay); }); };
   function needUnlocked() { if (db.locked) throw AkErr('LOCKED', 'Vault is locked'); }
+  // the ゴミ箱, as lib/vault/trash.js keeps it
+  function toTrash(ids) {
+    var gone = {};
+    ids.forEach(function (id) { gone[id] = true; });
+    var moved = db.items.filter(function (x) { return gone[x.id]; });
+    db.items = db.items.filter(function (x) { return !gone[x.id]; });
+    var t = Date.now();
+    db.trash = moved.map(function (x) { return Object.assign({}, x, { deletedAt: t }); }).concat(db.trash);
+    return moved.map(function (x) { return x.id; });
+  }
   function vaultName(name, exceptId) {
     var v = typeof name === 'string' ? name.trim() : '';
     var key = function (s) { return s.normalize('NFKC').toLowerCase(); };
@@ -196,7 +207,7 @@
       return {};
     },
     'vault/lock': function () { db.locked = true; return {}; },
-    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items) }; },
+    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items), trash: clone(db.trash) }; },
     'vault/saveItem': async function (m) {
       needUnlocked();
       var it = m.item || {};
@@ -247,20 +258,44 @@
     },
     'vault/deleteItem': async function (m) {
       needUnlocked(); await sleep(200);
-      var n = db.items.length;
-      db.items = db.items.filter(function (x) { return x.id !== m.id; });
-      if (db.items.length === n) throw AkErr('NOT_FOUND');
-      return {};
+      if (!toTrash([m.id]).length) throw AkErr('NOT_FOUND');
+      return { ids: [m.id], trash: clone(db.trash) };
     },
     'vault/deleteItems': async function (m) {
       needUnlocked(); await sleep(300);
       if (!Array.isArray(m.ids) || !m.ids.length) throw AkErr('INVALID');
-      var gone = {};
-      m.ids.forEach(function (id) { gone[id] = true; });
-      var n = db.items.length;
-      db.items = db.items.filter(function (x) { return !gone[x.id]; });
-      if (db.items.length === n) throw AkErr('NOT_FOUND');
-      return { deleted: n - db.items.length };
+      var ids = toTrash(m.ids);
+      if (!ids.length) throw AkErr('NOT_FOUND');
+      return { deleted: ids.length, ids: ids, trash: clone(db.trash) };
+    },
+    'vault/restoreItems': async function (m) {
+      needUnlocked(); await sleep(200);
+      var want = {};
+      (m.ids || []).forEach(function (id) { want[id] = true; });
+      var back = [];
+      db.trash = db.trash.filter(function (x) {
+        if (!want[x.id]) return true;
+        var it = Object.assign({}, x);
+        delete it.deletedAt;
+        if (!db.vaults.some(function (v) { return v.id === it.vault; })) it.vault = db.vaults[0].id;
+        back.push(it);
+        return false;
+      });
+      if (!back.length) throw AkErr('NOT_FOUND');
+      db.items = back.concat(db.items);
+      return { items: clone(back), trash: clone(db.trash) };
+    },
+    'vault/purgeItems': async function (m) {
+      needUnlocked(); await sleep(200);
+      var n = db.trash.length;
+      if (m.all === true) db.trash = [];
+      else {
+        var gone = {};
+        (m.ids || []).forEach(function (id) { gone[id] = true; });
+        db.trash = db.trash.filter(function (x) { return !gone[x.id]; });
+      }
+      if (db.trash.length === n) throw AkErr('NOT_FOUND');
+      return { purged: n - db.trash.length, trash: clone(db.trash) };
     },
     'vault/deletePasskey': async function (m) {
       needUnlocked(); await sleep(200);
@@ -356,11 +391,11 @@
       var to = m.moveTo == null ? null : m.moveTo;
       if (to !== null && (to === m.id || !db.vaults.some(function (x) { return x.id === to; }))) throw AkErr('INVALID');
       if (to === null && m.deleteItems !== true && db.items.some(function (x) { return x.vault === m.id; })) throw AkErr('NOT_EMPTY', 'Vault is not empty');
-      var moved = 0; var before = db.items.length;
+      var moved = 0; var deleted = 0;
       if (to !== null) db.items.forEach(function (x) { if (x.vault === m.id) { x.vault = to; x.updatedAt = Date.now(); moved++; } });
-      else db.items = db.items.filter(function (x) { return x.vault !== m.id; });
+      else deleted = toTrash(db.items.filter(function (x) { return x.vault === m.id; }).map(function (x) { return x.id; })).length;
       db.vaults.splice(i, 1);
-      return { moved: moved, deleted: before - db.items.length, vaults: clone(db.vaults) };
+      return { moved: moved, deleted: deleted, vaults: clone(db.vaults), trash: clone(db.trash) };
     },
     'settings/get': function () { return clone(db.settings); },
     'settings/set': async function (m) {

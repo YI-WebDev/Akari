@@ -2,20 +2,20 @@
 // wiring between views. The rest lives in controllers/: view (labels, list refresh, selection,
 // search), menus, picking (delete several), autofill (the current tab) and keyboard.
 
-import { MSG, DEFAULT_VAULTS } from '../shared/messages.js';
+import { MSG } from '../shared/messages.js';
 import { send } from '../shared/api.js';
 import { typeOf } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
 import { useLanguage } from '../shared/locale.js';
 import {
-  S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItem, clearSecrets, itemById, visibleItems, ensureSel,
+  S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItems, addItems, clearSecrets, itemById, visibleItems, ensureSel,
   liveToken, live, setPhase, endEpoch, setSettings, setVaults, setVaultFilter, setListView, setSort, setSearch,
-  setSiteQuery, setAutofill, setSel,
+  setSiteQuery, setAutofill, setSel, setTrash, vaultById, defaultVaults,
 } from './state.js';
 import { clear } from './views/dom.js';
 import { siteOf } from './views/format.js';
-import { toast, toastError, hideToast } from './views/toast.js';
-import { renderList, renderCounts, scrollToRow, renderViewButton } from './views/list.js';
+import { toast, toastError, hideToast, initToast } from './views/toast.js';
+import { renderList, renderCounts, scrollToRow, renderViewButton, resetListCache } from './views/list.js';
 import { buildPlusMenu } from './views/type-menu.js';
 import { renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
 import { renderPicker, resetPicker } from './views/picker.js';
@@ -24,8 +24,10 @@ import { initGenerator, openGenerator, closeGenerator, resetGenerator } from './
 import { initGate, showGate, setGateStatus } from './views/lock.js';
 import { initSettings, openSettings, closeSettings } from './views/settings.js';
 import { initHealth, openHealth, closeHealth } from './views/health.js';
+import { initTrash, openTrash, closeTrash, refreshTrash } from './views/trash.js';
+import { TRASH_DAYS } from '../lib/vault/trash.js';
 import {
-  renderVaultLabel, renderFilters, refreshList, select, setQuery, showQuery, prefillSiteQuery,
+  renderVaultLabel, renderFilters, refreshList, select, setQuery, typeQuery, cancelTyping, showQuery, prefillSiteQuery,
 } from './controllers/view.js';
 import { closeMenus, openMenu, menuKeys } from './controllers/menus.js';
 import { renderPickMode, setPicking, pick, pickAll, deletePicked, resetPickAnchor } from './controllers/picking.js';
@@ -54,13 +56,14 @@ async function loadData(onDecrypted) {
   const token = S.epoch;
   const data = await call(MSG.VAULT_GET_ALL);
   if (S.epoch !== token) throw new Error('locked meanwhile');
-  onDecrypted?.(Array.isArray(data?.vaults) && data.vaults.length ? data.vaults : DEFAULT_VAULTS);
+  onDecrypted?.(Array.isArray(data?.vaults) && data.vaults.length ? data.vaults : defaultVaults());
   return applyData(data);
 }
 
 function applyData(data) {
   setVaults(data?.vaults);
   setItems(data?.items || []);
+  setTrash(data?.trash);
   if (!itemById(S.sel)) setSel(null);
   ensureSel();
   return S.items.length;
@@ -128,7 +131,9 @@ function watchSession() {
 
 /** Drop every decrypted value from memory and the DOM. */
 function wipeView() {
+  cancelTyping();
   clearSecrets();
+  resetListCache();
   resetGenerator();
   hideToast();
   clear($('list'));
@@ -165,6 +170,7 @@ async function lockNow({ remote = false } = {}) {
   closeGenerator();
   closeSettings();
   closeHealth({ restore: false });
+  closeTrash({ restore: false });
   closeEditor();
   stopDetail();
   wipeView();
@@ -206,6 +212,66 @@ function newItem(type) {
   const go = () => openEditor({ type });
   if (editorOpen()) requestClose(go);
   else go();
+}
+
+/* ───────── ゴミ箱 ───────── */
+
+/** Deleted items went to the ゴミ箱 (editor, selection mode): the toast offers 元に戻す. */
+function onTrashed(ids, { title = null, trash = null } = {}) {
+  if (S.phase !== 'main' || !ids?.length) return;
+  const vis = visibleItems();
+  const idx = vis.findIndex((i) => ids.includes(i.id));
+  removeItems(ids); // also drops them from the autofill card
+  if (trash) setTrash(trash);
+  const rest = visibleItems();
+  setSel(rest[Math.min(Math.max(idx, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
+  renderList();
+  renderDetail({ animate: true });
+  refreshTrash();
+  const msg = ids.length === 1 && title
+    ? t('trash.movedOne', { title }, '{title} をゴミ箱に移しました')
+    : t('trash.moved', { n: ids.length }, '{n} 件をゴミ箱に移しました');
+  toast(msg, t('trash.keep', { days: TRASH_DAYS }, '{days} 日後に完全に削除します'), 'ok', {
+    action: { label: t('trash.restore', null, '元に戻す'), title: t('trash.undoKey', null, '元に戻す (Ctrl+Z)'), run: () => undoTrash(ids) },
+  });
+}
+
+async function undoTrash(ids) {
+  const token = liveToken();
+  try {
+    const res = await call(MSG.VAULT_RESTORE_ITEMS, { ids });
+    if (live(token)) emit('restored', res, { from: 'toast' });
+  } catch (e) {
+    if (!live(token)) return;
+    toastError(t('trash.restoreFailed', null, '元に戻せませんでした'), errText(e));
+    emit('reload');
+  }
+}
+
+/** Items came back from the ゴミ箱: in the list again, the first one selected. */
+function onRestored(res) {
+  if (S.phase !== 'main') return;
+  const items = Array.isArray(res?.items) ? res.items : [];
+  setTrash(res?.trash);
+  refreshTrash();
+  if (!items.length) return;
+  addItems(items);
+  if (editorOpen()) {
+    renderList(); // the editor stays as it is; the restored items are back in the list
+  } else {
+    setSel(items[0].id);
+    revealItem(items[0]);
+    renderList();
+    renderDetail({ animate: true });
+    setTimeout(() => scrollToRow(items[0].id), 0);
+  }
+  refreshAutofill();
+  const msg = items.length === 1
+    ? t('trash.restoredOne', { title: items[0].title || t('(無題)') }, '{title} を元に戻しました')
+    : t('trash.restored', { n: items.length }, '{n} 件を元に戻しました');
+  // one item: say which vault it is in (the first vault, when its own was deleted meanwhile)
+  const vault = items.length === 1 ? vaultById(items[0].vault)?.name : null;
+  toast(msg, vault ? t('trash.restoredIn', { vault }, '保管庫「{vault}」に戻しました') : null);
 }
 
 /* ───────── activity ───────── */
@@ -253,6 +319,11 @@ function wire() {
     $('menuBtn').focus({ preventScroll: true }); // where focus returns when the screen closes
     openHealth();
   });
+  $('openTrash').addEventListener('click', () => {
+    closeMenus();
+    $('menuBtn').focus({ preventScroll: true });
+    openTrash();
+  });
   $('manageVaults').addEventListener('click', () => {
     closeMenus();
     $('menuBtn').focus({ preventScroll: true });
@@ -263,10 +334,10 @@ function wire() {
   $('typeMenu').setAttribute('aria-label', t('list.viewMenu', null, '表示するアイテム'));
   renderViewButton();
   $('lockBtn').addEventListener('click', () => lockNow());
-  $('scrim').addEventListener('click', () => { closeGenerator(); closeSettings(); closeHealth(); });
+  $('scrim').addEventListener('click', () => { closeGenerator(); closeSettings(); closeHealth(); closeTrash(); });
 
   const search = $('search');
-  search.addEventListener('input', () => setQuery(search.value));
+  search.addEventListener('input', () => typeQuery(search.value));
   $('searchClear').addEventListener('click', (e) => {
     e.preventDefault();
     setQuery('');
@@ -342,16 +413,8 @@ function wire() {
       isNew ? null : t('変更は暗号化して保存されました'));
     refreshAutofill();
   });
-  on('deleted', (id, title) => {
-    if (S.phase !== 'main') return;
-    const idx = visibleItems().findIndex((i) => i.id === id);
-    removeItem(id); // also drops it from the autofill card
-    const rest = visibleItems();
-    setSel(rest[Math.min(Math.max(idx, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
-    renderList();
-    renderDetail({ animate: true });
-    toast(title ? t('{title} を削除しました', { title }) : t('アイテム を削除しました'));
-  });
+  on('trashed', onTrashed);
+  on('restored', onRestored);
   on('editorClosed', () => { if (S.phase === 'main') renderDetail({ animate: true }); });
   on('reload', async () => {
     const token = liveToken();
@@ -363,6 +426,7 @@ function wire() {
       renderVaultLabel();
       renderList({ animate: true });
       renderDetail({ animate: true });
+      refreshTrash();
       emit('reloaded');
     } catch (e) {
       if (live(token)) toastError(t('保管庫を読み込めませんでした'), errText(e));
@@ -380,9 +444,11 @@ function wire() {
     if (key === 'autoLockMinutes') ping(true);
   });
 
+  initToast();
   initGenerator();
   initSettings();
   initHealth();
+  initTrash();
   initGate({ load: loadAll, enter: () => enterMain({ animate: true }) });
 }
 
@@ -403,6 +469,7 @@ async function boot() {
   const statusP = send(MSG.VAULT_STATUS).then((s) => ({ s }), (e) => ({ e }));
   await loadSettings();
   useLanguage(S.settings?.language);
+  globalThis.__akariTheme?.apply(S.settings?.theme); // shared/theme.js already drew the last one
   wire();
   const { s: status, e: statusErr } = await statusP;
   if (statusErr) {

@@ -136,8 +136,6 @@ export default {
   '{title} を追加しました': '{title} added',
   '{title} を保存しました': '{title} saved',
   '変更は暗号化して保存されました': 'Changes were encrypted and saved',
-  '{title} を削除しました': '{title} deleted',
-  'アイテム を削除しました': 'Item deleted',
 
   /* ── state.js: errors and the clipboard ── */
   'ロックされています': 'Akari is locked',
@@ -163,7 +161,6 @@ export default {
   '自動入力できませんでした': 'Could not autofill',
   'すべての保管庫': 'All vaults',
   'menu.health': 'Password health ({count} need action)',
-  '{n} 件を削除しました': 'Items deleted: {n}',
   '削除できませんでした': 'Could not delete',
   '並び替え: {sort}（クリックで切り替え）': 'Sort: {sort} (click to switch)',
 
@@ -303,10 +300,7 @@ export default {
   '選ぶ': 'select',
   '+クリックで範囲': '+click: range',
   'picker.keyAll': 'all',
-  'パスキー {n} 件も一緒に削除されます。そのサイトにはパスキーでサインインできなくなります':
-    'Their passkeys ({n}) are deleted too. You can no longer sign in to those sites with them',
   '削除中…': 'Deleting…',
-  '{n} 件を削除しますか？ 元に戻せません': 'Delete {n} selected? This cannot be undone',
   '{n} 件を削除': 'Delete {n}',
   '削除': 'Delete',
 };

@@ -67,6 +67,7 @@ const ICONS = {
   note: [['path', { d: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z' }], ['path', { d: 'M14 3v6h6M8 13h8M8 17h5' }]],
   pencil: [['path', { d: 'M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z' }], ['path', { d: 'm13.5 6.5 4 4' }]],
   trash: [['path', { d: 'M4 7h16M10 11v6M14 11v6' }], ['path', { d: 'M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3' }]],
+  undo: [['path', { d: 'M9 14 4 9l5-5' }], ['path', { d: 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11' }]],
   passkey: [
     ['circle', { cx: 9, cy: 8, r: 4 }],
     ['path', { d: 'M2.5 20a6.5 6.5 0 0 1 10.2-5.3' }],
@@ -131,9 +132,10 @@ export function svgEl(tag, attrs) {
 export function syncInert() {
   const byId = (id) => document.getElementById(id);
   const gate = byId('gate').classList.contains('on');
-  const sheet = ['genSheet', 'setSheet', 'healthSheet'].some((id) => byId(id).classList.contains('open'));
+  const sheets = ['genSheet', 'setSheet', 'healthSheet', 'trashSheet'];
+  const sheet = sheets.some((id) => byId(id).classList.contains('open'));
   for (const sel of ['.hdr', '.body']) document.querySelector(sel).inert = gate || sheet;
-  for (const id of ['genSheet', 'setSheet', 'healthSheet']) byId(id).inert = gate;
+  for (const id of sheets) byId(id).inert = gate;
 }
 
 /** Remember focus when a dialog opens; returns a function that restores it. */

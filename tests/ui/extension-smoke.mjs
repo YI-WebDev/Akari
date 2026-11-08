@@ -184,14 +184,24 @@ try {
     await page.click('#typeMenu .tp-cell[data-type="all"]');
     assert.equal(await page.locator('.row').count(), 2);
 
-    // delete
-    await page.click(`.row[data-id="${card.id}"]`);
-    await page.click('.d-head .ibtn[title="編集"]');
-    await page.click('.ed-foot .btn-text.danger');
-    await page.click('.ed-confirm .btn-mini.danger');
-    await page.waitForSelector('#editor[hidden]', { state: 'attached' });
-    assert.match(await toastText(), /テスト JCB を削除しました/);
-    assert.equal((await items()).filter((i) => i.type === 'card').length, 0, 'card deleted in the service worker');
+    // delete: to the ゴミ箱, and back with the toast's 元に戻す
+    const del = async () => {
+      await page.click(`.row[data-id="${card.id}"]`);
+      await page.click('.d-head .ibtn[title="編集"]');
+      await page.click('.ed-foot .btn-text.danger');
+      await page.click('.ed-foot .ed-confirm .btn-mini.danger');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+    };
+    await del();
+    assert.match(await toastText(), /テスト JCB をゴミ箱に移しました/);
+    assert.equal((await items()).filter((i) => i.type === 'card').length, 0, 'card out of the items in the service worker');
+    assert.equal(await page.locator('.row').count(), 1);
+    await page.click('#toastAct');
+    await page.waitForFunction(() => document.querySelectorAll('.row').length === 2);
+    assert.equal((await items()).filter((i) => i.type === 'card').length, 1, 'restored in the service worker');
+    await page.mouse.move(2, 2);
+    await page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 9000 });
+    await del();
     assert.equal(await page.locator('.row').count(), 1);
   }
 
@@ -215,15 +225,22 @@ try {
   await page.waitForTimeout(900);
   assert.equal(await page.locator('.row').count(), 1);
 
-  step('settings: clipboard clearing + backup export (no theme choice)');
+  step('settings: theme (dark by default, light on choice), clipboard clearing + backup export');
   await page.click('#menuBtn');
   await page.click('#openSettings');
   await page.waitForSelector('#setSheet.open');
-  assert.equal(await page.locator('[data-setting="theme"]').count(), 0, 'theme choice removed');
-  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-theme')), false);
+  const getSettings = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'settings/get' })).data);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', 'dark by default');
+  await page.click('[data-setting="theme"] [data-value="light"]');
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  await page.waitForTimeout(300);
+  assert.equal((await getSettings()).theme, 'light', 'stored by the service worker');
+  await page.click('[data-setting="theme"] [data-value="dark"]');
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await page.waitForTimeout(300);
+  assert.equal((await getSettings()).theme, 'dark');
   await page.click('[data-setting="clipboardClearSeconds"] [data-value="60"]');
   await page.waitForTimeout(400);
-  const getSettings = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'settings/get' })).data);
   assert.equal((await getSettings()).clipboardClearSeconds, 60);
   await page.waitForTimeout(500);
   await shot('settings');

@@ -4,7 +4,7 @@
 import { typeOf, typeLabel, subtitleOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import {
-  S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, inVault, setAutofillState, prunePicked,
+  S, emit, visibleItems, isWeak, itemById, normOf, searchQuery, searching, looseResults, inVault, setAutofillState, prunePicked,
 } from '../state.js';
 import { h, clear, icon, brLines } from './dom.js';
 import { groupName, groupIndex, letterOf, hueOf, matchRange, normQuery } from './format.js';
@@ -13,6 +13,15 @@ import { isView, viewName, viewIcon } from './type-menu.js';
 const $ = (id) => document.getElementById(id);
 const $list = () => $('list');
 let afButton = null;
+
+// Rows kept between redraws, by item id: a row is reused while its item object, the highlighted
+// text, selection mode and the weak flag are unchanged, so typing in the search box moves rows
+// instead of building every one again. Holds decrypted items: dropped on lock (resetListCache).
+let rowCache = new Map();
+
+export function resetListCache() {
+  rowCache = new Map();
+}
 
 /** q is already normalised; offsets come from the same normalisation map, so they map back exactly. */
 function highlight(text, q) {
@@ -55,6 +64,22 @@ function rowFlags(it) {
     weak ? h('span', { class: 'row-weak', title: t('弱いパスワード'), role: 'img', 'aria-label': t('弱いパスワード') }) : null,
     totp ? h('span', { class: 'tag', title: t('認証コード（2FA）あり') }, '2FA') : null,
     tag ? h('span', { class: 'tag', title: typeLabel(it.type) }, tag) : null);
+}
+
+/** The row for `it`: the cached one when nothing it shows has changed. */
+function cachedRow(it, q, next) {
+  const sig = `${q}\u0000${S.picking ? 1 : 0}\u0000${isWeak(it) ? 1 : 0}`;
+  const hit = rowCache.get(it.id);
+  let el;
+  if (hit && hit.it === it && hit.sig === sig) {
+    el = hit.el;
+    el.setAttribute('aria-selected', String(S.picking ? S.picked.has(it.id) : it.id === S.sel));
+    el.classList.toggle('cur', S.picking && it.id === S.sel);
+  } else {
+    el = rowEl(it, q);
+  }
+  next.set(it.id, { it, sig, el });
+  return el;
 }
 
 function rowEl(it, q) {
@@ -128,7 +153,7 @@ function emptyHero() {
 }
 
 function emptyMessage(q) {
-  if (q) {
+  if (q || searching()) {
     return emptyBox([t('「{q}」に一致するアイテムはありません', { q: S.query.trim() }),
       S.type !== 'all' ? [h('br'), t('list.emptyQueryType', { type: typeLabel(S.type) }, '（種類「{type}」で絞り込み中）')] : null]);
   }
@@ -190,15 +215,16 @@ export function renderCounts(now = Date.now()) {
 export function renderList({ animate = false, keepScroll = true } = {}) {
   const L = $list();
   const top = L.scrollTop;
-  clear(L);
   afButton = null;
   const q = searchQuery();
   const now = Date.now();
+  const out = []; // the list's new children, built off-screen and swapped in at once
+  const next = new Map();
 
   const af = S.picking ? null : afCandidate();
-  // the tab's own site in the search box (put there on open) keeps the autofill card
-  const siteOnly = !q || q === normQuery(S.siteQuery);
-  if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) L.append(afCard(af));
+  // the tab's own site in the search box (put there on open) keeps the autofill card; an operator hides it
+  const siteOnly = !searching() || q === normQuery(S.siteQuery);
+  if (af && siteOnly && S.filter === 'all' && (S.type === 'all' || S.type === 'login')) out.push(afCard(af));
 
   const vis = S.items.length ? visibleItems(now) : [];
   renderCounts(now);
@@ -208,37 +234,42 @@ export function renderList({ animate = false, keepScroll = true } = {}) {
     if (prunePicked(new Set(vis.map((i) => i.id)))) emit('picked');
   }
   if (!S.items.length) {
-    L.append(emptyHero());
-    return;
-  }
-  if (!vis.length) {
-    L.append(emptyMessage(q));
-    return;
-  }
-  // the site put in the search box on open is not something the user typed: no highlight for it
-  const hq = siteOnly ? '' : q;
-  if (S.sort === 'az') {
-    L.append(groupEl('A–Z', vis.length));
-    for (const it of vis) L.append(rowEl(it, hq));
+    out.push(emptyHero());
+  } else if (!vis.length) {
+    out.push(emptyMessage(q));
   } else {
-    appendGroups(L, vis, hq, vis.map((it) => groupIndex(it.lastUsedAt, now)), groupName);
+    // the site put in the search box on open is not something the user typed: no highlight for it
+    const hq = siteOnly ? '' : q;
+    const row = (it) => cachedRow(it, hq, next);
+    if (looseResults()) {
+      // nothing contains the text: these titles have its letters in order
+      out.push(groupEl(t('list.loose', { q: S.query.trim() }, '「{q}」に近いもの'), vis.length));
+      for (const it of vis) out.push(row(it));
+    } else if (S.sort === 'az') {
+      out.push(groupEl('A–Z', vis.length));
+      for (const it of vis) out.push(row(it));
+    } else {
+      appendGroups(out, vis, row, vis.map((it) => groupIndex(it.lastUsedAt, now)), groupName);
+    }
   }
-  L.setAttribute('aria-activedescendant', S.sel ? 'row-' + S.sel : '');
+  rowCache = next;
+  L.replaceChildren(...out);
+  L.setAttribute('aria-activedescendant', vis.length && S.sel ? 'row-' + S.sel : '');
   if (keepScroll && !animate) L.scrollTop = top;
   else L.scrollTop = 0;
 }
 
 /** Rows under a heading per run of equal keys (vis is sorted so equal keys are adjacent). */
-function appendGroups(L, vis, q, keys, label) {
+function appendGroups(out, vis, row, keys, label) {
   const per = new Map();
   for (const g of keys) per.set(g, (per.get(g) || 0) + 1);
   let last;
   vis.forEach((it, k) => {
     if (k === 0 || keys[k] !== last) {
       last = keys[k];
-      L.append(groupEl(label(last), per.get(last)));
+      out.push(groupEl(label(last), per.get(last)));
     }
-    L.append(rowEl(it, q));
+    out.push(row(it));
   });
 }
 

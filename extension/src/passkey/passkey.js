@@ -419,15 +419,16 @@ try {
   // extension context gone; the next action reports the request as expired
 }
 
-/** The 言語 setting first (and the page's static text with it), then the request. */
+/** The 言語 and テーマ settings first (and the page's static text with them), then the request. */
 async function start() {
   let settings = null;
   try {
     settings = await send(MSG.SETTINGS_GET);
   } catch {
-    // no answer: follow the browser's language
+    // no answer: follow the browser's language, keep the theme this window last used
   }
   useLanguage(settings?.language || 'auto', document.documentElement); // <title> too
+  if (settings) globalThis.__akariTheme?.apply(settings.theme);
   load();
 }
 
