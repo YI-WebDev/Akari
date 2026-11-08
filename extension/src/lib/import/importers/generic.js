@@ -1,18 +1,3 @@
-// Generic CSV: any header row. Columns are recognised by synonym (case, spaces, "_", "-" and
-// full/half width are ignored). Needs a password column, or url + username/email columns, or a
-// type column plus a column named like a template field (see "type" below).
-// Columns we do not recognise are not dropped: their values become custom fields labelled with
-// the column name as written in the file (masked when the name looks like pin / secret / code /
-// key / token), except folder-like columns such as folder/vault, which are reported in a warning.
-// A row with no url, user name, password or TOTP but with a note or custom fields becomes a
-// secure note.
-//
-// A `type` column (also 種類 / タイプ / item type …) may hold an Akari item type — its id
-// ('card', 'sshKey'), its Japanese name ('クレジットカード') or an English one ('Credit Card',
-// 'Wi-Fi'). Such a row becomes that type: every other column whose name is a template key (or
-// the key's Japanese label) fills that key, the rest become custom fields. Other `type` values
-// are organisational and reported like the other folder-like columns.
-
 import { pick } from '../csv.js';
 import { t } from '../../../shared/i18n.js';
 import { isTruthy } from '../model.js';
@@ -30,12 +15,9 @@ const SYNONYMS = {
   totp: ['totp', 'otp', 'otpauth', '2fa', 'twofactor', 'twofactorauth', 'logintotp', 'otpsecret', 'totpsecret', 'ワンタイム', 'ワンタイムパスワード', '二段階認証'],
   fav: ['favorite', 'favourite', 'fav', '★', 'お気に入り'],
 };
-// Columns that may name the item type; when the value is not an Akari type they are organisational.
 const TYPE_COLUMNS = new Set(['type', 'itemtype', 'アイテムタイプ', '種類', '種別', 'タイプ']);
-// Organisational columns Akari has no place for.
 const FOLDERISH = new Set([...TYPE_COLUMNS, 'folder', 'grouping', 'group', 'vault', 'category', 'tags', 'tag', 'reprompt', 'フォルダ', 'フォルダー', 'グループ', 'カテゴリ', 'カテゴリー', '保管庫']);
 
-// English (and a few foreign) names for item types, besides the id and the Japanese label.
 const TYPE_NAMES = {
   login: ['password'],
   note: ['notes', 'secure note', 'securenote', 'memo', 'ノート', 'メモ'],
@@ -57,7 +39,6 @@ const TYPE_NAMES = {
   socialSecurity: ['social security', 'social security number', 'ssn'],
 };
 
-/** Normalised type name → Akari type id. */
 function typeIndex() {
   const m = new Map();
   for (const ty of ITEM_TYPES) {
@@ -66,23 +47,22 @@ function typeIndex() {
   return m;
 }
 
-// Login-ish columns fill the template keys of the same name (server.username, identity.email, …).
+const SECRET_ROLES = ['password', 'totp'];
+
 const ROLE_ALIASES = {
   username: SYNONYMS.username, password: SYNONYMS.password, url: SYNONYMS.url, email: SYNONYMS.email, website: SYNONYMS.url,
 };
 
-// Own properties only: a column called "constructor" or "__proto__" must not read Object's.
-const own = (rec, h) => (Object.hasOwn(rec, h) ? String(rec[h] ?? '') : '');
+const ownValue = (rec, h) => (Object.hasOwn(rec, h) ? String(rec[h] ?? '') : '');
 
-const norm = (h) => h.normalize('NFKC').toLowerCase().replace(/[\s_\-.]+/g, '');
+const normHeader = (h) => h.normalize('NFKC').toLowerCase().replace(/[\s_\-.]+/g, '');
 
-/** Header row → which header(s) feed each field, in priority order, plus the unrecognised ones. */
-function plan(headers) {
+function classifyColumns(headers) {
   const cols = Object.fromEntries(Object.keys(SYNONYMS).map((k) => [k, []]));
   const rest = [];
   for (const h of headers) {
     if (!h) continue;
-    const n = norm(h);
+    const n = normHeader(h);
     const role = Object.keys(SYNONYMS).find((k) => SYNONYMS[k].includes(n));
     if (role) cols[role].push({ h, n }); else rest.push({ h, n });
   }
@@ -93,54 +73,46 @@ function plan(headers) {
   return { cols, rest };
 }
 
-/** Does the header row have a column that may name the item type (type / 種類 / item type …)? */
-export const hasTypeColumn = (headers) => headers.some((h) => h && TYPE_COLUMNS.has(norm(h)));
+export const hasTypeColumn = (headers) => headers.some((h) => h && TYPE_COLUMNS.has(normHeader(h)));
 
-// Every template key and Japanese label of every type, normalised (built on first use).
 let templateNames = null;
 const isTemplateName = (h) => {
   templateNames ??= new Set(ITEM_TYPES.flatMap((ty) => ty.fields.flatMap((fd) => [normKey(fd.key), normKey(fd.label)])));
   return templateNames.has(normKey(h));
 };
 
-/**
- * A password column, or url + username/email, or a type column together with at least one
- * column named like a template field (key or Japanese label) of any item type.
- */
 export function accepts(headers) {
-  const { cols } = plan(headers);
+  const { cols } = classifyColumns(headers);
   if (cols.password.length > 0 || (cols.url.length > 0 && cols.username.length + cols.email.length > 0)) return true;
-  return hasTypeColumn(headers) && headers.some((h) => h && !TYPE_COLUMNS.has(norm(h)) && isTemplateName(h));
+  return hasTypeColumn(headers) && headers.some((h) => h && !TYPE_COLUMNS.has(normHeader(h)) && isTemplateName(h));
 }
 
 export async function parse(file) {
   const { headers, rawHeaders, records } = readCsv(file, accepts,
     t('Generic の CSV ではないようです（password、または url と username、または type と項目名の列が見つかりません）'));
-  const { cols, rest } = plan(headers);
-  // Headers are lower-cased to read records; labels shown to the user keep the file's spelling.
+  const { cols, rest } = classifyColumns(headers);
   const shown = new Map();
   headers.forEach((h, i) => { if (h && !shown.has(h)) shown.set(h, rawHeaders[i]); });
   const typeCols = rest.filter((c) => TYPE_COLUMNS.has(c.n)).map((c) => c.h);
   const folderish = rest.filter((c) => FOLDERISH.has(c.n) && !TYPE_COLUMNS.has(c.n)).map((c) => c.h);
   const unmapped = rest.filter((c) => !FOLDERISH.has(c.n)).map((c) => c.h);
   const typeIds = typeIndex();
-  // Every column that carries item data (for rows of a non-login type), with the role it was recognised as.
   const roleOf = new Map(Object.entries(cols).flatMap(([role, list]) => list.map((h) => [h, role])));
-  const skip = new Set([...typeCols, ...folderish]);
-  const dataHeaders = [...new Set(headers)].filter((h) => h && !skip.has(h) && !['title', 'note', 'fav'].includes(roleOf.get(h)));
+  const nonDataHeaders = new Set([...typeCols, ...folderish]);
+  const dataHeaders = [...new Set(headers)].filter((h) => h && !nonDataHeaders.has(h) && !['title', 'note', 'fav'].includes(roleOf.get(h)));
   const usedFolderish = new Set();
   const warnings = [];
 
   const out = collect(records, (r) => {
-    for (const h of folderish) if (own(r, h).trim()) usedFolderish.add(h);
+    for (const h of folderish) if (ownValue(r, h).trim()) usedFolderish.add(h);
     let type = 'login';
-    let typed = false;
+    let typeResolved = false;
     for (const h of typeCols) {
-      const v = own(r, h).trim();
+      const v = ownValue(r, h).trim();
       if (!v) continue;
       const id = typeIds.get(normKey(v));
       if (!id) usedFolderish.add(h);
-      else if (!typed) { type = id; typed = true; }
+      else if (!typeResolved) { type = id; typeResolved = true; }
     }
 
     const get = (role) => pick(r, ...cols[role]);
@@ -150,7 +122,7 @@ export async function parse(file) {
     const fav = isTruthy(favRaw) || favRaw === '★';
 
     if (type !== 'login') {
-      const pairs = dataHeaders.map((h) => [shown.get(h), own(r, h), ['password', 'totp'].includes(roleOf.get(h)) ? true : undefined]);
+      const pairs = dataHeaders.map((h) => [shown.get(h), ownValue(r, h), SECRET_ROLES.includes(roleOf.get(h)) ? true : undefined]);
       if (!hasTemplate(type)) {
         return { type, title, note, fav, extra: pairs.filter(([, v]) => v.trim()).map(([l, v, s]) => entry(l, v, s)) };
       }
@@ -165,7 +137,7 @@ export async function parse(file) {
     else if (email && email !== username) extra.push(entry(fieldLabel('identity', 'email'), email, false));
     const { totp, extra: otpExtra } = otpOf(get('totp'));
     extra.push(...otpExtra);
-    for (const h of unmapped) if (own(r, h).trim()) extra.push(entry(shown.get(h), own(r, h)));
+    for (const h of unmapped) if (ownValue(r, h).trim()) extra.push(entry(shown.get(h), ownValue(r, h)));
 
     const url = get('url');
     const password = get('password');

@@ -1,6 +1,3 @@
-// Import/export through the real service worker, and the vendored OpenPGP.js running
-// inside an extension page under the extension CSP (script-src 'self' 'wasm-unsafe-eval':
-// WebAssembly for OpenPGP.js's Argon2 S2K, no JS eval).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -15,7 +12,6 @@ import { TYPE_IDS, typeOf, hasTemplate } from '../../extension/src/shared/item-t
 
 let ext, send, page, site;
 
-// GnuPG 2.4.7 `gpg --symmetric --cipher-algo AES256 --armor`, passphrase "gnupg-pass".
 const GPG_ARMORED = `-----BEGIN PGP MESSAGE-----
 
 jA0ECQMIxAMoVCotbrjw0lgBfqi3+m9drUIu2Knilk4qIc67HoorMeFu+pW5mBci
@@ -30,7 +26,6 @@ before(async () => {
   ({ send, page } = await extensionMessenger(ext));
   assert.equal((await send('vault/setup', { masterPassword: MASTER })).ok, true);
 });
-// The static server closes after the browser: its keep-alive sockets would hold server.close() open.
 after(async () => {
   await ext?.close();
   await site?.close();
@@ -72,7 +67,6 @@ test('vault/importItems counts added, duplicates, invalid and passkeys', async (
   assert.ok(!('privateKey' in gh.passkeys[0]), 'private key never leaves the SW');
   assert.equal(r.data.items.find((i) => i.title === 'Broken passkey').passkeys.length, 0);
 
-  // Nothing decrypted in storage.
   const local = await ext.sw.evaluate(() => chrome.storage.local.get(null));
   assert.ok(!JSON.stringify(local).includes('暗証番号'));
 });
@@ -92,7 +86,6 @@ test('vault/exportPlain: wrong master password refused; CSV and Bitwarden JSON p
   assert.match(records.find((x) => x.name === 'TOTP').totp, /^otpauth:\/\/totp\/Ex:t\?secret=JBSWY3DPEHPK3PXP/);
   assert.equal(records.find((x) => x.name === '暗証番号').note, '1234\n5678');
 
-  // Re-importing the CSV rows (TOTP column included) changes nothing: all exact duplicates.
   const back = records.map((x) => ({
     type: x.url || x.username || x.password ? 'login' : 'note', title: x.name, url: x.url, username: x.username,
     password: x.password, note: x.note, totp: x.totp ? parseOtpauthUri(x.totp) : null, passkeys: [],
@@ -112,7 +105,6 @@ test('vault/exportPlain: wrong master password refused; CSV and Bitwarden JSON p
   assert.equal(fido.rpId, 'github.com');
   assert.equal(fido.keyType, 'public-key');
   assert.match(fido.credentialId, /^b64\./);
-  // keyValue is a usable PKCS8 P-256 key.
   const key = await crypto.subtle.importKey('pkcs8', Buffer.from(fido.keyValue, 'base64url'), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
   assert.equal(key.algorithm.namedCurve, 'P-256');
   assert.equal(bw.items.find((i) => i.name === '暗証番号').type, 2);
@@ -147,7 +139,6 @@ test('vendored OpenPGP.js loads in an extension page and round-trips under the e
   assert.equal(out.node, 'name,url\r\n日本語,https://example.com\r\n');
   assert.equal(out.argon2, 'argon', 'Argon2 S2K (e.g. newer Proton exports) decrypts via WebAssembly');
   assert.equal(out.evalBlocked, true, 'the CSP must still block JS eval');
-  // What the page wrote opens in Node too.
   const { data } = await openpgp.decrypt({ message: await openpgp.readMessage({ armoredMessage: out.armored }), passwords: ['page-pass'], format: 'binary' });
   assert.equal(new TextDecoder().decode(data), 'ページ内,テスト\r\n');
   assert.deepEqual(ext.errors, []);
@@ -186,17 +177,15 @@ test('every item type through the real service worker: save, import dedupe, back
       if (hasTemplate(type)) assert.deepEqual(it.fields, sample(type), type);
     }
 
-    // Import: an identical card (number written without spaces) is a duplicate; a different card is added.
     r = await send('vault/importItems', {
       items: [
-        { type: 'card', title: 'E2E card', fields: { ...sample('card'), number: '5555555555554444' }, extra }, // exact duplicate
+        { type: 'card', title: 'E2E card', fields: { ...sample('card'), number: '5555555555554444' }, extra },
         { type: 'card', title: 'E2E card 2', fields: { number: '4111111111111111', expiry: '2031-01' } },
       ],
       vault: 'family',
     });
     assert.deepEqual(r.data, { added: 1, duplicates: 1, invalid: 0, passkeys: 0 });
 
-    // Autofill: every non-login item has a URL / note pointing at this site, only the login is offered.
     const sitePage = await ext.context.newPage();
     pages.push(sitePage);
     await sitePage.goto(site.origin + '/login.html');
@@ -209,7 +198,6 @@ test('every item type through the real service worker: save, import dedupe, back
       assert.equal(denied.error?.code, 'NOT_FOUND', type);
     }
 
-    // Plaintext exports.
     r = await send('vault/exportPlain', { format: 'bitwarden', masterPassword: MASTER });
     const bw = JSON.parse(r.data.text);
     const bwType = (id) => bw.items.find((i) => i.id === id).type;
@@ -219,7 +207,6 @@ test('every item type through the real service worker: save, import dedupe, back
     const rec = csvToObjects(r.data.text).records.find((x) => x.name === 'E2E wifi');
     assert.equal(rec.note, `ネットワーク名: ssid 値\nパスワード: secret password\nセキュリティ: WPA2\n合言葉: やま`);
 
-    // Backup: delete a typed item, restore it from the encrypted backup with fields and extra intact.
     const { data: { json } } = await send('vault/export');
     const before = (await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey);
     assert.equal((await send('vault/deleteItem', { id: ids.sshKey })).ok, true);

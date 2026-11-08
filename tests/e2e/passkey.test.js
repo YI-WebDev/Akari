@@ -1,6 +1,3 @@
-// Passkey registration and sign-in against a real relying party (verified by
-// @simplewebauthn/server). While Akari is unlocked both happen on Akari's card in the
-// page (no window); while locked, the consent window unlocks first.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, createPublicKey, randomBytes, verify as nodeVerify } from 'node:crypto';
@@ -21,11 +18,10 @@ before(async () => {
 });
 after(async () => {
   await ext?.close();
-  rp?.server.closeAllConnections(); // keep-alive sockets would hold server.close() open
+  rp?.server.closeAllConnections();
   await rp?.close();
 });
 
-/** Click a button on the RP page, act in the consent window, and wait for the RP status. */
 async function viaConsent(button, act, expected, on = page) {
   const popup = ext.context.waitForEvent('page', { predicate: (p) => p.url().includes('/src/passkey/passkey.html'), timeout: 10000 });
   await on.click(button);
@@ -39,12 +35,9 @@ async function viaConsent(button, act, expected, on = page) {
 
 const screen = (name) => `[data-screen="${name}"]:not([hidden])`;
 
-// Akari's card is a closed shadow root at the top right of the page (shadow-ui.js `.bar`):
-// rows and × are clicked by position. Rows count only after the card has been visible ~500 ms.
 const cardRow = (p, i = 0) => [p.viewportSize().width - 16 - 170, 114 + i * 44];
 const cardClose = (p) => [p.viewportSize().width - 41, 37];
 
-/** Click the first passkey on Akari's card until `settled` settles; clicks before the card is armed do nothing. */
 async function pickFirst(p, settled) {
   let done = false;
   settled.then(() => { done = true; }, () => { done = true; });
@@ -55,17 +48,15 @@ async function pickFirst(p, settled) {
   return settled;
 }
 
-/** Focus inside Akari's closed shadow root shows on the page as its host, a div right under <html>. */
 const cardFocused = (p) => p.waitForFunction(() => {
   const a = document.activeElement;
   return !!a && a.tagName === 'DIV' && a.parentNode === document.documentElement;
 }, null, { timeout: 10000 });
 
-/** Press Enter on the card's focused button (save / OK) until `settled` settles; presses before it is armed do nothing. */
 async function enterOnCard(p, settled) {
   let done = false;
   settled.then(() => { done = true; }, () => { done = true; });
-  await cardFocused(p); // never press Enter on the page's own buttons
+  await cardFocused(p);
   for (let i = 0; i < 40 && !done; i++) {
     await p.keyboard.press('Enter');
     await sleep(200);
@@ -76,10 +67,6 @@ async function enterOnCard(p, settled) {
 const statusIs = (on, expected) => on.waitForFunction((s) => document.getElementById('status').dataset.state !== 'pending'
   && document.getElementById('status').textContent.startsWith(s), expected, { timeout: 15000 });
 
-/**
- * Click a button on the RP page and answer on Akari's card: pick the first passkey (sign-in)
- * or press Enter on the focused save / OK button. No window may open.
- */
 async function viaCard(button, expected, on = page, { keyboard = false } = {}) {
   let opened = false;
   const onPage = (p) => { if (p.url().includes('/src/passkey/passkey.html')) opened = true; };
@@ -89,7 +76,7 @@ async function viaCard(button, expected, on = page, { keyboard = false } = {}) {
     await on.click(button);
     if (keyboard) {
       await cardFocused(on);
-      await on.keyboard.press('Enter'); // straight away: refused
+      await on.keyboard.press('Enter');
     } else {
       await sleep(150);
       await on.mouse.click(...cardRow(on));
@@ -125,7 +112,6 @@ test('discoverable sign-in on the card', async () => {
 });
 
 test('a choice on the card is verified even when the site only prefers it (Google)', async () => {
-  // Google signs in without a password only when UV is set ("This key can only be used with a password").
   const flags = page.evaluate(async () => {
     const cred = await navigator.credentials.get({
       publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'preferred' },
@@ -166,7 +152,6 @@ test('approve in the window is disarmed right after it appears or regains focus'
     await win.locator(`${screen('locked')} #pw`).fill(MASTER);
     await win.locator(`${screen('locked')} #pw`).press('Enter');
     await win.locator(screen('get')).waitFor();
-    // Regaining focus re-arms the delay: approve is disabled and Enter does nothing.
     const disarmed = await win.evaluate(() => {
       window.dispatchEvent(new Event('focus'));
       const btn = document.querySelector('[data-screen="get"]:not([hidden]) [data-act="primary"]');
@@ -205,8 +190,6 @@ test('the credential object looks native to the page', async () => {
   for (const [k, v] of Object.entries(checks)) assert.notEqual(v, false, `check ${k} failed`);
 });
 
-// Another passkey manager the way Proton Pass installs itself: keep the get() that is there
-// as its fallback, then set its own on navigator.credentials (which hides the prototype).
 function installOtherManager(log) {
   const prior = navigator.credentials.get.bind(navigator.credentials);
   window[log] = [];
@@ -219,7 +202,7 @@ function installOtherManager(log) {
 test('with another passkey manager on the page, Akari is asked first and passes on what the user closes', async () => {
   const other = await ext.context.newPage();
   try {
-    await other.addInitScript(installOtherManager, '__early'); // around document_start, like an extension
+    await other.addInitScript(installOtherManager, '__early');
     await other.goto(page.url());
     await other.bringToFront();
     assert.equal(await other.evaluate(() => navigator.credentials.get === CredentialsContainer.prototype.get), true);
@@ -227,7 +210,6 @@ test('with another passkey manager on the page, Akari is asked first and passes 
     assert.equal(await viaCard('#login', 'signed-in', other), 'signed-in');
     assert.deepEqual(await other.evaluate(() => window.__early), [], 'Akari answered before the other manager');
 
-    // Passkey autofill: closing Akari's card hands the request to the other manager once, then the browser.
     const conditionalClosed = async () => {
       await other.evaluate(() => {
         window.__ac = new AbortController();
@@ -244,12 +226,10 @@ test('with another passkey manager on the page, Akari is asked first and passes 
     assert.equal(await conditionalClosed(), 'AbortError');
     assert.deepEqual(await other.evaluate(() => window.__early), ['conditional']);
 
-    // A manager installed after Akari (it captures Akari's get as its fallback): no loop.
     await other.evaluate(installOtherManager, '__late');
     assert.equal(await conditionalClosed(), 'AbortError');
     assert.deepEqual(await other.evaluate(() => [window.__early, window.__late]), [['conditional'], ['conditional']]);
 
-    // The page giving up closes the card; nothing is passed on.
     const aborted = await other.evaluate(async () => {
       const ac = new AbortController();
       const p = navigator.credentials.get({
@@ -266,7 +246,6 @@ test('with another passkey manager on the page, Akari is asked first and passes 
   }
 });
 
-/** A create() made by the page itself; resolves to the UV bit of the new credential. */
 function createFlags(userVerification) {
   return page.evaluate(async (uv) => {
     const cred = await navigator.credentials.create({
@@ -282,12 +261,11 @@ function createFlags(userVerification) {
   }, userVerification);
 }
 
-// Last: these add passkeys the RP server does not know.
 test('saving on the card sets UV whether the site prefers or discourages it', async () => {
   await page.bringToFront();
   for (const uv of ['preferred', 'discouraged']) {
     assert.equal(await enterOnCard(page, createFlags(uv)), 0x04, uv);
-    await sleep(1400); // the "saved" card closes
+    await sleep(1400);
   }
 });
 
@@ -301,13 +279,10 @@ test('locked: saving opens the window, and unlocking there counts as user verifi
   await win.locator(`${screen('locked')} #pw`).press('Enter');
   await win.locator(screen('create')).waitFor();
   assert.equal(await win.locator(`${screen('create')} .uv`).isVisible(), false, 'no second prompt after unlocking here');
-  await win.locator(`${screen('create')} #createPrimary`).click(); // auto-waits for the arming delay
+  await win.locator(`${screen('create')} #createPrimary`).click();
   assert.equal(await flags, 0x04);
 });
 
-// A passkey made by Proton Pass, brought over with the Proton Pass importer: Chrome's WebCrypto
-// must accept the private key Akari rebuilds from Proton's record, and the signature must verify
-// with the public key the site registered when Proton created the passkey.
 test('a passkey imported from Proton Pass signs in on the card', async () => {
   const jwk = await crypto.subtle.exportKey('jwk',
     (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign'])).privateKey);

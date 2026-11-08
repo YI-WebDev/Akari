@@ -1,18 +1,9 @@
-// Helpers for i18n-coverage.test.js: a small tokenizer for the extension's JavaScript and a small
-// HTML scanner. Not full parsers, just enough for this codebase: string literals are unescaped,
-// template literals keep their `${...}` expressions as tokens, comments are skipped and regex
-// literals are told apart from division by the token before them.
-
-/** Japanese text: CJK punctuation, kana, kanji and full-width forms. */
 export const JA = /[\u{3000}-\u{30ff}\u{3400}-\u{4dbf}\u{4e00}-\u{9fff}\u{f900}-\u{faff}\u{ff01}-\u{ff60}\u{ffe0}-\u{ffee}]/u;
 
-/** A dotted i18n key such as `vaults.hue55` or `field.card.number`. */
 export const DOTTED = /^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+$/;
 
-// after these words an expression starts, so `/` opens a regex literal
 const BEFORE_EXPR = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
   'throw', 'case', 'do', 'else', 'yield', 'await']);
-// a `(` after these is not a call
 const NOT_CALLEE = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'void',
   'delete', 'in', 'of', 'instanceof', 'new', 'throw', 'case', 'do', 'else', 'yield', 'await', 'with']);
 
@@ -24,20 +15,14 @@ const PUNCT2 = ['=>', '==', '!=', '<=', '>=', '&&', '||', '??', '?.', '++', '--'
   '/=', '%=', '&=', '|=', '^=', '<<', '>>', '**'];
 const BOM = String.fromCharCode(0xfeff);
 
-/**
- * Tokens: { type: 'name' | 'num' | 'str' | 'tpl' | 'regex' | 'punct', value, line, endLine, pos }.
- * `str` values are unescaped. A template literal is one `tpl` token of kind 'full' (no `${}`),
- * or 'head', 'middle'..., 'tail' quasis with the expression tokens between them.
- * The array's `comments` holds the comments: { value, line, endLine }.
- */
 export function tokenize(src) {
   const out = [];
   const comments = [];
   const n = src.length;
-  const tplDepth = []; // open-brace count inside each open `${`
+  const tplDepth = [];
   let i = 0;
   let line = 1;
-  let start = 0; // where the current token starts
+  let start = 0;
   let prev = null;
   const push = (tok) => { tok.pos = start; tok.endLine = line; out.push(tok); prev = tok; };
 
@@ -51,7 +36,6 @@ export function tokenize(src) {
     }
   };
 
-  /** The escape sequence at src[at] (a backslash): [cooked text, length]. */
   const escape = (at) => {
     const c = src[at + 1];
     const simple = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v' };
@@ -88,7 +72,7 @@ export function tokenize(src) {
         i += len;
         continue;
       }
-      if (c === '\r') { i++; continue; } // CRLF reads as LF in a template
+      if (c === '\r') { i++; continue; }
       if (c === '\n') line++;
       cooked += c;
       i++;
@@ -182,20 +166,11 @@ export function tokenize(src) {
   return out;
 }
 
-/**
- * Every string literal and template quasi of `src`, with where it sits:
- *   call:  the innermost call whose arguments hold it: { id, name, arg, line }, or null. `id`
- *          tells calls apart within the file; `name` is the callee's name (null for `a.b(` and
- *          `f()(`). A function body in the arguments ends the search: `f(() => { return 'x'; })`
- *          has no call.
- *   decl:  the name of the innermost `const|let|var NAME =` whose initializer holds it, or null.
- *   whole: the literal is the entire argument (a static string, not part of an expression).
- */
 export function scan(src) {
   const tokens = tokenize(src);
   const literals = [];
-  const frames = []; // { open: '(' | '[' | '{' | '${', call, arg, block }
-  const decls = []; // { name, depth }
+  const frames = [];
+  const decls = [];
 
   const callFrame = () => {
     for (let k = frames.length - 1; k >= 0; k--) {
@@ -249,7 +224,6 @@ export function scan(src) {
     } else if (tok.value === '[') {
       frames.push({ open: '[', call: null, arg: 0 });
     } else if (tok.value === '{') {
-      // a block after `)` / `=>` / `else` (a function or statement body), not an object literal
       const block = before?.value === ')' || before?.value === '=>' || before?.value === 'else';
       frames.push({ open: '{', call: null, arg: 0, block });
     } else if (tok.value === ')' || tok.value === ']' || tok.value === '}') {
@@ -265,10 +239,6 @@ export function scan(src) {
   return { tokens, literals };
 }
 
-/**
- * The initializer of `const NAME = ...` in `src`, evaluated. It must be a literal (objects,
- * arrays, strings, numbers, Object.freeze): this reads tables a module does not export.
- */
 export function tableOf(src, name) {
   const tokens = tokenize(src);
   const at = tokens.findIndex((tok, k) => tok.type === 'name' && tok.value === name
@@ -285,8 +255,6 @@ export function tableOf(src, name) {
   return new Function(`"use strict"; return (${src.slice(tokens[at + 2].pos, tokens[k].pos)});`)();
 }
 
-/* -- HTML -- */
-
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
   'source', 'track', 'wbr']);
 const ENTITIES = { amp: 0x26, lt: 0x3c, gt: 0x3e, quot: 0x22, apos: 0x27, nbsp: 0xa0, hellip: 0x2026,
@@ -301,16 +269,10 @@ export function decodeEntities(s) {
   });
 }
 
-/**
- * The text nodes and attributes of an HTML page, as the browser would see them:
- *   texts: { text (decoded, untrimmed), line, inBody, i18n (the nearest data-i18n key, or null) }
- *   attrs: { name, value (decoded), line, inBody, tag, i18n (this element's data-i18n, or null) }
- * <script>, <style> and comments are skipped.
- */
 export function scanHtml(src) {
   const texts = [];
   const attrs = [];
-  const stack = []; // { tag, i18n }
+  const stack = [];
   let i = 0;
   let line = 1;
   let inBody = false;
@@ -328,7 +290,7 @@ export function scanHtml(src) {
       const from = line;
       const raw = src.slice(i + 1, end);
       advance(end + 1);
-      if (raw[0] === '!') continue; // doctype
+      if (raw[0] === '!') continue;
       if (raw[0] === '/') {
         const tag = raw.slice(1).trim().toLowerCase();
         while (stack.length && stack.pop().tag !== tag);
@@ -357,7 +319,7 @@ export function scanHtml(src) {
     const to = next < 0 ? src.length : next;
     const raw = src.slice(i, to);
     const i18n = [...stack].reverse().find((e) => e.i18n != null)?.i18n ?? null;
-    const lead = raw.match(/^\s*/)[0]; // report the line of the first non-blank character
+    const lead = raw.match(/^\s*/)[0];
     texts.push({ text: decodeEntities(raw), line: line + (lead.match(/\n/g) || []).length, inBody, i18n });
     advance(to);
   }

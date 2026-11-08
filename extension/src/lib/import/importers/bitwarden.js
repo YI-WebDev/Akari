@@ -1,14 +1,3 @@
-// Bitwarden JSON export: unencrypted, password-protected (PBKDF2-SHA256), or a ZIP with
-// data.json + attachments/. Item types: 1 login, 2 secure note, 3 card, 4 identity, 5 SSH key,
-// 6 bank account, 7 driver's license, 8 passport — each mapped onto the Akari type of that kind.
-// Akari's own exports add a custom field "akari:type" (any TYPE_IDS value); with it the item is
-// rebuilt as that type, custom fields named like its template fields filling them.
-//
-// Password-protected exports: key = PBKDF2-SHA256(password, utf8(salt string), kdfIterations, 32 B),
-// stretched with HKDF-Expand(SHA-256, info "enc" / "mac", 32 B). `encKeyValidation_DO_NOT_EDIT`
-// and `data` are EncStrings "2.<iv b64>|<ciphertext b64>|<mac b64>" — AES-256-CBC with
-// HMAC-SHA256(macKey, iv ‖ ciphertext), verified before decrypting.
-
 import { ImportError, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
@@ -17,10 +6,6 @@ import { TYPE_IDS, typeOf, fieldLabel, personName } from '../../../shared/item-t
 import { L, typed } from './_fields.js';
 import { monthOf } from './_values.js';
 
-/**
- * Bitwarden key → Akari template key, per item type. Keys not listed become extra fields with
- * the label given in EXTRA (secret when marked so).
- */
 const MAP = {
   3: ['card', 'card', { cardholderName: 'cardholder', number: 'number', code: 'cvv' }],
   4: ['identity', 'identity', {
@@ -43,7 +28,19 @@ const MAP = {
   }],
 };
 
-/** Label key, Japanese label and secrecy for Bitwarden keys that have no template key of their own. */
+const CIPHER_LOGIN = 1;
+const CIPHER_SECURE_NOTE = 2;
+const FIELD_HIDDEN = 1;
+const FIELD_LINKED = 3;
+const KDF_PBKDF2 = 0;
+const KDF_ARGON2ID = 1;
+const MAX_KDF_ITERATIONS = 2_000_000;
+const HKDF_FIRST_BLOCK_COUNTER = Uint8Array.of(1);
+const AES_IV_LENGTH = 16;
+const AES_BLOCK_LENGTH = 16;
+const HMAC_SHA256_LENGTH = 32;
+const GUID_CREDENTIAL_ID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
 const EXTRA_LABELS = {
   title: ['honorific', '敬称'], username: ['username', 'ユーザー名'], address3: ['address3', '住所 3'],
   ssn: ['ssn', '社会保障番号', true], passportNumber: ['passportNumber', 'パスポート番号', true],
@@ -52,14 +49,11 @@ const EXTRA_LABELS = {
   sex: ['sex', '性別'], birthPlace: ['birthPlace', '出生地'], passportType: ['passportType', '種類'],
   nationalIdentificationNumber: ['nationalId', '国民識別番号', true],
 };
-/** [label, secret] for a Bitwarden key (labels resolved when used, in the current UI language). */
 const extraLabel = (k) => {
   const e = EXTRA_LABELS[k];
   return e ? [L(e[0], e[1]), e[2]] : [];
 };
 const NAME_KEYS = new Set(['firstName', 'middleName', 'lastName', 'givenName', 'surname']);
-
-// --- password-protected export -------------------------------------------------------------
 
 async function hmac(keyBytes, data) {
   const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -69,14 +63,12 @@ async function hmac(keyBytes, data) {
 async function deriveKeys(password, salt, iterations) {
   const base = await crypto.subtle.importKey('raw', utf8(password), 'PBKDF2', false, ['deriveBits']);
   const key = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: utf8(salt), iterations, hash: 'SHA-256' }, base, 256));
-  // HKDF-Expand with L = 32 is a single block: T(1) = HMAC(PRK, info ‖ 0x01).
   return {
-    enc: await hmac(key, concat(utf8('enc'), Uint8Array.of(1))),
-    mac: await hmac(key, concat(utf8('mac'), Uint8Array.of(1))),
+    enc: await hmac(key, concat(utf8('enc'), HKDF_FIRST_BLOCK_COUNTER)),
+    mac: await hmac(key, concat(utf8('mac'), HKDF_FIRST_BLOCK_COUNTER)),
   };
 }
 
-/** Decrypt a type-2 EncString; returns null when the MAC does not match (wrong password). */
 async function decryptEncString(s, keys) {
   const m = /^2\.([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)$/.exec(String(s).trim());
   if (!m) throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
@@ -86,7 +78,7 @@ async function decryptEncString(s, keys) {
   } catch {
     throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
   }
-  if (iv.length !== 16 || mac.length !== 32 || !ct.length || ct.length % 16) {
+  if (iv.length !== AES_IV_LENGTH || mac.length !== HMAC_SHA256_LENGTH || !ct.length || ct.length % AES_BLOCK_LENGTH) {
     throw new ImportError('INVALID_FORMAT', t('Bitwarden の暗号化データの形式が正しくありません'));
   }
   const macKey = await crypto.subtle.importKey('raw', keys.mac, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
@@ -103,11 +95,11 @@ async function decryptExport(j, password) {
   if (!j.passwordProtected) {
     throw new ImportError('UNSUPPORTED', t('Bitwarden アカウントの鍵で暗号化されたファイルには対応していません。「パスワード保護」か暗号化なしで書き出してください'));
   }
-  const kdf = j.kdfType == null ? 0 : Number(j.kdfType);
-  if (kdf === 1) throw new ImportError('UNSUPPORTED', t('Argon2id で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
-  if (kdf !== 0) throw new ImportError('UNSUPPORTED', t('このキー導出方式で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
+  const kdf = j.kdfType == null ? KDF_PBKDF2 : Number(j.kdfType);
+  if (kdf === KDF_ARGON2ID) throw new ImportError('UNSUPPORTED', t('Argon2id で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
+  if (kdf !== KDF_PBKDF2) throw new ImportError('UNSUPPORTED', t('このキー導出方式で保護されたファイルには対応していません。PBKDF2 か暗号化なしで書き出してください'));
   const iterations = Number(j.kdfIterations);
-  if (!Number.isInteger(iterations) || iterations < 1 || iterations > 2_000_000 // Bitwarden's own maximum
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_KDF_ITERATIONS
     || typeof j.salt !== 'string' || !j.salt
     || typeof j.encKeyValidation_DO_NOT_EDIT !== 'string' || typeof j.data !== 'string') {
     throw new ImportError('INVALID_FORMAT', t('パスワード保護された Bitwarden ファイルの形式が正しくありません'));
@@ -124,9 +116,6 @@ async function decryptExport(j, password) {
   return parseJson(plain, t('Bitwarden（復号後）'));
 }
 
-// --- passkeys (login.fido2Credentials) -----------------------------------------------------
-
-/** Standard or URL-safe base64 (padding optional) → b64url, or '' when it does not decode. */
 function toB64urlSafe(v) {
   const s = String(v ?? '').trim();
   if (!s || !/^[A-Za-z0-9+/_-]+=*$/.test(s)) return '';
@@ -139,10 +128,9 @@ function toB64urlSafe(v) {
   }
 }
 
-/** Bitwarden stores 16-byte credential ids as GUID strings and others as "b64.<b64url>". */
 function credentialIdOf(v) {
   const s = String(v ?? '').trim();
-  if (/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(s)) {
+  if (GUID_CREDENTIAL_ID.test(s)) {
     const hex = s.replace(/-/g, '');
     return toB64url(Uint8Array.from(hex.match(/../g), (x) => parseInt(x, 16)));
   }
@@ -173,20 +161,12 @@ async function toPasskey(f, fallbackCreatedAt) {
   };
 }
 
-// --- items ---------------------------------------------------------------------------------
-
-/** Custom fields: 0 text, 1 hidden, 2 boolean, 3 linked (points at another field; no value). */
 function customFields(fields) {
   if (!Array.isArray(fields)) return [];
-  return fields.filter((f) => f && f.type !== 3)
-    .map((f) => ({ label: String(f.name ?? '').trim() || L('field', '項目'), value: f.value, secret: f.type === 1 }));
+  return fields.filter((f) => f && f.type !== FIELD_LINKED)
+    .map((f) => ({ label: String(f.name ?? '').trim() || L('field', '項目'), value: f.value, secret: f.type === FIELD_HIDDEN }));
 }
 
-/**
- * Akari's own Bitwarden exports carry the item type in a custom field "akari:type"; with it,
- * custom fields named like a template field (display label, Japanese source label or key) go
- * back into that field. Returns the custom fields that matched none.
- */
 const MARKER = 'akari:type';
 function fillByName(b, custom) {
   const fds = typeOf(b.type)?.fields || [];
@@ -199,7 +179,6 @@ function fillByName(b, custom) {
   return rest;
 }
 
-/** Card, identity, SSH key, bank account, driver's license or passport → typed item. */
 function typedItem(c, custom, marked = false) {
   const [type, prop, keys] = MAP[c.type];
   const src = c[prop] && typeof c[prop] === 'object' ? c[prop] : {};
@@ -220,13 +199,11 @@ function typedItem(c, custom, marked = false) {
   return b.item({ note: c.notes, extra: marked ? fillByName(b, custom) : custom });
 }
 
-/** A type Bitwarden has no cipher for, exported by Akari as a secure note + custom fields. */
 function markedNote(c, type, custom) {
   const b = typed(type);
   return b.item({ note: c.notes, extra: fillByName(b, custom) });
 }
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file, ctx = {}) {
   const warnings = [];
   let json;
@@ -258,9 +235,11 @@ export async function parse(file, ctx = {}) {
     const fields = Array.isArray(c.fields) ? c.fields : [];
     const mark = String(fields.find((f) => f?.name === MARKER)?.value ?? '').trim();
     const akari = TYPE_IDS.includes(mark) ? mark : null;
-    const custom = customFields(fields.filter((f) => f?.name !== MARKER)); // the marker itself is never kept
+    const custom = customFields(fields.filter((f) => f?.name !== MARKER));
 
-    if (c.type === 1) {
+    const isAkariOnlyType = akari && akari !== 'login' && akari !== 'note' && MAP[c.type]?.[0] !== akari;
+
+    if (c.type === CIPHER_LOGIN) {
       const l = c.login || {};
       const uris = (Array.isArray(l.uris) ? l.uris : []).map((u) => String(u?.uri ?? '').trim()).filter(Boolean);
       const extra = uris.slice(1).map((u) => ({ label: L('url', 'URL'), value: u, secret: false }));
@@ -279,12 +258,12 @@ export async function parse(file, ctx = {}) {
         ...base, type: 'login', url: uris[0] || '', username: l.username, password: l.password, totp, passkeys,
         note: c.notes, extra: [...extra, ...custom],
       });
-    } else if (akari && akari !== 'login' && akari !== 'note' && MAP[c.type]?.[0] !== akari) {
+    } else if (isAkariOnlyType) {
       items.push({ ...base, ...markedNote(c, akari, custom) });
     } else if (MAP[c.type]) {
       items.push({ ...base, ...typedItem(c, custom, !!akari) });
     } else {
-      if (c.type !== 2 && !akari) unknown++;
+      if (c.type !== CIPHER_SECURE_NOTE && !akari) unknown++;
       items.push({ ...base, type: 'note', note: c.notes, extra: custom });
     }
   }

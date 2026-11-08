@@ -1,7 +1,3 @@
-// Akari popup controller (design 1a "Akari Terminal"): boot, loading, lock, new items, and the
-// wiring between views. The rest lives in controllers/: view (labels, list refresh, selection,
-// search), menus, picking (delete several), autofill (the current tab) and keyboard.
-
 import { MSG } from '../shared/messages.js';
 import { send } from '../shared/api.js';
 import { typeOf } from '../shared/item-types.js';
@@ -37,12 +33,12 @@ import { onKey } from './controllers/keyboard.js';
 const $ = (id) => document.getElementById(id);
 const app = $('app');
 
-// The soft theme is gone; drop the theme cache older versions kept in localStorage.
-try { localStorage.removeItem('akari.themePref'); } catch { /* storage blocked */ }
+try { localStorage.removeItem('akari.themePref'); } catch { }
 
-const REOPEN_KEY = 'akari.reopen'; // views/settings.js sets it before reloading for a new language
-
-/* ───────── data ───────── */
+const REOPEN_KEY = 'akari.reopen';
+const STATUS_POLL_MS = 10000;
+const PING_THROTTLE_MS = 30000;
+const AUTOFILL_WAIT_MS = 800;
 
 async function loadSettings() {
   try {
@@ -71,8 +67,6 @@ function applyData(data) {
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
 
-/** Used by the gate after unlock/setup and on reload: items + autofill matches.
- *  `onDecrypted(vaults)` fires once vault/getAll returned (the gate's boot log). */
 async function loadAll({ onDecrypted } = {}) {
   const token = S.epoch;
   let rendered = false;
@@ -80,18 +74,15 @@ async function loadAll({ onDecrypted } = {}) {
   setSiteQuery('');
   const tab = activeTab();
   const site = tab.then((tb) => { if (S.epoch === token) setSiteQuery(siteQueryOf(tb)); });
-  // matches that arrive after the first render are added to the list then
   const af = fetchAutofill(tab).then((res) => {
     if (S.epoch !== token) return;
     setAutofill(res);
     if (rendered && res && S.phase === 'main') renderList();
   });
-  const [count] = await Promise.all([loadData(onDecrypted), withTimeout(af, 800), site]);
+  const [count] = await Promise.all([loadData(onDecrypted), withTimeout(af, AUTOFILL_WAIT_MS), site]);
   rendered = true;
   return count;
 }
-
-/* ───────── main view ───────── */
 
 function enterMain({ animate = true } = {}) {
   setPhase('main');
@@ -105,8 +96,6 @@ function enterMain({ animate = true } = {}) {
   startStatusPoll();
 }
 
-/* ───────── lock ───────── */
-
 let statusTimer = 0;
 function startStatusPoll() {
   clearInterval(statusTimer);
@@ -115,11 +104,10 @@ function startStatusPoll() {
     try {
       const st = await send(MSG.VAULT_STATUS);
       if (st?.locked) lockNow({ remote: true });
-    } catch { /* ignore */ }
-  }, 10000);
+    } catch { }
+  }, STATUS_POLL_MS);
 }
 
-/** The SW removes akari.session whenever it locks (auto-lock, other pages): react at once. */
 function watchSession() {
   chrome.storage?.onChanged?.addListener((changes, area) => {
     if (area !== 'session' || S.phase !== 'main') return;
@@ -129,7 +117,6 @@ function watchSession() {
   });
 }
 
-/** Drop every decrypted value from memory and the DOM. */
 function wipeView() {
   cancelTyping();
   clearSecrets();
@@ -142,7 +129,7 @@ function wipeView() {
   showQuery('');
   resetPickAnchor();
   resetPicker();
-  renderPickMode(); // clearSecrets left selection mode
+  renderPickMode();
   renderCounts();
 }
 
@@ -151,12 +138,12 @@ async function lockService() {
     try {
       await send(MSG.VAULT_LOCK);
       return;
-    } catch { /* retry once, then check */ }
+    } catch { }
   }
   try {
     const st = await send(MSG.VAULT_STATUS);
     if (st?.locked) return;
-  } catch { /* fall through */ }
+  } catch { }
   setGateStatus(t('ロックできませんでした。保管庫はまだひらいています'), { err: true });
   toastError(t('ロックできませんでした'), t('もう一度ロックしてください'));
 }
@@ -178,8 +165,6 @@ async function lockNow({ remote = false } = {}) {
   if (!remote) await lockService();
 }
 
-/* ───────── new items ───────── */
-
 async function newLogin() {
   closeMenus();
   setPicking(false);
@@ -192,7 +177,7 @@ async function newLogin() {
       const u = new URL(tab.url);
       prefill.url = u.origin;
       prefill.title = siteOf(u.href);
-    } catch { /* ignore */ }
+    } catch { }
   }
   const go = () => openEditor({ type: 'login', prefill });
   if (editorOpen()) requestClose(go);
@@ -203,7 +188,6 @@ function newNote() {
   newItem('note');
 }
 
-/** ＋ menu: any item type. Logins get the active tab's site as before. */
 function newItem(type) {
   if (type === 'login') { newLogin(); return; }
   closeMenus();
@@ -214,14 +198,11 @@ function newItem(type) {
   else go();
 }
 
-/* ───────── ゴミ箱 ───────── */
-
-/** Deleted items went to the ゴミ箱 (editor, selection mode): the toast offers 元に戻す. */
 function onTrashed(ids, { title = null, trash = null } = {}) {
   if (S.phase !== 'main' || !ids?.length) return;
   const vis = visibleItems();
   const idx = vis.findIndex((i) => ids.includes(i.id));
-  removeItems(ids); // also drops them from the autofill card
+  removeItems(ids);
   if (trash) setTrash(trash);
   const rest = visibleItems();
   setSel(rest[Math.min(Math.max(idx, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
@@ -248,7 +229,6 @@ async function undoTrash(ids) {
   }
 }
 
-/** Items came back from the ゴミ箱: in the list again, the first one selected. */
 function onRestored(res) {
   if (S.phase !== 'main') return;
   const items = Array.isArray(res?.items) ? res.items : [];
@@ -257,7 +237,7 @@ function onRestored(res) {
   if (!items.length) return;
   addItems(items);
   if (editorOpen()) {
-    renderList(); // the editor stays as it is; the restored items are back in the list
+    renderList();
   } else {
     setSel(items[0].id);
     revealItem(items[0]);
@@ -269,25 +249,19 @@ function onRestored(res) {
   const msg = items.length === 1
     ? t('trash.restoredOne', { title: items[0].title || t('(無題)') }, '{title} を元に戻しました')
     : t('trash.restored', { n: items.length }, '{n} 件を元に戻しました');
-  // one item: say which vault it is in (the first vault, when its own was deleted meanwhile)
   const vault = items.length === 1 ? vaultById(items[0].vault)?.name : null;
   toast(msg, vault ? t('trash.restoredIn', { vault }, '保管庫「{vault}」に戻しました') : null);
 }
-
-/* ───────── activity ───────── */
 
 let lastPing = 0;
 function ping(force = false) {
   if (S.phase !== 'main') return;
   const now = Date.now();
-  if (!force && now - lastPing < 30000) return;
+  if (!force && now - lastPing < PING_THROTTLE_MS) return;
   lastPing = now;
   send(MSG.ACTIVITY_PING).catch(() => {});
 }
 
-/* ───────── wiring ───────── */
-
-/** After a save: make sure the saved item is visible (all view, no search, its vault). */
 function revealItem(item) {
   if (visibleItems().some((i) => i.id === item.id)) return;
   setListView('all', S.type === item.type ? S.type : 'all');
@@ -311,12 +285,12 @@ function wire() {
   $('typeMenu').addEventListener('keydown', menuKeys);
   $('openSettings').addEventListener('click', () => {
     closeMenus();
-    $('menuBtn').focus({ preventScroll: true }); // where focus returns when the sheet closes
+    $('menuBtn').focus({ preventScroll: true });
     openSettings();
   });
   $('openHealth').addEventListener('click', () => {
     closeMenus();
-    $('menuBtn').focus({ preventScroll: true }); // where focus returns when the screen closes
+    $('menuBtn').focus({ preventScroll: true });
     openHealth();
   });
   $('openTrash').addEventListener('click', () => {
@@ -358,7 +332,7 @@ function wire() {
   on('locked', () => lockNow({ remote: true }));
   on('select', (id) => select(id));
   on('pick', (id, opts) => pick(id, opts));
-  on('picked', () => { if (S.picking) { resetPicker(); renderPicker(); } }); // the list unchecked rows that left the view
+  on('picked', () => { if (S.picking) { resetPicker(); renderPicker(); } });
   on('pickAll', () => pickAll(true));
   on('pickNone', () => pickAll(false));
   on('pickExit', () => setPicking(false));
@@ -371,7 +345,6 @@ function wire() {
   on('openGen', (opts) => openGenerator(opts || {}));
   on('openImport', () => { closeMenus(); openSettings({ page: 'import' }); });
   on('listChanged', () => { if (S.phase === 'main') refreshList(); });
-  // パスワード診断 handed a login over: show it in the main view, then edit it or fix its password
   on('healthAct', (id, kind) => {
     const item = itemById(id);
     if (S.phase !== 'main' || !item) return;
@@ -432,7 +405,6 @@ function wire() {
       if (live(token)) toastError(t('保管庫を読み込めませんでした'), errText(e));
     }
   });
-  // A vault was added, renamed or recolored (views/vaults.js): items are unchanged.
   on('vaultsChanged', () => {
     if (S.vault !== 'all' && !S.vaults.some((v) => v.id === S.vault)) setVaultFilter('all');
     saveUi();
@@ -452,24 +424,22 @@ function wire() {
   initGate({ load: loadAll, enter: () => enterMain({ animate: true }) });
 }
 
-/** After a language change the popup reloads; it comes back to the settings sheet. */
 function reopenAfterLanguage() {
   let target = null;
   try {
     target = sessionStorage.getItem(REOPEN_KEY);
     sessionStorage.removeItem(REOPEN_KEY);
-  } catch { /* storage blocked */ }
+  } catch { }
   if (target !== 'settings' || S.phase !== 'main') return;
   openSettings();
   setTimeout(() => document.querySelector('#setSheet [data-setting="language"] [aria-checked="true"]')?.focus({ preventScroll: true }), 80);
 }
 
 async function boot() {
-  // the language comes first: the views build their text as they are wired
   const statusP = send(MSG.VAULT_STATUS).then((s) => ({ s }), (e) => ({ e }));
   await loadSettings();
   useLanguage(S.settings?.language);
-  globalThis.__akariTheme?.apply(S.settings?.theme); // shared/theme.js already drew the last one
+  globalThis.__akariTheme?.apply(S.settings?.theme);
   wire();
   const { s: status, e: statusErr } = await statusP;
   if (statusErr) {

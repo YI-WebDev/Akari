@@ -1,9 +1,3 @@
-// Renders the toolbar icons from tools/icon.html: design 1a's brand mark, an orange
-// square-ish tile (#FF7A45) with a dark 灯 (#14100D) and a glow ring.
-// Each size is rendered natively (not downscaled) so the glyph gets pixel hinting;
-// the small sizes drop the glow and use a bigger glyph to stay legible.
-// Usage: node tools/make-icons.mjs
-
 import { mkdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +7,6 @@ import { startServer } from './serve.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'extension', 'src', 'assets', 'icons');
 
-// tile: px inside the canvas, radius ≈ 1/4 of the tile (the design's 24px tile has a 6px radius)
 const SIZES = [
   { size: 16, tile: 16, radius: 4, glyph: 0.8, ring: 0, glow: 0 },
   { size: 32, tile: 30, radius: 7, glyph: 0.72, ring: 0, glow: 0 },

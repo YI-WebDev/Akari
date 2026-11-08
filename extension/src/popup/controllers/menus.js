@@ -1,6 +1,3 @@
-// The header and list-bar menus: ≡ メニュー (main: パスワード診断, ゴミ箱, 保管庫を管理, 設定), 保管庫 (vault),
-// ＋ 新規作成 (plus) and 表示 (type), with the keyboard inside an open menu.
-
 import { typeOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { S, setVaultFilter, setListView, healthCounts } from '../state.js';
@@ -11,6 +8,8 @@ import { viewCounts, currentView } from '../views/list.js';
 import { renderVaultLabel, renderFilters, refreshList } from './view.js';
 
 const $ = (id) => document.getElementById(id);
+
+const IME_PROCESSING_KEYCODE = 229;
 
 export const MENUS = {
   main: ['menuBtn', 'mainMenu'], vault: ['vaultBtn', 'vaultMenu'], plus: ['plusBtn', 'plusMenu'], type: ['typeBtn', 'typeMenu'],
@@ -24,7 +23,6 @@ export function closeMenus() {
   $('catcher').classList.remove('on');
 }
 
-/** The open menu's key ('main' | 'vault' | 'plus' | 'type'), or null. */
 export const openMenuKey = () => Object.keys(MENUS).find((k) => $(MENUS[k][1]).classList.contains('open')) || null;
 export const menuOpen = () => !!openMenuKey();
 
@@ -39,18 +37,21 @@ export function openMenu(which) {
   if (which === 'plus') resetPlusMenu(menu);
   if (which === 'type') {
     renderTypeFilterMenu();
-    // under the 種類 button, but never past the bottom of the 480px popup
-    menu.style.maxHeight = '';
-    const below = btn.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 4;
-    const top = Math.max(48, Math.min(below, app.clientHeight - menu.offsetHeight - 6));
-    menu.style.top = top + 'px';
-    menu.style.maxHeight = app.clientHeight - top - 6 + 'px';
+    placeBelowButton(menu, btn, app);
   }
   menu.classList.add('open');
   btn.setAttribute('aria-expanded', 'true');
   $('catcher').classList.add('on');
   const first = menu.querySelector('[aria-checked="true"]') || menu.querySelector('button');
   setTimeout(() => first?.focus({ preventScroll: true }), 0);
+}
+
+function placeBelowButton(menu, btn, app) {
+  menu.style.maxHeight = '';
+  const below = btn.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 4;
+  const top = Math.max(48, Math.min(below, app.clientHeight - menu.offsetHeight - 6));
+  menu.style.top = top + 'px';
+  menu.style.maxHeight = app.clientHeight - top - 6 + 'px';
 }
 
 function renderVaultMenu() {
@@ -71,7 +72,6 @@ function renderVaultMenu() {
   }
 }
 
-/** ≡ メニュー: パスワード診断 shows how many logins in the current vault need action. */
 function renderMainMenu() {
   const n = healthCounts().action;
   $('healthCount').textContent = String(n);
@@ -90,13 +90,10 @@ function chooseVault(id) {
   refreshList({ animate: true });
 }
 
-/* 表示: one filter for the list, a view (すべて / 最近 / お気に入り) or a type */
-
 function renderTypeFilterMenu() {
   renderViewMenu($('typeMenu'), { counts: viewCounts(), current: currentView(), onPick: chooseView });
 }
 
-/** Show a view ('all' | 'recent' | 'fav') or a type id. */
 function chooseView(id) {
   closeMenus();
   $('typeBtn').focus({ preventScroll: true });
@@ -109,13 +106,12 @@ function chooseView(id) {
 }
 
 export function menuKeys(e) {
-  if (e.isComposing || e.keyCode === 229) return;
+  if (e.isComposing || e.keyCode === IME_PROCESSING_KEYCODE) return;
   const menu = e.currentTarget;
   if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
     if (moveMenuFocus(menu, e.key)) e.preventDefault();
     return;
   }
-  // the + menu's L / N / C / I / O / G shortcuts (only on the panel that is showing)
   if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
   const hit = [...menu.querySelectorAll('button[data-key]')].find((b) => b.dataset.key === e.key.toLowerCase() && b.offsetParent !== null);
   if (hit) {

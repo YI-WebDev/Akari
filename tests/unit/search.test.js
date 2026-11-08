@@ -1,5 +1,3 @@
-// The popup search language (extension/src/popup/search.js): operators, negation, loose matching.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseQuery, compileQuery, looseMatch } from '../../extension/src/popup/search.js';
@@ -29,8 +27,7 @@ test('parseQuery: operators come out, the rest is the text', () => {
     text: 'ama',
     ops: [{ key: 'type', value: 'login', neg: false }, { key: 'has', value: 'totp', neg: true }],
   });
-  // URLs, unknown keys and unknown values stay text; an operator still being typed is ignored
-  assert.deepEqual(parseQuery('https://x.jp foo:bar has:nothing type:'), { text: 'https://x.jp foo:bar has:nothing', ops: [] });
+  assert.deepEqual(parseQuery('https://x.jp foo:bar has:nothing type:'), { text: 'https://x.jp foo:bar has:nothing', ops: [] }, 'URLs, unknown keys and unknown values stay text; an operator still being typed is ignored');
 });
 
 test('type / has / is / vault, alone and together', () => {

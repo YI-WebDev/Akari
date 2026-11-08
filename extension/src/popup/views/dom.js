@@ -1,12 +1,5 @@
-// Tiny DOM builder. Text always goes through text nodes / textContent, never innerHTML,
-// so vault data cannot inject markup. Icons are built from static constants only.
-
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/**
- * h('div', { class: 'row', onclick: fn, dataset: { id } }, child, 'text', [more])
- * Special props: class, text, dataset, vars (CSS custom properties), style (object), on* listeners.
- */
 export function h(tag, props, ...kids) {
   const el = document.createElement(tag);
   if (props) applyProps(el, props);
@@ -42,10 +35,8 @@ export function clear(el) {
   return el;
 }
 
-/** A translated text whose "\n" are line breaks: ['line 1', <br>, 'line 2']. */
 export const brLines = (text) => String(text).split('\n').flatMap((s, i) => (i ? [h('br'), s] : [s]));
 
-// Static icon geometry (from the design). [tag, attrs] tuples.
 const ICONS = {
   check: [['path', { d: 'M20 6 9 17l-5-5' }]],
   import: [['path', { d: 'M12 20V9M7 14l5-5 5 5M5 4h14' }]],
@@ -83,7 +74,6 @@ const ICONS = {
   external: [['path', { d: 'M15 3h6v6' }], ['path', { d: 'M10 14 21 3' }], ['path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }]],
   chevLeft: [['path', { d: 'm15 6-6 6 6 6' }]],
   chevRight: [['path', { d: 'm9 6 6 6-6 6' }]],
-  // item types (the ＋ menu)
   login: [['path', { d: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4' }], ['path', { d: 'm10 17 5-5-5-5M15 12H3' }]],
   card: [['rect', { x: 2, y: 5, width: 20, height: 14, rx: 2 }], ['path', { d: 'M2 10h20M6 15h4' }]],
   idCard: [['rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }], ['circle', { cx: 9, cy: 10.5, r: 2.5 }], ['path', { d: 'M5.5 17a3.5 3.5 0 0 1 7 0M15 9.5h3M15 13.5h3' }]],
@@ -128,7 +118,6 @@ export function svgEl(tag, attrs) {
   return n;
 }
 
-/** Make everything behind an open sheet or the lock gate inert, so Tab stays in the dialog. */
 export function syncInert() {
   const byId = (id) => document.getElementById(id);
   const gate = byId('gate').classList.contains('on');
@@ -138,7 +127,6 @@ export function syncInert() {
   for (const id of sheets) byId(id).inert = gate;
 }
 
-/** Remember focus when a dialog opens; returns a function that restores it. */
 export function keepFocus() {
   const prev = document.activeElement;
   return () => {
@@ -146,7 +134,6 @@ export function keepFocus() {
   };
 }
 
-/** Copy button contents: copy icon, or the green check for ~1.5 s. */
 export function copyGlyph(copied) {
   const svg = icon(copied ? 'check' : 'copy', 13);
   if (copied) svg.classList.add('copied-ico');

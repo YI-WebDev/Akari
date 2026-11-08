@@ -1,10 +1,3 @@
-// Copies the @fontsource woff2 slices the extension needs into
-// extension/src/assets/fonts/ and writes fonts.css with relative urls.
-// Design 1a uses JetBrains Mono, with M PLUS 1 Code for the Japanese glyphs.
-// The numbered slices carry the Japanese glyphs split by unicode-range (the
-// Google Fonts slicing), so a page only loads the slices whose characters it shows.
-// Usage: node tools/build-fonts.mjs
-
 import { readFile, writeFile, mkdir, copyFile, readdir, rm, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +12,11 @@ const FAMILIES = [
   { pkg: 'm-plus-1-code', weights: [400, 500, 700], japanese: true },
 ];
 
-// Japanese slices are named "<pkg>-<n>-<w>-normal"; latin is "<pkg>-latin-<w>-normal".
 function wanted(pkg, faceName, japanese) {
   const rest = faceName.slice(pkg.length + 1);
-  if (/^latin-\d+-normal$/.test(rest)) return true;
-  return japanese && /^\d+-\d+-normal$/.test(rest);
+  const isLatinSlice = /^latin-\d+-normal$/.test(rest);
+  const isJapaneseSlice = /^\d+-\d+-normal$/.test(rest);
+  return isLatinSlice || (japanese && isJapaneseSlice);
 }
 
 const FACE_RE = /\/\* ([^*]+?) \*\/\s*@font-face \{([^}]*)\}/g;

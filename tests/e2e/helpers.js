@@ -1,6 +1,3 @@
-// Shared E2E helpers: launch Playwright Chromium with the unpacked extension,
-// find its id, talk to the service worker from an extension page, serve fixtures.
-
 import { chromium } from 'playwright';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -12,8 +9,6 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const EXT_DIR = path.join(ROOT, 'extension');
 export const MASTER = 'correct horse battery staple 42';
 
-// Branded Chrome (137+) ignores --load-extension, and Playwright's bundled Chromium
-// does not start on this machine, so load the unpacked extension over CDP instead.
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 export async function launch() {
@@ -43,7 +38,6 @@ export async function launch() {
   };
 }
 
-/** Open an extension page and return a function that sends runtime messages from it. */
 export async function extensionMessenger(ext) {
   const page = await ext.context.newPage();
   await page.goto(ext.url('src/passkey/passkey.html'));
@@ -54,7 +48,6 @@ export async function extensionMessenger(ext) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
-/** Static file server over a directory, on localhost with an ephemeral port. */
 export async function serveStatic(dir) {
   const server = createServer(async (req, res) => {
     try {
@@ -67,7 +60,6 @@ export async function serveStatic(dir) {
       res.writeHead(404).end('not found');
     }
   });
-  // No host: dual-stack, so "localhost" works whether it resolves to ::1 or 127.0.0.1.
   await new Promise((r) => server.listen(0, r));
   const { port } = server.address();
   return { origin: `http://localhost:${port}`, close: () => new Promise((r) => server.close(r)) };

@@ -1,32 +1,23 @@
-// Minimal MessagePack reader for importers (Proton Pass keeps each passkey as MessagePack).
-// The input comes from a file the user picked, so it is treated as untrusted: every length is
-// checked against the bytes that are left before anything is allocated, and nesting is bounded.
-//
-// nil/bool/int/float/str/bin/array/map are decoded; ext values come back as
-// { ext: type, data: Uint8Array }. Maps become plain objects without a prototype (keys as
-// strings), 64-bit integers become Numbers.
-
 const MAX_DEPTH = 32;
 
 export class MsgpackError extends Error {}
 
-/** Decode one MessagePack value from `bytes` (Uint8Array). Trailing bytes are an error. */
 export function decodeMsgpack(bytes) {
   if (!(bytes instanceof Uint8Array)) throw new MsgpackError('msgpack: bytes expected');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let pos = 0;
 
-  const need = (n) => {
+  const requireBytes = (n) => {
     if (!Number.isSafeInteger(n) || n < 0 || pos + n > bytes.length) throw new MsgpackError('msgpack: truncated');
   };
   const take = (n) => {
-    need(n);
+    requireBytes(n);
     const out = bytes.subarray(pos, pos + n);
     pos += n;
     return out;
   };
   const num = (size, get) => {
-    need(size);
+    requireBytes(size);
     const v = get(pos);
     pos += size;
     return v;
@@ -37,14 +28,14 @@ export function decodeMsgpack(bytes) {
   const text = (n) => new TextDecoder('utf-8', { fatal: true }).decode(take(n));
 
   function list(n, depth) {
-    need(n); // every element takes at least one byte
+    requireBytes(n);
     const out = new Array(n);
     for (let i = 0; i < n; i++) out[i] = read(depth + 1);
     return out;
   }
 
   function map(n, depth) {
-    need(n * 2);
+    requireBytes(n * 2);
     const out = Object.create(null);
     for (let i = 0; i < n; i++) {
       const k = read(depth + 1);
@@ -107,7 +98,7 @@ export function decodeMsgpack(bytes) {
     value = read(0);
   } catch (e) {
     if (e instanceof MsgpackError) throw e;
-    throw new MsgpackError('msgpack: ' + (e?.message || 'invalid data')); // e.g. invalid UTF-8
+    throw new MsgpackError('msgpack: ' + (e?.message || 'invalid data'));
   }
   if (pos !== bytes.length) throw new MsgpackError('msgpack: trailing bytes');
   return value;

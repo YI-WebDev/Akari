@@ -1,7 +1,3 @@
-// Autofill: matches saved logins to a tab, fills on explicit request, and runs the
-// "save / update this password" prompt. Origins are always judged from sender.url /
-// sender.tab.url / chrome.tabs.get — never from anything the page or popup sends.
-
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import { ERR, MSG } from '../shared/messages.js';
@@ -10,17 +6,12 @@ import { setLoginPassword } from '../lib/vault.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
-// How long a fill by Akari, or the username of a two-step login, is remembered for the save prompt.
 const MEMORY_TTL_MS = 10 * 60 * 1000;
 const MAX_FIELD_LEN = 4096;
 
 const isWebUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
 const isLoopback = (host) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
 
-/**
- * Same site (registrable domain) as the saved URL, and never an https → http downgrade
- * (a password saved for https must not be handed to a plaintext page).
- */
 export function urlMatches(itemUrl, pageUrl) {
   if (!isWebUrl(pageUrl) || !sameSite(itemUrl, pageUrl)) return false;
   if (/^https:\/\//i.test(itemUrl) && /^http:\/\//i.test(pageUrl) && !isLoopback(hostnameOf(pageUrl))) return false;
@@ -39,23 +30,14 @@ const byRecent = (a, b) =>
 
 const sameUser = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 const localPart = (s) => String(s || '').trim().toLowerCase().split('@')[0];
-/** Same user, or an email and its local part ("yi" for "yi@example.com"), which many sites accept. */
 const likelySameUser = (a, b) => sameUser(a, b)
   || (String(a || '').includes('@') !== String(b || '').includes('@') && !!localPart(a) && localPart(a) === localPart(b));
 
-/**
- * @param {{ chrome: typeof globalThis.chrome, vault: object, now?: () => number }} deps
- *   vault = the vault-service API from PLAN.md §3.1 (isLocked, readData, mutateData, touchActivity, makeItem).
- */
 export function createAutofillService({ chrome, vault, now = Date.now }) {
-  /** tabId -> { action, itemId, username, password, host, origin, expiresAt } (SW memory only) */
   const pending = new Map();
-  /** tabId -> { itemId, url, expiresAt }: the login Akari last filled into the tab */
   const filledIn = new Map();
-  /** tabId -> { username, url, expiresAt }: a username step whose password comes on a later page */
   const steppedUser = new Map();
 
-  /** A remembered entry for this tab, while fresh and still on the same site. */
   function recall(map, tabId, tabUrl) {
     const e = map.get(tabId);
     if (!e) return null;
@@ -80,7 +62,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     }
   }
 
-  /** Logins whose saved URL matches every given page URL, most recently used first. */
   async function loginsFor(...pageUrls) {
     const data = await vault.readData();
     return data.items
@@ -102,11 +83,9 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
         if (it) it.lastUsedAt = now();
       });
     } catch {
-      // Usage stats are best effort (e.g. the vault auto-locked meanwhile).
     }
   }
 
-  // Content-script senders: both the frame and the top document must be web pages.
   function senderPage(sender) {
     const tab = sender.tab;
     if (!tab || !isWebUrl(sender.url) || !isWebUrl(tab.url)) {
@@ -123,8 +102,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     }
   };
 
-  // Candidates hold a plaintext password, so they must not outlive the unlocked session. vault-service has
-  // no "locked" event: drop everything whenever an access sees the vault locked, and on every unlock.
   async function dropPendingIfLocked() {
     const locked = await vault.isLocked();
     if (locked) pending.clear();
@@ -132,7 +109,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
   }
   if (typeof vault.onUnlocked === 'function') vault.onUnlocked(() => pending.clear());
 
-  /** The tab's pending candidate, only while fresh and only on the origin where it was captured. */
   function livePending(tabId, tabUrl) {
     const p = pending.get(tabId);
     if (!p) return null;
@@ -148,7 +124,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       type: MSG.AUTOFILL_DO_FILL,
       username: item.username || '',
       password: item.password || '',
-      origin: new URL(tab.url).origin, // lets the content script refuse if the tab navigated meanwhile
+      origin: new URL(tab.url).origin,
     };
     const opts = { frameId: 0 };
     const attempt = async () => {
@@ -158,7 +134,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     try {
       return await attempt();
     } catch {
-      // Tab predates the extension (or its content script was invalidated): inject once and retry.
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id, frameIds: [0] },
@@ -170,8 +145,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       }
     }
   }
-
-  // ---- from: extension (popup) ------------------------------------------------
 
   async function matches(msg) {
     const tab = await getTab(msg.tabId);
@@ -196,8 +169,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return { filled };
   }
 
-  // ---- from: content ----------------------------------------------------------
-
   async function pageMatches(msg, sender) {
     const { tabId, tabUrl, frameUrl } = senderPage(sender);
     const locked = await dropPendingIfLocked();
@@ -221,7 +192,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return { username: item.username || '', password: item.password || '' };
   }
 
-  /** The username step of a two-step login: kept for the password page that follows. */
   function noteUsername(msg, sender) {
     const { tabId, tabUrl, frameUrl } = senderPage(sender);
     const username = typeof msg.username === 'string' ? msg.username.trim() : '';
@@ -237,27 +207,27 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     if (!password || password.length > MAX_FIELD_LEN || username.length > MAX_FIELD_LEN) {
       throw new AkariError(ERR.INVALID, 'Invalid credentials');
     }
-    // A login form embedded from another site must not be saved as a login for this site.
     if (!sameSite(frameUrl, tabUrl)) return { action: 'none' };
     if (await dropPendingIfLocked()) throw new AkariError(ERR.LOCKED, 'Vault is locked');
 
     const logins = await loginsFor(tabUrl);
-    // The password page of a two-step login shows no username: use the one from the step before.
     const user = username || recall(steppedUser, tabId, tabUrl)?.username || '';
     const filledId = recall(filledIn, tabId, tabUrl)?.itemId;
     const filled = (filledId && logins.find((it) => it.id === filledId)) || null;
     const sameAccount = (it) => !user || likelySameUser(it.username, user);
 
-    // Already saved: the login Akari filled here, or a login of this site for this account
-    // (any of them when no username is known) with this password.
-    if ((filled && filled.password === password) || logins.some((it) => it.password === password && sameAccount(it))) {
+    const alreadySaved = (filled && filled.password === password)
+      || logins.some((it) => it.password === password && sameAccount(it));
+    if (alreadySaved) {
       pending.delete(tabId);
       return { action: 'none' };
     }
-    // A new password for a saved account: the one Akari filled, the same user, or the site's only login.
-    const target = (filled && sameAccount(filled) ? filled : null)
-      || (user && (logins.find((it) => sameUser(it.username, user)) || logins.find((it) => likelySameUser(it.username, user))))
-      || (!user && logins.length === 1 ? logins[0] : null);
+    const filledLoginOfAccount = filled && sameAccount(filled) ? filled : null;
+    const loginOfUser = user
+      ? logins.find((it) => sameUser(it.username, user)) || logins.find((it) => likelySameUser(it.username, user))
+      : null;
+    const onlyLogin = !user && logins.length === 1 ? logins[0] : null;
+    const target = filledLoginOfAccount || loginOfUser || onlyLogin || null;
     const action = target ? 'update' : 'new';
     const host = hostnameOf(tabUrl);
     pending.set(tabId, {
@@ -292,7 +262,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       await vault.mutateData((draft) => {
         const existing = p.action === 'update' ? draft.items.find((i) => i.id === p.itemId && i.type === 'login') : null;
         if (existing) {
-          // The old password goes to the history; a pending one the site has now taken is settled.
           setLoginPassword(existing, p.password, now());
           existing.updatedAt = now();
           return;
@@ -304,20 +273,18 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
             url: p.origin,
             username: p.username,
             password: p.password,
-            vault: draft.vaults?.[0]?.id ?? 'personal', // 個人 may have been deleted or renamed
+            vault: draft.vaults?.[0]?.id ?? 'personal',
           }),
         );
       });
     } catch (e) {
-      if (e && e.code === ERR.LOCKED) pending.clear(); // locked between the check and the write
+      if (e && e.code === ERR.LOCKED) pending.clear();
       throw e;
     }
     pending.delete(tabId);
     await vault.touchActivity();
     return { saved: true, action: p.action };
   }
-
-  // ---- keyboard shortcut ------------------------------------------------------
 
   async function onCommand(command) {
     if (command !== 'autofill') return;
@@ -327,7 +294,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
       try {
         await chrome.action.openPopup();
       } catch {
-        // openPopup needs a focused browser window; the toolbar icon still works.
       }
       return;
     }
@@ -345,7 +311,6 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
   return { matches, fill, pageMatches, requestFill, noteUsername, offerSave, confirmSave, onCommand, forgetTab };
 }
 
-// Real instance. Skipped outside an extension context so the module can be imported by unit tests.
 if (globalThis.chrome?.runtime?.id) {
   const svc = createAutofillService({ chrome, vault: vaultService });
 

@@ -1,9 +1,3 @@
-// Firefox "Export logins" CSV:
-// url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged
-// (timestamps in ms). Older exports call the first column "hostname". Firefox has no
-// titles, so the title is the host (makeImported derives it from the url). httpRealm is kept
-// as a custom field.
-
 import { pick } from '../csv.js';
 import { toMs } from '../model.js';
 import { t } from '../../../shared/i18n.js';
@@ -15,11 +9,9 @@ const SHAPE = {
 };
 export const accepts = (headers) => fits(headers, SHAPE);
 
-// Firefox Accounts / Sync bookkeeping rows that show up in the export; not user logins.
-const INTERNAL_URL = /^(chrome:\/\/(firefoxaccounts|weave)|http:\/\/sync\/?$)/i;
+const SYNC_BOOKKEEPING_URL = /^(chrome:\/\/(firefoxaccounts|weave)|http:\/\/sync\/?$)/i;
 
-// Host as written in the url (IDN stays readable; `new URL().hostname` would punycode it).
-const hostText = (url) => url
+const hostAsWritten = (url) => url
   .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
   .replace(/^[^/?#@]*@/, '')
   .split(/[/?#]/)[0]
@@ -32,10 +24,10 @@ export async function parse(file) {
   let internal = 0;
   const out = collect(records, (r) => {
     const url = pick(r, 'url', 'hostname').trim();
-    if (INTERNAL_URL.test(url)) { internal++; return null; }
+    if (SYNC_BOOKKEEPING_URL.test(url)) { internal++; return null; }
     const realm = String(r.httprealm ?? '').trim();
     return {
-      title: hostText(url),
+      title: hostAsWritten(url),
       url,
       username: r.username,
       password: r.password,

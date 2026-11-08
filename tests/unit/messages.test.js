@@ -1,8 +1,3 @@
-// shared/messages.js is the one list of message types and error codes. Content scripts and the
-// offscreen document cannot import it, so these tests read the sources: every type string used
-// anywhere must be listed in MSG, every MSG type must have a receiver, and every MSG.* / ERR.*
-// reference must exist.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
@@ -16,7 +11,6 @@ const TESTS = path.resolve(HERE, '..');
 const NAMESPACES = ['vault', 'settings', 'clipboard', 'activity', 'autofill', 'passkey', 'offscreen'];
 const TYPE_LITERAL = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})/[A-Za-z]+)['"\`]`, 'g');
 
-// Types the service worker sends rather than receives, and the script that handles each.
 const SENT_BY_SW = {
   AUTOFILL_DO_FILL: 'content/autofill.js',
   OFFSCREEN_CLEAR_CLIPBOARD: 'offscreen/offscreen.js',
@@ -50,7 +44,6 @@ test('every message type written as a string is listed in MSG', () => {
 });
 
 test('the classic scripts that hard-code types use the MSG values', () => {
-  // A renamed MSG value has to be renamed in these files too; this pins the ones they send.
   const used = (file) => new Set(matches(src.find((f) => f.name === file).text, TYPE_LITERAL));
   const autofill = used('content/autofill.js');
   for (const key of ['AUTOFILL_PAGE_MATCHES', 'AUTOFILL_REQUEST_FILL', 'AUTOFILL_OFFER_SAVE', 'AUTOFILL_CONFIRM_SAVE', 'AUTOFILL_NOTE_USERNAME', 'AUTOFILL_DO_FILL']) {
@@ -66,7 +59,7 @@ test('every MSG type has a receiver', () => {
   const background = src.filter((f) => f.name.startsWith('background/')).map((f) => f.text).join('\n');
   const registered = new Set([
     ...matches(background, /register\(\s*MSG\.([A-Z_]+)/g),
-    ...matches(background, /\[MSG\.([A-Z_]+)\]\s*:/g), // vault-service's handler table
+    ...matches(background, /\[MSG\.([A-Z_]+)\]\s*:/g),
   ]);
   const missing = [];
   for (const key of Object.keys(MSG)) {
@@ -85,7 +78,6 @@ test('handlers are registered only under MSG types', () => {
   const odd = [];
   for (const f of background) {
     for (const arg of matches(f.text, /\bregister\(\s*([^,\s]+)\s*,/g)) {
-      // vault-service registers its handler table in a loop: `register(type, handler, …)`
       if (!/^MSG\.[A-Z_]+$/.test(arg) && !(f.name === 'background/vault-service.js' && arg === 'type')) odd.push(`${f.name}: ${arg}`);
     }
   }
@@ -104,7 +96,7 @@ test('every MSG.* and ERR.* reference exists', () => {
 test('error codes thrown as string literals are listed in ERR', () => {
   const unknown = [];
   for (const f of src) {
-    if (f.name.startsWith('lib/import/')) continue; // ImportError has its own codes (UNSUPPORTED, INVALID_FORMAT, …)
+    if (f.name.startsWith('lib/import/')) continue;
     for (const code of matches(f.text, /\b(?:fail|AkariError)\(\s*'([A-Z_]+)'/g)) if (!Object.hasOwn(ERR, code)) unknown.push(`${f.name}: ${code}`);
   }
   assert.deepEqual(unknown, []);

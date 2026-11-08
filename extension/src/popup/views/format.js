@@ -1,11 +1,8 @@
-// Display helpers: list grouping, Japanese relative dates, tile letters/colours.
-
 import { hostnameOf } from '../../shared/domain.js';
 import { t } from '../../shared/i18n.js';
 
 const DAY = 86400000;
 
-// list group headings, as i18n keys: shown through groupName() (t() at render time)
 export const GROUPS = ['今日', '今週', '先週', '先月', 'それ以前', '未使用'];
 export const groupName = (g) => t(GROUPS[g]);
 
@@ -15,15 +12,15 @@ export function startOfDay(ts) {
   return d.getTime();
 }
 
-/** Index into GROUPS for a lastUsedAt timestamp (rolling weeks, like the design). */
 export function groupIndex(ts, now = Date.now()) {
-  if (!ts) return 5;
-  if (ts >= startOfDay(now)) return 0;
+  const [TODAY, THIS_WEEK, LAST_WEEK, LAST_MONTH, OLDER, NEVER_USED] = GROUPS.keys();
+  if (!ts) return NEVER_USED;
+  if (ts >= startOfDay(now)) return TODAY;
   const age = now - ts;
-  if (age < 7 * DAY) return 1;
-  if (age < 14 * DAY) return 2;
-  if (age < 61 * DAY) return 3;
-  return 4;
+  if (age < 7 * DAY) return THIS_WEEK;
+  if (age < 14 * DAY) return LAST_WEEK;
+  if (age < 61 * DAY) return LAST_MONTH;
+  return OLDER;
 }
 
 export function relTime(ts, now = Date.now()) {
@@ -56,7 +53,6 @@ export function yyyymmdd(ts = Date.now()) {
 
 const SKIP_LABELS = new Set(['www', 'accounts', 'account', 'jp', 'en', 'm', 'login', 'app', 'my', 'secure', 'signin', 'auth', 'id', 'mail']);
 
-/** Tile letter: the meaningful label of a domain-like title ("accounts.google.com" → G), else its first character. */
 export function letterOf(title) {
   const t = String(title || '').trim().replace(/^@/, '');
   if (!t) return '?';
@@ -77,21 +73,17 @@ export function hueOf(item) {
 
 export const vaultColor = (hue) => `oklch(var(--vault-l) var(--vault-c) ${hue})`;
 
-/** "www.github.com" → "github.com" for display. */
 export function siteOf(url) {
   return hostnameOf(url).replace(/^www\./, '');
 }
 
-/** True when the string starts with "scheme://". "localhost:3000" and "example.com:8443/x" do not. */
 export const hasScheme = (s) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(s || ''));
 
-/** "example.com:8443/login" → "https://example.com:8443/login"; strings with a scheme are kept. */
 export const withScheme = (s) => {
   const t = String(s || '').trim();
   return !t || hasScheme(t) ? t : 'https://' + t;
 };
 
-/** Only http(s) URLs may become links. Bare hosts (with or without :port) get https://. */
 export function safeHttpUrl(url) {
   const s = withScheme(url);
   if (!s) return '';
@@ -103,10 +95,6 @@ export function safeHttpUrl(url) {
   }
 }
 
-/* Search normalisation: NFKC + lower-case. normMap keeps, for every code unit of the
-   normalised string, the original [start, end) it came from, so highlights never drift.
-   A character whose NFKC form starts with a combining mark (e.g. halfwidth ﾞ) is
-   normalised together with the character before it. */
 export const normQuery = (q) => String(q || '').normalize('NFKC').toLowerCase().trim();
 
 export function normMap(text) {
@@ -132,7 +120,6 @@ export function normMap(text) {
   return { norm, starts, ends };
 }
 
-/** [start, end) of the first match of a normalised query in the original text, or null. */
 export function matchRange(map, q) {
   if (!q) return null;
   const i = map.norm.indexOf(q);
@@ -147,16 +134,8 @@ export function formatCode(code) {
   return c;
 }
 
-/* ── item field values (shared/item-types.js kinds) ── */
-
 const pad2 = (n) => String(n).padStart(2, '0');
 
-/**
- * The one place that turns a stored ISO date ('YYYY-MM-DD', kind 'date') or month
- * ('YYYY-MM', kind 'month' — card expiry) into display text, so a locale can change it.
- * Months read MM/YY (as on a card); `fullYear` gives MM/YYYY, which the editor uses so a
- * round trip never guesses the century. Anything that is not ISO is shown as stored.
- */
 export function formatIsoDate(value, kind = 'date', { fullYear = false } = {}) {
   const v = String(value || '');
   let m;
@@ -167,7 +146,6 @@ export function formatIsoDate(value, kind = 'date', { fullYear = false } = {}) {
 
 const nfkc = (s) => String(s ?? '').normalize('NFKC').trim();
 
-/** Typed date → 'YYYY-MM-DD', '' when empty, null when invalid. 2028-09-30 · 2028/9/30 · 2028年9月30日 · 20280930. */
 export function parseDateInput(s) {
   const v = nfkc(s);
   if (!v) return '';
@@ -181,7 +159,6 @@ export function parseDateInput(s) {
   return `${y}-${pad2(mo)}-${pad2(d)}`;
 }
 
-/** Typed month → 'YYYY-MM', '' when empty, null when invalid. MM/YYYY · YYYY-MM, and MM/YY · MMYY as 20YY. */
 export function parseMonthInput(s) {
   const v = nfkc(s);
   if (!v) return '';
@@ -196,7 +173,6 @@ export function parseMonthInput(s) {
   return `${y}-${pad2(mo)}`;
 }
 
-/** Days from today until a 'YYYY-MM-DD' date, or the last day of a 'YYYY-MM' month; null if not ISO. */
 export function daysUntil(value, now = Date.now()) {
   const v = String(value || '');
   let m;
@@ -209,5 +185,4 @@ export function daysUntil(value, now = Date.now()) {
 
 export const digitsOnly = (s) => nfkc(s).replace(/\D/g, '');
 
-/** "3566002020360505" → "3566 0020 2036 0505". */
 export const groupDigits = (s) => digitsOnly(s).replace(/(\d{4})(?=\d)/g, '$1 ');

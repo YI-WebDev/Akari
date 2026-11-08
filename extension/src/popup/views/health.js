@@ -1,9 +1,3 @@
-// パスワード診断: a screen of its own (a sheet like 設定), opened from the ≡ menu. A tab picks the
-// issue (要対応 = weak, reused or old), the list on the left shows the logins of the current
-// vault that have it, and the pane on the right says what is wrong with the chosen one and
-// offers the fix. The rules are in lib/health.js. The screen shows titles and user names, never
-// a password, and is emptied whenever it closes (also on lock).
-
 import { t } from '../../shared/i18n.js';
 import { ISSUES, ACTION_ISSUES, passwordAgeDays, passwordSetAt } from '../../lib/health.js';
 import { S, emit, healthCounts, issuesOf, reuseOf, inVault, vaultById, strengthOf } from '../state.js';
@@ -22,14 +16,12 @@ const LABELS = {
 const issueLabel = (k) => t(LABELS[k][0], null, LABELS[k][1]);
 const isAction = (k) => ACTION_ISSUES.includes(k);
 
-let tab = 'action'; // kept while the popup stays open
-let sel = null; // id of the login shown in the pane
-let rows = []; // the current tab's logins, in list order
+let tab = 'action';
+let sel = null;
+let rows = [];
 let restoreFocus = null;
 
 export const isHealthOpen = () => $('healthSheet').classList.contains('open');
-
-/* ── data ── */
 
 const logins = () => S.items.filter((it) => inVault(it) && it.type === 'login' && it.password);
 
@@ -38,11 +30,6 @@ function inTab(it, k) {
   return k === 'action' ? list.some(isAction) : list.includes(k);
 }
 
-/**
- * The tab's logins, worst first: 要対応 by its first issue (weak, then reused, then old), 弱い by
- * strength, 使い回し with the logins that share a password next to each other (largest group
- * first), 古い oldest first, 2FA なし by title.
- */
 function rowsOf(k) {
   const list = logins().filter((it) => inTab(it, k));
   const title = (a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ja');
@@ -68,12 +55,9 @@ function rowsOf(k) {
   }
 }
 
-/** Other logins (any vault) with the same password: titles and vault names only. */
 function samePassword(it) {
   return S.items.filter((x) => x.id !== it.id && x.type === 'login' && x.password && x.password === it.password);
 }
-
-/* ── rendering ── */
 
 function line(k, it) {
   switch (k) {
@@ -182,8 +166,6 @@ function render() {
   renderPane();
 }
 
-/* ── interaction ── */
-
 function setTab(k, { focusTab = false } = {}) {
   if (!TABS.includes(k)) return;
   tab = k;
@@ -203,7 +185,6 @@ function select(id, { focusList = false } = {}) {
   if (focusList) $('hsList').focus({ preventScroll: true });
 }
 
-/** Leave the screen for the login in the main view: 'show' it, 'edit' it (add 2FA), or 'fix' its password. */
 function act(kind, id) {
   closeHealth({ restore: false });
   emit('healthAct', id, kind);
@@ -231,8 +212,6 @@ function onKeys(e) {
   }
 }
 
-/* ── the sheet ── */
-
 export function openHealth() {
   restoreFocus = keepFocus();
   render();
@@ -245,7 +224,6 @@ export function openHealth() {
   setTimeout(() => $('hsList').focus({ preventScroll: true }), 60);
 }
 
-/** Close and drop what the screen showed. `restore: false` when the caller moves focus itself. */
 export function closeHealth({ restore = true } = {}) {
   const sheet = $('healthSheet');
   if (!sheet.classList.contains('open')) return;

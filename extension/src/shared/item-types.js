@@ -1,21 +1,3 @@
-// Item types and their field templates. The service worker validates against this,
-// importers map other managers' records onto it, exporters read it, and the popup
-// builds the detail view and the editor from it.
-//
-// Stored item (every type): { id, type, vault, title, note, fav, hue, createdAt, updatedAt,
-//   lastUsedAt, extra: [{ label, value, secret }] }
-// 'login' adds url, username, password, totp, passkeys, passwordUpdatedAt.
-// Every other type except 'note' adds fields: { [key]: string } for its template's keys.
-//
-// Field kinds:
-//   text · secret (masked, copy, clipboard auto-clear) · multiline · secret-multiline ·
-//   date ('YYYY-MM-DD') · month ('YYYY-MM') · email · tel · url · number (digits as text) ·
-//   select (stores one of `options[].id`)
-//
-// Labels here are the Japanese source text. Display code must go through typeLabel /
-// groupLabel / fieldLabel / optionLabel so a future UI language can override them
-// (shared/i18n.js keys: type.<id>, group.<id>, field.<type>.<key>, option.<type>.<key>.<id>).
-
 import { t } from './i18n.js';
 
 const f = (key, label, kind = 'text', extra = {}) => Object.freeze({ key, label, kind, ...extra });
@@ -28,11 +10,6 @@ export const GROUPS = Object.freeze([
   { id: 'personal', label: '個人' },
 ]);
 
-/**
- * id: stored type · label: Japanese name · tag: short mono badge for list rows (null = none) ·
- * fields: template (login/note have their own fixed fields) ·
- * dedupe: field keys that identify the same record when importing (plus title).
- */
 export const ITEM_TYPES = Object.freeze([
   { id: 'login', label: 'ログイン', group: 'basic', tag: null, fields: [], dedupe: [] },
   { id: 'note', label: 'セキュアノート', group: 'basic', tag: 'NOTE', fields: [], dedupe: [] },
@@ -186,7 +163,6 @@ const BY_ID = new Map(ITEM_TYPES.map((t) => [t.id, t]));
 
 export const typeOf = (id) => BY_ID.get(id) || null;
 
-// Display labels — always use these instead of `.label` so the UI language can change.
 export const typeLabel = (id) => t('type.' + id, null, BY_ID.get(id)?.label ?? id);
 export const groupLabel = (id) => t('group.' + id, null, GROUPS.find((g) => g.id === id)?.label ?? id);
 export function fieldLabel(typeId, key) {
@@ -197,11 +173,9 @@ export function optionLabel(typeId, key, optionId) {
   const o = BY_ID.get(typeId)?.fields.find((x) => x.key === key)?.options?.find((x) => x.id === optionId);
   return t(`option.${typeId}.${key}.${optionId}`, null, o?.label ?? optionId);
 }
-/** Types whose data lives in `fields` (everything except login and note). */
 export const hasTemplate = (id) => !!BY_ID.get(id)?.fields.length;
 export const isSecretKind = (kind) => kind === 'secret' || kind === 'secret-multiline';
 
-/** Length caps, also enforced by the service worker. */
 export const LIMITS = Object.freeze({
   fieldValue: 4096,
   multilineValue: 16384,
@@ -224,27 +198,24 @@ export function cardBrand(number) {
   return '';
 }
 
-const CJK = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
+const CJK_CHARACTER = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
 
-/** A name from its parts: family name first for CJK names ("田中 三郎"), otherwise "John Q Smith". */
 export function personName(first, middle, last) {
   const [f, m, l] = [first, middle, last].map((s) => String(s ?? '').trim());
-  return (CJK.test(f + m + l) ? [l, f, m] : [f, m, l]).filter(Boolean).join(' ');
+  return (CJK_CHARACTER.test(f + m + l) ? [l, f, m] : [f, m, l]).filter(Boolean).join(' ');
 }
 
-/** "•••• 1234" — never more than the last four digits. */
 export const maskTail = (v) => {
   const s = String(v || '').replace(/\s/g, '');
   return s ? '•••• ' + s.slice(-4) : '';
 };
 
-/** One-line, non-secret summary for list rows and search. */
 export function subtitleOf(item) {
   const x = item.fields || {};
   const join = (...v) => v.filter(Boolean).join(' · ');
   switch (item.type) {
     case 'login': return item.username || '';
-    case 'note': return ''; // note bodies often hold secrets; the list shows the type label instead
+    case 'note': return '';
     case 'card': return join(cardBrand(x.number), maskTail(x.number), x.expiry && x.expiry.slice(5) + '/' + x.expiry.slice(2, 4));
     case 'identity': return join(x.fullName || personName(x.firstName, x.middleName, x.lastName), x.email);
     case 'apiCredential': return join(x.host, x.keyId);
@@ -256,7 +227,7 @@ export function subtitleOf(item) {
     case 'bankAccount': return join(x.bankName, maskTail(x.accountNumber || x.iban));
     case 'cryptoWallet': return join(x.network, x.address && x.address.slice(0, 6) + '…' + x.address.slice(-4));
     case 'driverLicense': case 'passport': return join(x.fullName, maskTail(x.number));
-    case 'socialSecurity': return x.fullName || ''; // no digits of a national ID in the list or search
+    case 'socialSecurity': return x.fullName || '';
     case 'medicalRecord': return join(x.patientName, x.provider);
     case 'membership': return join(x.organization, x.memberName);
     case 'rewardProgram': return join(x.company, x.memberName);
@@ -264,7 +235,6 @@ export function subtitleOf(item) {
   }
 }
 
-/** Non-secret text that search should match (title is searched separately). */
 export function searchTextOf(item) {
   const t = typeOf(item.type);
   const parts = [subtitleOf(item)];

@@ -1,16 +1,3 @@
-// Proton Pass exports:
-//  - ZIP with "Proton Pass/data.json": { vaults: { <id>: { name, items: [{ itemId, state
-//    (1 active, 2 trashed), pinned, createTime, modifyTime, aliasEmail, data: { type,
-//    metadata: { name, note }, content: {...}, extraFields: [...] } }] } } }.
-//  - a bare data.json, or a CSV (type,name,url,email,username,password,note,totp,createTime,
-//    modifyTime,vault).
-//  - .pgp exports are decrypted by index.js first; a ZIP holding data.pgp is opened here.
-// Login passkeys (JSON only; the CSV has none) come over when they are ES256 on P-256, see below.
-// creditCard / identity / sshKey / wifi items map onto the Akari types of the same name. Proton's
-// other templates (API credential, database, server, bank account, passport, …) are exported as
-// "custom" items that only carry their fields; the template is recognised from the field names
-// (English or Japanese, as written by packages/pass/components/Item/Custom/Custom.templates.ts).
-
 import { ImportError, fieldsToNote, parseOtp, toMs, bytesToText, parseJson, isZip } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { readZip, findEntry } from '../zip.js';
@@ -20,12 +7,10 @@ import { fromB64, toB64url, concat } from '../../../shared/bytes.js';
 import { L, typed, fromEntries, LABEL_RULES } from './_fields.js';
 import { toDate, wifiSecurity } from './_values.js';
 
-/** Japanese names of kinds that are kept as secure notes (translated when reported). */
 const KINDS = {
   creditCard: 'クレジットカード', identity: '個人情報', alias: 'メールエイリアス', wifi: 'Wi-Fi',
   sshKey: 'SSH キー', custom: 'カスタムアイテム',
 };
-/** Content keys → labels, for values that end up as extra fields or note lines. */
 const LABELS = {
   cardholderName: 'カード名義', number: 'カード番号', verificationCode: 'セキュリティコード',
   expirationDate: '有効期限', pin: 'PIN', ssid: 'SSID', password: 'パスワード', privateKey: '秘密鍵',
@@ -38,10 +23,9 @@ const LABELS = {
   workPhoneNumber: '勤務先の電話', workEmail: '勤務先のメール', personalWebsite: '個人のウェブサイト',
   xHandle: 'X', linkedin: 'LinkedIn', reddit: 'Reddit', facebook: 'Facebook', yahoo: 'Yahoo', instagram: 'Instagram',
 };
-const label = (k) => (LABELS[k] ? L('proton.' + k, LABELS[k]) : k); // an unknown key keeps the file's own name
+const label = (k) => (LABELS[k] ? L('proton.' + k, LABELS[k]) : k);
 const SECRET_KEYS = new Set(['socialSecurityNumber', 'passportNumber', 'licenseNumber', 'verificationCode', 'pin', 'password', 'privateKey']);
 
-/** Proton identity content key → identity template key. */
 const IDENTITY = {
   fullName: 'fullName', firstName: 'firstName', middleName: 'middleName', lastName: 'lastName', email: 'email', phoneNumber: 'phone',
   birthdate: 'birthDate', company: 'company', organization: 'company', jobTitle: 'jobTitle',
@@ -49,13 +33,14 @@ const IDENTITY = {
   zipOrPostalCode: 'postalCode', countryOrRegion: 'country', website: 'website', personalWebsite: 'website',
 };
 const CARD_TYPES = { 2: 'Visa', 3: 'Mastercard', 4: 'American Express' };
+const TRASHED_STATE = 2;
+const COSE_CURVE_LABEL = -1;
+const COSE_PRIVATE_SCALAR_LABEL = -4;
+const COSE_CURVE_P256 = 1;
+const P256_SCALAR_LENGTH = 32;
+const URL_SEPARATOR = /\r?\n|,(?=\s*[a-z][a-z0-9+.-]*:\/\/)/i;
 const WIFI_SECURITY = { 1: 'wpa', 2: 'wpa2', 3: 'wpa3', 4: 'wep' };
 
-/**
- * Proton's custom-item templates: [Akari type, [templateKey | null, English name, Japanese name]].
- * null = no template key (the field is kept as an extra field). The Japanese names are Proton's
- * own translations (applications/pass/locales/ja_JP.json — "Address" really is "メールアドレス").
- */
 const TEMPLATES = [
   ['apiCredential', [['keyId', 'API Key', 'APIキー'], ['secret', 'Secret', '秘密'], ['expiry', 'Expiry Date', '有効期限'], [null, 'Permissions', '許可']]],
   ['database', [['host', 'Host', 'ホスト'], ['port', 'Port', 'ポート'], ['username', 'Username', 'ユーザー名'], ['password', 'Password', 'パスワード'], ['dbType', 'Database Type', 'データベース種類']]],
@@ -72,13 +57,11 @@ const TEMPLATES = [
 ];
 
 const norm = (s) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-// Names that occur in a single template only: at least one must be present to pick it.
 const NAME_COUNT = new Map();
 for (const [, fields] of TEMPLATES) {
   for (const n of new Set(fields.flatMap(([, ...names]) => names.map(norm)))) NAME_COUNT.set(n, (NAME_COUNT.get(n) || 0) + 1);
 }
 
-/** The template a custom item was made from, judged by its field names; null when unclear. */
 function detectTemplate(names) {
   const have = new Set(names.map(norm));
   let best = null, bestScore = 0, bestShare = 0;
@@ -99,19 +82,8 @@ function makeRun() {
   return { items: [], skipped: 0, converted: {}, badTotp: 0, badPasskeys: 0, attachments: 0 };
 }
 
-// --- passkeys (login content.passkeys) ------------------------------------------------------
-//
-// data.json writes a passkey's byte fields (content, credentialId, userHandle, userId) as
-// standard base64. `content` is Proton's own record (proton-pass-common, MessagePack with
-// named fields): { c: <inner record>, v: 1 }, the inner record being { key, cid, rid, uhd,
-// cnt, ext, un, udn } where `key` is the private COSE key { kty, alg, par: [[label, value]…] }.
-// Byte strings are arrays of numbers there; enum values are { t: <kind>, c: <value> }.
-// Akari signs with ES256 only, so a P-256 key is required; its private scalar (COSE -4)
-// becomes a PKCS8 key, the form the vault expects (the public key is derived from it).
-
 const MAX_PASSKEY_BYTES = 64 * 1024;
 
-/** Bytes from a Uint8Array, an array of numbers, or a (standard or URL-safe) base64 string. */
 function bytesOf(v) {
   if (v instanceof Uint8Array) return v;
   if (Array.isArray(v)) {
@@ -135,10 +107,8 @@ const nonEmpty = (...values) => {
   return null;
 };
 
-/** { t, c } enum value → c when its kind is `t`. */
 const tagged = (v, t) => (v && typeof v === 'object' && v.t === t ? v.c : undefined);
 
-/** COSE integer value { t: 'int', c: { inner: <16 little-endian bytes> } } → Number, else null. */
 function coseInt(v) {
   const inner = bytesOf(tagged(v, 'int')?.inner);
   if (!inner || !inner.length || inner.length > 16) return null;
@@ -148,15 +118,12 @@ function coseInt(v) {
   return n >= BigInt(Number.MIN_SAFE_INTEGER) && n <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(n) : null;
 }
 
-// PKCS8 PrivateKeyInfo for a P-256 key holding only the private scalar (RFC 5915 lets the
-// public key be left out): version 0, id-ecPublicKey + prime256v1, ECPrivateKey { 1, d }.
 const PKCS8_P256_HEAD = Uint8Array.of(
   0x30, 0x41, 0x02, 0x01, 0x00,
   0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
   0x04, 0x27, 0x30, 0x25, 0x02, 0x01, 0x01, 0x04, 0x20,
 );
 
-/** Proton's passkey record → the decoded inner record, or null. */
 function protonRecord(content) {
   const bytes = bytesOf(content);
   if (!bytes || !bytes.length || bytes.length > MAX_PASSKEY_BYTES) return null;
@@ -171,7 +138,6 @@ function protonRecord(content) {
   }
 }
 
-/** The P-256 private scalar of an ES256 COSE key, or null for any other kind of key. */
 function p256Scalar(key) {
   if (!key || typeof key !== 'object' || tagged(key.kty, 'assign') !== 'EC2') return null;
   if (key.alg != null && tagged(key.alg, 'assign') !== 'ES256') return null;
@@ -179,19 +145,17 @@ function p256Scalar(key) {
   for (const pair of Array.isArray(key.par) ? key.par : []) {
     if (!Array.isArray(pair) || pair.length !== 2) continue;
     const label = tagged(pair[0], 'int');
-    if (label === -1) crv = coseInt(pair[1]);
-    else if (label === -4) d = bytesOf(tagged(pair[1], 'bytes'));
+    if (label === COSE_CURVE_LABEL) crv = coseInt(pair[1]);
+    else if (label === COSE_PRIVATE_SCALAR_LABEL) d = bytesOf(tagged(pair[1], 'bytes'));
   }
-  return crv === 1 && d && d.length === 32 ? d : null;
+  return crv === COSE_CURVE_P256 && d && d.length === P256_SCALAR_LENGTH ? d : null;
 }
 
-/** One entry of content.passkeys → an ImportedItem passkey (model.js), or null. */
 function toPasskey(p, fallbackCreatedAt) {
   if (!p || typeof p !== 'object') return null;
   const rec = protonRecord(p.content);
   const d = rec && p256Scalar(rec.key);
   if (!d) return null;
-  // The ids inside the record are the ones Proton signed with; the outer copies are fallbacks.
   const credentialId = nonEmpty(rec.cid, p.credentialId);
   const userHandle = nonEmpty(rec.uhd, p.userHandle, p.userId);
   const rpId = str(rec.rid || p.rpId).toLowerCase();
@@ -207,7 +171,6 @@ function toPasskey(p, fallbackCreatedAt) {
   };
 }
 
-/** One extra field { fieldName, type, data: { content | totpUri | timestamp } } → entry. */
 function fieldEntry(f) {
   const d = f?.data || {};
   let v = d.content ?? d.totpUri ?? '';
@@ -219,7 +182,6 @@ function fieldEntry(f) {
   return { id: norm(name), label: name || L('field', '項目'), value: v == null ? '' : String(v), secret: f?.type === 'hidden' || f?.type === 'totp' };
 }
 
-/** Every extra field of an item: data.extraFields, content.sections[].sectionFields. */
 function allFields(d, c) {
   const list = Array.isArray(d.extraFields) ? [...d.extraFields] : [];
   for (const s of Array.isArray(c.sections) ? c.sections : []) {
@@ -228,12 +190,8 @@ function allFields(d, c) {
   return list.filter((f) => f && typeof f === 'object');
 }
 
-const MAX_DEPTH = 8; // item content is at most a few levels deep; ignore anything deeper
+const MAX_DEPTH = 8;
 
-/**
- * Flatten item content into [label, value] pairs: scalars (enum numbers/booleans are dropped),
- * extra-field arrays, and sections ({ sectionName, sectionFields }). Used for kinds kept as notes.
- */
 function flatten(obj, out, depth = 0) {
   if (depth > MAX_DEPTH) return out;
   for (const [k, v] of Object.entries(obj && typeof obj === 'object' ? obj : {})) {
@@ -323,12 +281,10 @@ function wifi(c, entries) {
   return b.item({ extra: entries.map(toExtra) });
 }
 
-/** A custom item: one of Proton's templates when recognisable, else a note with extra fields. */
 function custom(entries) {
   const tpl = detectTemplate(entries.map((e) => e.label));
   if (!tpl) return null;
   const [type, fields] = tpl;
-  // Matched by field name — a name, not an id, so a hidden value never lands in a visible field.
   const named = (...names) => ({ test: (label) => names.map(norm).includes(norm(label)) });
   const rules = [];
   for (const [key, ...names] of fields) {
@@ -337,7 +293,6 @@ function custom(entries) {
     if (rule) rule.push(named(...names));
     else rules.push([key, named(...names)]);
   }
-  // An API credential with a single key keeps it as the secret, not as the key id.
   if (type === 'apiCredential' && !entries.some((e) => ['secret', '秘密'].includes(e.id) && str(e.value))) {
     rules.unshift(['secret', named('API Key', 'APIキー')]);
   }
@@ -353,7 +308,7 @@ function fromJson(run, json) {
   }
   for (const vault of Object.values(json.vaults)) {
     for (const it of Array.isArray(vault?.items) ? vault.items : []) {
-      if (!it || typeof it !== 'object' || !it.data || it.state === 2) { run.skipped++; continue; }
+      if (!it || typeof it !== 'object' || !it.data || it.state === TRASHED_STATE) { run.skipped++; continue; }
       const d = it.data;
       const m = d.metadata || {};
       const c = d.content && typeof d.content === 'object' ? d.content : {};
@@ -394,7 +349,6 @@ function fromJson(run, json) {
         run.items.push({ ...base, ...item });
         continue;
       }
-      // Aliases, custom items of no known template, and item types this importer does not know.
       const kind = KINDS[d.type] || 'その他のアイテム';
       run.converted[kind] = (run.converted[kind] || 0) + 1;
       if (d.type === 'alias' || d.type === 'custom') {
@@ -416,9 +370,7 @@ function fromCsv(run, text) {
   for (const rec of records) {
     const type = str(rec.type);
     const base = { title: str(rec.name), createdAt: toMs(rec.createtime), updatedAt: toMs(rec.modifytime) };
-    // Several URLs are joined in one cell; split only where the next part starts with a scheme.
-    // (Linear pattern: no \s* on both sides of an alternative, which backtracks quadratically.)
-    const urls = str(rec.url).split(/\r?\n|,(?=\s*[a-z][a-z0-9+.-]*:\/\/)/i).map(str);
+    const urls = str(rec.url).split(URL_SEPARATOR).map(str);
     const email = str(rec.email), user = str(rec.username);
     if (type === 'login' || !type) {
       pushLogin(run, {
@@ -428,7 +380,6 @@ function fromCsv(run, text) {
     } else if (type === 'note') {
       run.items.push({ ...base, type: 'note', note: rec.note });
     } else {
-      // The CSV carries no card / identity / … fields, only what fits the login columns.
       const kind = KINDS[type] || 'その他のアイテム';
       run.converted[kind] = (run.converted[kind] || 0) + 1;
       const pairs = [[label('url'), rec.url], [label('email'), email], [label('username'), user], [label('password'), rec.password], [label('totp'), rec.totp]];
@@ -437,7 +388,6 @@ function fromCsv(run, text) {
   }
 }
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file, ctx = {}) {
   const run = makeRun();
   if (isZip(file.bytes)) {

@@ -12,8 +12,8 @@ test('registrableDomain', () => {
   assert.equal(registrableDomain('localhost'), 'localhost');
   assert.equal(registrableDomain('co.jp'), null);
   assert.equal(registrableDomain('intranet.unknown-tld-xyz'), null);
-  assert.equal(registrableDomain('www.ck'), 'www.ck'); // PSL exception rule
-  assert.equal(registrableDomain('a.b.ck'), 'a.b.ck'); // PSL wildcard rule
+  assert.equal(registrableDomain('www.ck'), 'www.ck', 'PSL exception rule');
+  assert.equal(registrableDomain('a.b.ck'), 'a.b.ck', 'PSL wildcard rule');
   assert.equal(registrableDomain('city.shibuya.tokyo.jp'), 'city.shibuya.tokyo.jp');
 });
 

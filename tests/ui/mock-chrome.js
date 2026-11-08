@@ -1,8 +1,3 @@
-// Fake `chrome` for previewing the popup outside the extension (tests/ui/preview.html,
-// tests/ui/screenshot.mjs). Classic script — load it before popup.js.
-// Implements the PLAN §3 messages the popup sends, over the design's seed data.
-// Config: window.__AKARI_MOCK__ = { state: 'unlocked'|'locked'|'setup', empty, tabUrl, qrDataUrl, delay, lang, uiLang }
-// or the same keys as query parameters of the page URL.
 (function () {
   'use strict';
   var params = new URLSearchParams(location.search);
@@ -11,8 +6,8 @@
     empty: params.get('empty') === '1',
     tabUrl: params.get('tab') || 'https://github.com/login',
     delay: params.has('delay') ? Number(params.get('delay')) : 1,
-    lang: params.get('lang') || 'auto', // the 言語 setting
-    uiLang: params.get('uiLang') || 'ja', // what chrome.i18n.getUILanguage() answers
+    lang: params.get('lang') || 'auto',
+    uiLang: params.get('uiLang') || 'ja',
     qrDataUrl: null,
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
@@ -35,7 +30,6 @@
     return Object.assign(it, x || {});
   }
   var T = function (secret, issuer, label) { return { secret: secret, algorithm: 'SHA1', digits: 6, period: 30, issuer: issuer, label: label }; };
-  // every other item type (shared/item-types.js): values live in `fields`
   function X(id, type, vault, title, hue, fields, x) {
     return Object.assign({
       id: id, type: type, vault: vault, title: title, note: '', fav: false, hue: hue, fields: fields, extra: [],
@@ -52,10 +46,9 @@
     'NyZWVuc2hvdHMAAAAAAAAAAAAAAEBkdW1teS1wcml2YXRlLWtleS1ub3QtYS1yZWFsLWtl',
     'eQAAAA9oYXJ1a2FAbW9yaS1tYnABAgMEBQ==',
     '-----END OPENSSH PRIVATE KEY-----',
-    '', // the file's final newline
+    '',
   ].join('\n');
 
-  // Component.seed() from design/Akari Terminal.dc.html, mapped onto the PLAN §2 item model.
   function seed() {
     return [
       L('github', 'work', 'github.com', 'haruka.dev@example.com', 'v8#Lq2!mTz9@rWk4pE', 285, { fav: true, totp: T('JBSWY3DPEHPK3PXP', 'GitHub', 'haruka.dev@example.com'), url: 'https://github.com/login', lastUsedAt: today(2 * HOUR), createdAt: date('2023/03/12'), updatedAt: date('2025/09/18') }),
@@ -82,7 +75,6 @@
       L('dropbox', 'family', 'dropbox.com', 'family@sato-home.jp', 'Box!Photos#2019', 240, { lastUsedAt: now - 35 * DAY }),
       { id: 'wifi', type: 'note', vault: 'family', title: '自宅の Wi-Fi', url: '', username: '', password: '', totp: null, note: 'SSID: sato-home-5G\nパスワード: kotatsu-mikan-2024\nルーターの管理画面は 192.168.0.1', fav: false, hue: 180, passkeys: [], createdAt: date('2024/12/01'), updatedAt: now - 40 * DAY, passwordUpdatedAt: null, lastUsedAt: null },
 
-      // ── the other item types ──
       X('card-jcb', 'card', 'personal', 'JCB カード W', 160, {
         cardholder: 'HARUKA SATO', number: '3540618291742302', expiry: '2029-08', cvv: '418', pin: '2580',
       }, {
@@ -156,10 +148,9 @@
     master: 'akari-master',
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
     items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
-    trash: [], // the ゴミ箱 (lib/vault/trash.js): items with deletedAt, newest first
+    trash: [],
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
   };
-  // cfg.seedPatch: { [id]: partial item } — `fields` is merged, other keys replace (edge cases for tests)
   Object.keys(cfg.seedPatch || {}).forEach(function (id) {
     var it = db.items.find(function (x) { return x.id === id; });
     if (!it) return;
@@ -172,7 +163,6 @@
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms * cfg.delay); }); };
   function needUnlocked() { if (db.locked) throw AkErr('LOCKED', 'Vault is locked'); }
-  // the ゴミ箱, as lib/vault/trash.js keeps it
   function toTrash(ids) {
     var gone = {};
     ids.forEach(function (id) { gone[id] = true; });
@@ -322,7 +312,6 @@
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
       return { count: 2 };
     },
-    // items parsed in the popup from another manager's export (PLAN §7.3)
     'vault/importItems': async function (m) {
       needUnlocked(); await sleep(700);
       if (!Array.isArray(m.items) || !db.vaults.some(function (v) { return v.id === m.vault; })) throw AkErr('INVALID');
@@ -365,7 +354,6 @@
       }
       throw AkErr('INVALID');
     },
-    // Vaults: the same rules as lib/vault.js (createVaultIn / updateVaultIn / deleteVaultIn).
     'vault/createVault': async function (m) {
       needUnlocked(); await sleep(200);
       var name = vaultName(m.name, null);
@@ -400,7 +388,6 @@
     'settings/get': function () { return clone(db.settings); },
     'settings/set': async function (m) {
       var patch = m.patch || {};
-      // "ロックしない" (-1) keeps the key on the device: the master password is asked again (mock: anything but "wrong").
       if (patch.autoLockMinutes === -1 && db.settings.autoLockMinutes !== -1) {
         await sleep(400);
         if (!m.masterPassword || m.masterPassword === 'wrong') throw AkErr('BAD_PASSWORD', 'Wrong master password');
@@ -426,7 +413,6 @@
     },
   };
 
-  /** lib/vault.js setLoginPassword: the replaced password goes to the history (newest first, max 10). */
   function setPassword(item, next, t) {
     var prev = item.password || '';
     if (item.pendingPassword && item.pendingPassword.password === next) delete item.pendingPassword;
@@ -489,6 +475,5 @@
   } catch (e) {
     window.chrome = chromeMock;
   }
-  // window.close() would end the preview; log instead.
   window.close = function () { console.log('[mock] window.close()'); };
 })();

@@ -1,6 +1,3 @@
-// Screenshots of the real popup (extension/src/popup/popup.html) driven by the chrome mock.
-// Output: tests/ui/screenshots/popup-*.png. Usage: node tests/ui/screenshot.mjs [filter]
-
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -12,7 +9,6 @@ import { encryptPgp, decryptPgp } from '../../extension/src/lib/pgp.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 
-// A Chrome password export: the first row is already in the seed vault (github), so it is a duplicate.
 const CHROME_CSV = [
   'name,url,username,password,note',
   'github.com,https://github.com/login,haruka.dev@example.com,v8#Lq2!mTz9@rWk4pE,',
@@ -27,7 +23,6 @@ const BW_PROTECTED = JSON.stringify({
   encKeyValidation_DO_NOT_EDIT: '2.abc|def|ghi', data: '2.abc|def|ghi',
 });
 
-/** Settings sheet → インポート / エクスポート page. */
 async function openSheetPage(page, opener) {
   await page.click('#menuBtn');
   await page.click('#openSettings');
@@ -36,8 +31,6 @@ async function openSheetPage(page, opener) {
   await page.click(opener);
 }
 const OUT = join(HERE, 'screenshots');
-// The mock's tab is github.com/login, so the popup opens searching for "github.com".
-// Scenarios that need the whole list open it on a new tab instead.
 const NEW_TAB = 'chrome://newtab/';
 const MOCK = join(HERE, 'mock-chrome.js');
 const only = process.argv[2] || '';
@@ -63,14 +56,11 @@ async function open(cfg = {}, { reducedMotion = 'no-preference' } = {}) {
 
 const shot = (page, name) => page.screenshot({ path: join(OUT, `popup-${name}.png`) });
 const settle = (page, ms = 1100) => page.waitForTimeout(ms);
-/** Let an earlier toast finish so it does not cover the next screenshot. */
-// toasts stay 3–8 s (views/toast.js) and hold while hovered: move the pointer off, then wait
 const quiet = async (page) => {
   await page.mouse.move(2, 2);
   await page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 9000 });
 };
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
-/** Pick what the list shows in the 表示 menu: 'all' | 'recent' | 'fav' | a type id. */
 async function view(page, id) {
   await page.click('#typeBtn');
   await page.waitForSelector('#typeMenu.open');
@@ -89,7 +79,6 @@ const scenarios = {
     expect(await page.locator('#vaultLabel').textContent() === 'すべて', 'vault label');
     expect(await page.locator('.ticks span').count() === 30, '30 TOTP ticks');
     expect(await page.locator('.pw-col .segs span').count() === 12, '12 meter segments');
-    // reveal + copy
     await page.click('.pw-btns .ibtn');
     await settle(page, 700);
     await shot(page, 'revealed');
@@ -114,8 +103,7 @@ const scenarios = {
     await shot(page, 'generator-phrase');
     expect(/--words \d+ --dict ja-romaji/.test(await page.locator('#genCmd').textContent()), 'phrase CLI line');
     await page.click('#modeRandom');
-    await settle(page, 700); // let the scramble finish before reading the password
-    // 強化する: the site still has the old password. The sheet says so; the new one is held.
+    await settle(page, 700);
     expect(await page.locator('#genSite').isVisible(), 'warns that the site is not changed');
     expect(await page.locator('#genApply').textContent() === 'サイトで変更する', 'primary is the site change');
     expect(await page.locator('#genAkariOnly').isVisible(), 'Akari だけ更新 offered');
@@ -134,7 +122,6 @@ const scenarios = {
     expect(JSON.stringify(opened) === JSON.stringify(['https://amazon.co.jp/']), 'the saved URL opens: ' + opened.join());
     expect(!(await page.locator('.weak').count()), 'the banner replaces the warning');
 
-    // 確定する: the held password becomes current, the old one joins the history.
     await quiet(page);
     await page.click('.pend .btn-mini.primary');
     await page.waitForSelector('.pend', { state: 'detached' });
@@ -144,20 +131,18 @@ const scenarios = {
     expect(amazon.password === generated && !amazon.pendingPassword, 'confirmed');
     expect(amazon.passwordHistory.map((h) => h.password).join() === 'amz2024,amazon2016,Hanako-0214', 'old password first in the history');
 
-    // 以前のパスワード: folded; show, then put the old one back (the current one is kept too).
     await quiet(page);
     await page.locator('.sect-btn').scrollIntoViewIfNeeded();
     await page.click('.sect-btn');
-    await page.locator('.hist-row').first().locator('.ibtn').first().click(); // show
+    await page.locator('.hist-row').first().locator('.ibtn').first().click();
     expect(await page.locator('.hist-row').first().locator('.hist-pw').textContent() === 'amz2024', 'revealed');
     await settle(page, 400);
     await shot(page, 'history');
-    await page.locator('.hist-row').first().locator('.btn-mini').click(); // 戻す
+    await page.locator('.hist-row').first().locator('.btn-mini').click();
     await page.waitForSelector('#toast.on');
     amazon = await stored();
     expect(amazon.password === 'amz2024' && amazon.passwordHistory[0].password === generated, 'restored, the replaced one kept');
 
-    // 取り消す asks first, then drops only the held password.
     await quiet(page);
     await page.click('.weak .btn-fix');
     await page.waitForSelector('#genSheet.open');
@@ -172,7 +157,6 @@ const scenarios = {
     amazon = await stored();
     expect(amazon.password === 'amz2024' && !amazon.pendingPassword, 'discarded, current unchanged');
 
-    // Akari だけ更新 (the site was changed by hand): at once, the old one in the history.
     await quiet(page);
     await page.click('.weak .btn-fix');
     await page.waitForSelector('#genSheet.open');
@@ -187,7 +171,6 @@ const scenarios = {
   async health() {
     const { page, ctx } = await open({ name: 'health', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
-    // the vault menu only switches vaults; パスワード診断 is in ≡, with how many need action
     await page.click('#vaultBtn');
     await page.waitForSelector('#vaultMenu.open');
     expect(await page.locator('#vaultMenu #openHealth, #vaultMenu #openSettings, #vaultMenu #manageVaults').count() === 0, 'vault menu: vaults only');
@@ -201,35 +184,29 @@ const scenarios = {
     await page.waitForSelector('#healthSheet.open');
     await settle(page, 900);
     await shot(page, 'health');
-    // a screen of its own: the main list behind it is unchanged
     expect(await page.locator('#typeLabel').textContent() === 'すべて', 'the list view did not change');
     expect(await page.locator('.body').evaluate((el) => el.inert), 'the main view is inert behind the screen');
     const tabCount = async (k) => parseInt(await page.locator(`#hs-tab-${k} .hs-n`).textContent(), 10);
     const rows = () => page.locator('#hsList .hs-row');
     const selected = () => page.locator('#hsList .hs-row[aria-selected="true"]').getAttribute('data-id');
-    // 要対応 first ("14/14": needing action / logins), the same number as in the ≡ menu
     const action = await tabCount('action');
     expect(await page.locator('#hs-tab-action').getAttribute('aria-selected') === 'true', '要対応 tab first');
     expect(action > 0 && action === menuCount && action === await rows().count(), `要対応 ${action} = ≡ ${menuCount} = rows`);
     expect(await page.evaluate(() => document.activeElement?.id) === 'hsList', 'the list has the keyboard');
-    // ↓ moves the selection and the pane follows
     const second = await rows().nth(1).getAttribute('data-id');
     await page.keyboard.press('ArrowDown');
     expect(await selected() === second, '↓ selects the next login');
     expect(await page.locator('.hs-title').textContent() === await rows().nth(1).locator('.row-title').textContent(), 'pane shows it');
-    // a weak login lists every issue and offers 強化する
     await page.click('#hsList .hs-row[data-id="amazon"]');
     await settle(page, 400);
     expect(await page.locator('.hs-issues li[data-issue="weak"]').count() === 1, 'amazon: weak listed');
     expect(await page.locator('.hs-acts .btn-fix').isVisible(), '強化する offered');
     await shot(page, 'health-detail');
-    // tabs: → from 要対応 goes to 弱い, which lists only weak logins
     await page.focus('#hs-tab-action');
     await page.keyboard.press('ArrowRight');
     await settle(page, 300);
     expect(await page.locator('#hs-tab-weak').getAttribute('aria-selected') === 'true', '→ selects 弱い');
     expect(await rows().count() === await tabCount('weak'), '弱い rows');
-    // 2FA なし → 2FA を追加 opens the editor in the main view; saved, the login leaves that tab
     await page.click('#hs-tab-no2fa');
     await settle(page, 400);
     const no2fa = await tabCount('no2fa');
@@ -250,13 +227,11 @@ const scenarios = {
     await settle(page, 500);
     expect(await page.locator('#hs-tab-no2fa').getAttribute('aria-selected') === 'true', 'the tab is kept');
     expect(await tabCount('no2fa') === no2fa - 1 && await page.locator(`#hsList .hs-row[data-id="${fixed}"]`).count() === 0, 'fixed login gone from 2FA なし');
-    // Esc closes the screen and gives the keyboard back to ≡; nothing of it stays in the DOM
     await page.keyboard.press('Escape');
     await settle(page, 400);
     expect(await page.locator('#healthSheet.open').count() === 0, 'Esc closes');
     expect(await page.evaluate(() => document.activeElement?.id) === 'menuBtn', 'focus back on ≡');
     expect(await page.locator('#hsList .hs-row').count() === 0, 'rows dropped on close');
-    // 強化する hands the login to the generator in the main view
     await page.click('#menuBtn');
     await page.click('#openHealth');
     await page.waitForSelector('#healthSheet.open');
@@ -291,7 +266,7 @@ const scenarios = {
     await page.click('#plusBtn');
     await settle(page, 500);
     await shot(page, 'plusmenu');
-    await page.keyboard.press('g'); // the menu's G shortcut
+    await page.keyboard.press('g');
     await page.waitForSelector('#genSheet.open');
     await page.keyboard.press('Escape');
     await settle(page, 500);
@@ -341,7 +316,6 @@ const scenarios = {
     await ctx.close();
   },
   async websites() {
-    // An imported login keeps its 2nd, 3rd… URL as extra fields labelled "URL" (Proton Pass, Bitwarden…).
     const { page, ctx } = await open({
       name: 'websites',
       tabUrl: NEW_TAB,
@@ -351,9 +325,9 @@ const scenarios = {
           extra: [
             { label: 'URL', value: 'https://myaccount.google.com/', secret: false },
             { label: 'URL', value: 'https://accounts.google.com/', secret: false },
-            { label: 'URL', value: 'https://myaccount.google.com/', secret: false }, // a duplicate shows once
-            { label: 'URL', value: 'androidapp://com.google.android.gm', secret: false }, // not a web page: text, no link
-            { label: '管理画面', value: 'https://admin.google.com/', secret: false }, // another field with an address: a link there
+            { label: 'URL', value: 'https://myaccount.google.com/', secret: false },
+            { label: 'URL', value: 'androidapp://com.google.android.gm', secret: false },
+            { label: '管理画面', value: 'https://admin.google.com/', secret: false },
             { label: '合言葉', value: 'kumo', secret: true },
           ],
         },
@@ -394,7 +368,6 @@ const scenarios = {
     await settle(page, 300);
     await shot(page, 'editor-discard');
     await page.click('.ed-confirm .btn-mini.danger');
-    // new login with a QR on the "tab"
     const uri = 'otpauth://totp/Example:haruka%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example';
     await page.evaluate((u) => { window.__AKARI_MOCK__.qrDataUrl = u; }, await QRCode.toDataURL(uri, { margin: 4, width: 320 }));
     await page.click('#plusBtn');
@@ -432,7 +405,6 @@ const scenarios = {
     expect(/ゴミ箱に移しますか/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'the question says where it goes');
     await ctx.close();
   },
-  // ゴミ箱: a delete can be undone from the toast (button or Ctrl+Z) and from the ゴミ箱 sheet
   async trash() {
     const { page, ctx } = await open({ name: 'trash', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
@@ -452,7 +424,6 @@ const scenarios = {
     expect(!(await rowIds()).includes('wifi'), 'gone from the list');
     await settle(page, 400);
     await shot(page, 'trash-toast');
-    // hovering holds the toast past its 8 s
     await page.hover('#toast');
     await page.waitForTimeout(8600);
     expect(await page.locator('#toast.on').count() === 1, 'hover holds the toast');
@@ -462,7 +433,6 @@ const scenarios = {
     expect(/を元に戻しました/.test(await page.locator('#toastMsg').textContent()), 'and says so');
     await quiet(page);
 
-    // Ctrl+Z while the toast offers it
     await del('wifi');
     await page.locator('#list').focus();
     await page.keyboard.press('Control+z');
@@ -470,7 +440,6 @@ const scenarios = {
     expect(await page.evaluate(() => window.__AKARI_DB__.trash.length) === 0, 'Ctrl+Z restores');
     await quiet(page);
 
-    // the sheet: restore one, delete one for good, empty the rest
     await del('wifi');
     await quiet(page);
     await page.click('#menuBtn');
@@ -533,7 +502,6 @@ const scenarios = {
     await shot(page, 'settings-password');
     await page.click('#pwToggle');
 
-    // 自動ロック「しない」: asks for the master password first and says what it means
     const lockChip = (v) => page.locator(`[data-setting="autoLockMinutes"] [data-value="${v}"]`);
     await lockChip(-1).click();
     expect(await page.locator('#neverForm').isVisible(), 'しない opens the confirmation');
@@ -571,7 +539,6 @@ const scenarios = {
     expect(await page.locator('#setTitle').textContent() === '保管庫', 'page title');
     await shot(page, 'vaults');
 
-    // add: a duplicate name is refused, then 趣味 in purple
     await page.click('#vmAdd');
     await page.fill('#vmName', ' 仕事 ');
     await page.click('#vmSubmit');
@@ -585,14 +552,12 @@ const scenarios = {
     await page.waitForSelector('#vaultsPage .vm-row:has-text("趣味")');
     expect(await page.locator('#vaultsPage .vm-row').count() === 4, 'created');
 
-    // rename 家族
     await page.click('#vaultsPage .vm-row:has-text("家族") [data-act="edit"]');
     expect(await page.inputValue('#vmName') === '家族', 'edit form starts from the name');
     await page.fill('#vmName', '家族・親戚');
     await page.click('#vmSubmit');
     await page.waitForSelector('#vaultsPage .vm-row:has-text("家族・親戚")');
 
-    // delete 仕事, moving its items to 趣味
     const work = await rowCount('仕事');
     expect(work > 0, 'work has items');
     await page.click('#vaultsPage .vm-row:has-text("仕事") [data-act="delete"]');
@@ -606,7 +571,6 @@ const scenarios = {
     expect(await rowCount('趣味') === work, 'items moved to 趣味');
     expect(await allCount() === total, 'nothing lost');
 
-    // delete 家族・親戚 together with its items
     const family = await rowCount('家族・親戚');
     await page.click('#vaultsPage .vm-row:has-text("家族・親戚") [data-act="delete"]');
     await page.click('.vm-confirm .vault-chip.vm-purge');
@@ -634,7 +598,6 @@ const scenarios = {
     expect(await page.locator('.src').count() === 20, '19 sources + Akari backup');
     expect(await page.locator('#setTrail li.cur').textContent() === '読み込み元', 'trail on step 1');
     expect((await page.locator('.io-lead').textContent()).startsWith('別のパスワードマネージャーから移行するには'), 'lead text');
-    // keyboard: the grid is one tab stop, arrows move inside it
     expect(await page.evaluate(() => document.activeElement?.dataset.id) === 'akari', 'first source focused');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowDown');
@@ -643,7 +606,7 @@ const scenarios = {
     await page.keyboard.press('ArrowDown');
     expect(await page.evaluate(() => document.activeElement?.dataset.id) === 'brave', 'Home + ArrowDown');
     await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter'); // Chrome
+    await page.keyboard.press('Enter');
     await page.waitForSelector('.drop');
     expect(await page.locator('#impFile').getAttribute('accept') === '.csv', 'file picker accepts the source extensions');
     await settle(page, 500);
@@ -692,14 +655,12 @@ const scenarios = {
     await page.keyboard.press('Enter');
     await page.waitForSelector('.io-stats');
     expect((await page.locator('.io-cmd-text').textContent()).includes('--from chrome'), 'detected Chrome inside the PGP file');
-    // Bitwarden's password-protected JSON asks for a パスワード instead
     await page.click('#setBack');
     await page.click('#setBack');
     await page.click('.src[data-id="bitwarden"]');
     await page.setInputFiles('#impFile', { name: 'bitwarden_encrypted_export.json', mimeType: 'application/json', buffer: Buffer.from(BW_PROTECTED) });
     await page.waitForSelector('.io-pass:not([hidden])');
     expect(await page.locator('label[for="impPw"]').textContent() === 'パスワード', 'Bitwarden asks for a password');
-    // Bitwarden export with cards / identities / passkeys → notes + warnings
     await page.click('#setBack');
     await page.click('.src[data-id="bitwarden"]');
     await page.setInputFiles('#impFile', { name: 'bitwarden_export.json', mimeType: 'application/json', buffer: await readFile(join(ROOT, 'tests/fixtures/import/bitwarden/export.json')) });
@@ -727,12 +688,10 @@ const scenarios = {
     expect(await drop('x.csv', CHROME_CSV, 'over'), 'dragover highlights the sheet');
     await settle(page, 300);
     await shot(page, 'import-drop');
-    // dropped on the source list: the format is detected (Chrome CSV) and parsed
     expect(await drop('passwords.csv', CHROME_CSV, 'drop'), 'drop handled (no navigation)');
     await page.waitForSelector('.io-stats');
     expect((await page.locator('.io-cmd-text').textContent()).includes('--from chrome passwords.csv'), 'detected Chrome');
     expect(!(await page.locator('#setSheet').getAttribute('class')).includes('dragging'), 'drag highlight cleared');
-    // dropped on the file step of a chosen source
     await page.click('#setBack');
     await page.waitForSelector('.drop');
     expect(await drop('again.csv', CHROME_CSV, 'drop'), 'drop on the file step');
@@ -770,7 +729,7 @@ const scenarios = {
     const [backup] = await Promise.all([page.waitForEvent('download'), page.click('#exportPage .btn-primary')]);
     expect(/^akari-backup-\d{8}\.json$/.test(backup.suggestedFilename()), 'backup download name');
     await page.focus('.fmt[data-fmt="akari"]');
-    await page.keyboard.press('ArrowDown'); // CSV
+    await page.keyboard.press('ArrowDown');
     expect(await page.locator('.fmt[aria-checked="true"]').getAttribute('data-fmt') === 'csv', 'arrow selects CSV');
     await settle(page, 400);
     await shot(page, 'export-plain');
@@ -781,7 +740,7 @@ const scenarios = {
     await page.keyboard.press('Enter');
     await page.waitForSelector('#exportPage .field-err:has-text("マスターパスワードが違います")');
     await page.fill('#expMaster', 'akari-master');
-    await page.click('.fmt[data-fmt="pgp"]'); // PGP 暗号化, CSV inside by default
+    await page.click('.fmt[data-fmt="pgp"]');
     expect(await page.inputValue('#expMaster') === 'akari-master', 'the master password stays when the format changes');
     expect(await page.locator('#expInner [aria-checked="true"]').getAttribute('data-inner') === 'csv', 'CSV inside by default');
     await page.fill('#expPass', 'kotatsu-mikan-2026');
@@ -850,7 +809,6 @@ const scenarios = {
     await ctx.close();
   },
   async 'site-search'() {
-    // Opens searching for the tab's site, autofill card included; Esc shows everything.
     const { page, ctx } = await open({ name: 'site-search' });
     await page.waitForSelector('.row');
     await settle(page);
@@ -865,14 +823,12 @@ const scenarios = {
     expect(await page.locator('.row').count() > 1, 'whole list after Esc');
     await ctx.close();
 
-    // A subdomain searches for its registrable domain: mail.google.com finds the accounts.google.com login.
     const sub = await open({ name: 'site-search-sub', tabUrl: 'https://mail.google.com/mail/u/0/' });
     await sub.page.waitForSelector('.row');
     expect(await sub.page.inputValue('#search') === 'google.com', 'registrable domain: ' + await sub.page.inputValue('#search'));
     expect(await sub.page.locator('.row[data-id="google"]').count() === 1, 'google login listed');
     await sub.ctx.close();
 
-    // Nothing saved for the site: the search stays empty and the whole list shows.
     const none = await open({ name: 'site-search-none', tabUrl: 'https://kotatsu-mikan.example/' });
     await none.page.waitForSelector('.row');
     await settle(none.page, 300);
@@ -881,7 +837,6 @@ const scenarios = {
     await none.ctx.close();
   },
   async pick() {
-    // Select several rows (click, Shift+click range, toggle), confirm, delete in one go; Ctrl+A / Esc.
     const { page, ctx } = await open({ name: 'pick', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
     await settle(page, 600);
@@ -899,12 +854,12 @@ const scenarios = {
     await shot(page, 'pick-empty');
 
     await page.click(`.row[data-id="${ids[0]}"]`);
-    await page.click(`.row[data-id="${ids[3]}"]`, { modifiers: ['Shift'] }); // range 0..3
-    await page.click(`.row[data-id="${ids[1]}"]`); // uncheck one
+    await page.click(`.row[data-id="${ids[3]}"]`, { modifiers: ['Shift'] });
+    await page.click(`.row[data-id="${ids[1]}"]`);
     expect(JSON.stringify(await picked()) === JSON.stringify([ids[0], ids[2], ids[3]]), 'range then toggle: ' + (await picked()).join());
     expect(await paneN() === 3, 'pane count');
     expect(await page.locator('.detail .pick-item').count() === 3, 'pane lists the checked items');
-    await page.keyboard.press('Enter'); // no password copy in selection mode
+    await page.keyboard.press('Enter');
     await settle(page, 300);
     expect(!(await page.locator('#toast.on').count()), 'Enter copied something in selection mode');
     await settle(page, 400);
@@ -914,7 +869,7 @@ const scenarios = {
     await page.waitForSelector('.pick-confirm');
     await settle(page, 300);
     await shot(page, 'pick-confirm');
-    await page.keyboard.press('Escape'); // back from the question, still selecting
+    await page.keyboard.press('Escape');
     expect(!(await page.locator('.pick-confirm').count()) && (await paneN()) === 3, 'Esc leaves only the question');
 
     await page.click('.pick-foot .btn-mini.danger');
@@ -930,14 +885,12 @@ const scenarios = {
     await shot(page, 'pick-deleted');
     await quiet(page);
 
-    // Ctrl+A: everything visible; Esc: out of selection mode, nothing checked.
     await page.locator('#list').focus();
     await page.keyboard.press('Control+a');
     await page.waitForSelector('#app[data-picking]');
     expect(await paneN() === total - 3 && (await picked()).length === total - 3, 'Ctrl+A checks every row');
-    await page.click('.pick-head .btn-line:nth-of-type(2)'); // 解除
+    await page.click('.pick-head .btn-line:nth-of-type(2)');
     expect((await picked()).length === 0, 'none');
-    // A filter change unchecks rows that leave the view.
     await page.keyboard.press('Control+a');
     await view(page, 'fav');
     await settle(page, 300);
@@ -947,14 +900,13 @@ const scenarios = {
     await page.waitForFunction(() => !document.getElementById('app').hasAttribute('data-picking'));
     expect(!(await page.locator('.row-check').count()), 'checks gone after Esc');
 
-    // Ctrl+click from the normal view starts selection mode with that row.
     await view(page, 'all');
     await settle(page, 300);
     const first = await page.$eval('.row', (r) => r.dataset.id);
     await page.click(`.row[data-id="${first}"]`, { modifiers: ['Control'] });
     await page.waitForSelector('#app[data-picking]');
     expect(JSON.stringify(await picked()) === JSON.stringify([first]), 'Ctrl+click picks one');
-    await page.click('.pick-foot .btn-mini:not(.danger)'); // やめる
+    await page.click('.pick-foot .btn-mini:not(.danger)');
     await page.waitForFunction(() => !document.getElementById('app').hasAttribute('data-picking'));
     await ctx.close();
   },
@@ -966,7 +918,7 @@ const scenarios = {
       document.getElementById('search').dispatchEvent(new KeyboardEvent('keydown', { key: k, isComposing: c, keyCode: c ? 229 : 0, bubbles: true }));
     }, [key, isComposing]);
     await page.focus('#search');
-    await page.fill('#search', 'ｇｉｔ'); // fullwidth: NFKC → "git"
+    await page.fill('#search', 'ｇｉｔ');
     await settle(page, 300);
     const rows = await page.locator('.row').count();
     const mark = await page.locator('.row .row-title mark').first().textContent();
@@ -979,7 +931,7 @@ const scenarios = {
     await fire('Escape', false);
     await settle(page, 200);
     if (await page.inputValue('#search') !== '') throw new Error('Esc did not clear the query');
-    await page.fill('#search', 'ｽﾀｼﾞｵ'); // no hit, but must not throw
+    await page.fill('#search', 'ｽﾀｼﾞｵ');
     await page.fill('#search', 'STUDIO-MORI');
     await settle(page, 300);
     await shot(page, 'search-nfkc');
@@ -999,7 +951,6 @@ const scenarios = {
     expect(await row('figma').locator('.tag').count() === 0, 'login without TOTP: no tag');
     expect(await row('wifi').locator('.row-user').textContent() === 'セキュアノート', 'a note shows its type, never its text');
     expect(await row('card-jcb').locator('.row-weak').count() === 0, 'no weak dot outside logins');
-    // search: non-secret field values match, secret values never do
     await page.fill('#search', 'StudioMori-5G');
     await settle(page, 300);
     expect((await page.locator('.row').evaluateAll((r) => r.map((x) => x.dataset.id))).join() === 'wifi-office', 'ssid is searchable');
@@ -1008,11 +959,10 @@ const scenarios = {
       await settle(page, 150);
       expect(await page.locator('.row').count() === 0, 'secret value matched the search: ' + secret);
     }
-    await page.fill('#search', '1234-5678-9012'); // a non-secret extra field (aws アカウント ID)
+    await page.fill('#search', '1234-5678-9012');
     await settle(page, 200);
     expect(await page.locator('.row[data-id="aws"]').count() === 1, 'non-secret extra fields are searchable');
     await page.keyboard.press('Escape');
-    // 種類 menu: grouped, with counts, keyboard reachable
     await page.click('#typeBtn');
     await page.waitForSelector('#typeMenu.open');
     await settle(page, 500);
@@ -1036,11 +986,10 @@ const scenarios = {
     expect(await page.locator('#typeBtn.on').count() === 1, 'accent while filtered');
     expect(await page.locator('#list .row').count() === 2, 'two cards listed');
     expect(await page.locator('.af').count() === 0, 'no autofill card while filtering cards');
-    await view(page, 'fav'); // one view at a time: お気に入り replaces the type
+    await view(page, 'fav');
     await settle(page, 400);
     expect(await page.locator('#typeLabel').textContent() === 'お気に入り' && (await page.locator('.row').count()) === 4, 'お気に入り replaces クレジットカード');
     await view(page, 'card');
-    // no cards in 家族: the empty state offers a new card in that vault
     await page.click('#vaultBtn');
     await page.click('#vaultItems .menu-item:has-text("家族")');
     await settle(page, 600);
@@ -1085,7 +1034,7 @@ const scenarios = {
     expect(await page.locator('#plusMenu.open').count() === 1, 'Esc on その他 goes back instead of closing');
     expect(await focused() === 'newOther', 'back on その他');
     await shot(page, 'plusmenu-keys');
-    await page.keyboard.press('n'); // N: secure note
+    await page.keyboard.press('n');
     await page.waitForSelector('.ed-form[data-type="note"]');
     await page.click('.ed-foot .btn-line');
     await page.click('#plusBtn');
@@ -1117,7 +1066,6 @@ const scenarios = {
     expect(await page.locator('.cardline .cl-brand').textContent() === 'JCB', 'brand on the card line');
     expect(await page.locator('.f-sub').textContent() === 'JCB', 'brand next to the label');
     expect(/08\/29$/.test(await page.locator('.cardline .cl-exp').textContent()), 'expiry MM/YY');
-    // the security code is on the card face too, masked until its row's eye reveals it
     expect(await page.locator('.cardline .cl-cvv').textContent() === 'CVV•••', 'CVV masked on the card face');
     await reveal('.f-row:has-text("セキュリティコード")');
     await settle(page, 700);
@@ -1171,12 +1119,10 @@ const scenarios = {
     await settle(page, 200);
     await shot(page, 'detail-login-extra');
     expect(await page.locator('.f-row:has-text("MFA 復旧コード") .pw-text').textContent() === '••••••••••••••', 'secret extra masked');
-    // ⏎ copies a templated item's first secret
     await pick('wifi-office');
     await page.keyboard.press('Enter');
     await settle(page, 300);
     expect(await page.locator('#toastMsg').textContent() === 'パスワードをコピーしました', 'Enter copies the Wi-Fi password');
-    // lock wipes revealed values
     await pick('card-jcb');
     await reveal('.f-row:has(.card-num)');
     await settle(page, 700);
@@ -1214,14 +1160,13 @@ const scenarios = {
     const card = await dbItem('card-jcb');
     expect(card.fields.expiry === '2030-01' && card.fields.number === '3540618291742302', 'stored ISO month + digits');
     expect(card.extra.length === 2, 'extras kept');
-    // a new database with extra fields
     await page.click('#plusBtn');
     await page.click('#newOther');
     await page.click('#plusMenu [data-type="database"]');
     await page.waitForSelector('.ed-form[data-type="database"]');
     await page.fill('#edF-dbType', 'MySQL 8.4');
     await page.fill('#edF-host', 'mysql.studio-mori.internal');
-    await page.fill('#edF-port', '３３０６'); // full-width digits from an IME
+    await page.fill('#edF-port', '３３０６');
     await page.fill('#edF-database', 'shop');
     await page.fill('#edF-username', 'shop_app');
     await page.click('.ed-row:has(#edF-password) .ibtn[title="パスワード生成"]');
@@ -1248,7 +1193,6 @@ const scenarios = {
     expect(db.type === 'database' && db.title === 'shop' && db.fields.port === '3306' && db.fields.password.length >= 8, 'stored fields');
     expect(JSON.stringify(db.extra) === JSON.stringify([{ label: '文字コード', value: 'utf8mb4', secret: false }, { label: 'root パスワード', value: 'R00t!Shop-2026', secret: true }]), 'stored extra');
     expect(await page.locator('.row[aria-selected="true"] .tag').textContent() === 'DB', 'new row selected with its tag');
-    // extra fields on a login, and an extra without a name is refused
     await page.click('.row[data-id="github"]');
     await settle(page, 500);
     await page.click('.d-head .ibtn[title="編集"]');
@@ -1266,7 +1210,6 @@ const scenarios = {
     await ctx.close();
   },
   async 'editor-roundtrip'() {
-    // stored values the editor would format or validate differently are saved untouched
     const OLD_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbg==\n-----END OPENSSH PRIVATE KEY-----\n';
     const { page, ctx } = await open({
       name: 'editor-roundtrip',
@@ -1309,7 +1252,6 @@ const scenarios = {
     expect(pass.fields.issuedOn === '1066-10-14', 'an old date is kept');
     const wifi = await editTitle('wifi-office', 'オフィス');
     expect(wifi.fields.security === '', 'an empty select stays empty');
-    // typed values: SW rules (years 1000–9999, any CVV), whitespace kept for secrets
     await page.click('.row[data-id="ssh-deploy"]');
     await page.click('.d-head .ibtn[title="編集"]');
     await page.fill('#edF-privateKey', OLD_KEY);
@@ -1334,7 +1276,6 @@ const scenarios = {
     await page.waitForSelector('#editor[hidden]', { state: 'attached' });
     const jcb = await dbItem('card-jcb');
     expect(jcb.fields.cvv === '1234567' && jcb.fields.expiry === '2101-07', 'any CVV; MM/YYYY kept as typed');
-    // a row the user adds still needs a name
     await page.click('.d-head .ibtn[title="編集"]');
     await page.click('.ex-head .btn-line');
     await page.fill('.ex-row:last-child .ex-value', 'no name');
@@ -1343,7 +1284,6 @@ const scenarios = {
     expect(await page.locator('.ex-row:last-child .field-err').textContent() === '項目名を入力してください', 'new extra needs a name');
     await ctx.close();
   },
-  // the light theme across the main screens (テーマ: ライト)
   async light() {
     const { page, ctx } = await open({ name: 'light', theme: 'light', tabUrl: 'https://www.amazon.co.jp/ap/signin' });
     await page.waitForSelector('.row');
@@ -1373,7 +1313,6 @@ const scenarios = {
     await shot(page, 'light-lock');
     await ctx.close();
   },
-  // the lock screen's eye and Caps Lock warning; search operators and the loose match
   async 'lock-search'() {
     const { page, ctx } = await open({ name: 'lock-search', state: 'locked', tabUrl: NEW_TAB });
     await page.waitForSelector('#gate.on');
@@ -1382,7 +1321,6 @@ const scenarios = {
     expect(await page.locator('#lockInput').getAttribute('type') === 'text', 'the eye shows the password');
     expect(await page.locator('#lockReveal').getAttribute('aria-pressed') === 'true', 'and says it is pressed');
     expect(await page.evaluate(() => document.activeElement?.id) === 'lockInput', 'focus stays in the field');
-    // Caps Lock: headless Chrome has no real key state, so send the key event a real one would
     const capsKey = (on) => page.evaluate((v) => document.getElementById('lockInput')
       .dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true, modifierCapsLock: v })), on);
     await capsKey(true);

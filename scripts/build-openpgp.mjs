@@ -1,10 +1,3 @@
-// Regenerate extension/src/third_party/openpgp.js from OpenPGP.js's ES-module build.
-//   npm install && node scripts/build-openpgp.mjs
-//
-// The single-file build has no eval/new Function, so it runs under the extension CSP
-// `script-src 'self' 'wasm-unsafe-eval'` (JS eval stays blocked). Its only WebAssembly,
-// Argon2 S2K, is loaded lazily when a file uses it; the iterated S2K Akari writes needs none.
-
 import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

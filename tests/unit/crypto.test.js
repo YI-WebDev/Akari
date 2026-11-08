@@ -43,7 +43,7 @@ test('password is NFC-normalized before derivation', async () => {
   const nfc = 'ガ'.normalize('NFC') + 'pass';
   assert.notEqual(nfd, nfc);
   const wrapped = await wrapDek(await deriveKek(nfd, salt, ITER), dek);
-  await unwrapDek(await deriveKek(nfc, salt, ITER), wrapped); // does not throw
+  await unwrapDek(await deriveKek(nfc, salt, ITER), wrapped);
 });
 
 test('wrong password → BAD_PASSWORD', async () => {
@@ -66,8 +66,7 @@ test('encryptJson/decryptJson round-trip and fresh IV each time', async () => {
   assert.notEqual(a.iv, b.iv);
   assert.notEqual(a.ct, b.ct);
   assert.deepEqual(await decryptJson(dek, a), obj);
-  // DEK survives export/import (session resume path)
-  assert.deepEqual(await decryptJson(await importDek(await exportDek(dek)), b), obj);
+  assert.deepEqual(await decryptJson(await importDek(await exportDek(dek)), b), obj, 'DEK survives export/import (session resume path)');
 });
 
 test('tampered ciphertext / IV → INVALID', async () => {

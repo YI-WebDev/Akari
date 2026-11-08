@@ -1,8 +1,3 @@
-// Right pane (design 1a): head, weak-password warning, the field box (user / password with
-// strength bits / TOTP ticks / URL / memo), passkeys, and the 最終自動入力 · 更新 · 作成 grid.
-// Templated types (card, identity, SSH key, …) get their template fields in the same field-box
-// language — secrets masked with reveal + copy — then extra fields, the note and 更新 · 作成.
-
 import { MSG } from '../../shared/messages.js';
 import {
   typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, maskTail,
@@ -23,7 +18,6 @@ import { tileEl } from './list.js';
 import { renderPicker } from './picker.js';
 import { toast, toastError } from './toast.js';
 
-// { id, reveal, totp, els, timers, shown: revealed field keys, scr: scramble keys in use }
 let view = null;
 
 export function stopDetail() {
@@ -35,7 +29,12 @@ export function stopDetail() {
   view = null;
 }
 
-const masked = (pw) => '•'.repeat(Math.min(pw.length, 16));
+const MAX_MASK_LENGTH = 16;
+const FIXED_MULTILINE_MASK = '•'.repeat(MAX_MASK_LENGTH);
+const COPIED_FEEDBACK_MS = 1500;
+const EXPIRY_WARNING_DAYS = 60;
+
+const masked = (pw) => '•'.repeat(Math.min(pw.length, MAX_MASK_LENGTH));
 
 function copyButton(field, getValue, label, opts) {
   const aria = t('detail.copyField', { label }, '{label}をコピー');
@@ -45,28 +44,21 @@ function copyButton(field, getValue, label, opts) {
     if (!v) return;
     if (!(await copyText(field, v, opts))) return;
     btn.replaceChildren(copyGlyph(true));
-    const tm = setTimeout(() => btn.replaceChildren(copyGlyph(false)), 1500);
+    const tm = setTimeout(() => btn.replaceChildren(copyGlyph(false)), COPIED_FEEDBACK_MS);
     view?.timers.push(tm);
   });
   return btn;
 }
 
-/** Open an http(s) URL in a new tab (the popup cannot follow target=_blank by itself). */
 function openUrl(e, href) {
   e.preventDefault();
   chrome.tabs.create({ url: href });
 }
 
-/** Text with soft breaks after . - _ / @, so a long host wraps at its dots rather than mid-word. */
 function breakable(text) {
   return String(text).split(/(?<=[.\-_/@])/).flatMap((part, i) => (i ? [h('wbr'), part] : [part]));
 }
 
-/**
- * Title block: the tile, the title (up to two lines, so long hosts are not cut), the actions as
- * one compact group beside it, and under both a meta line that may wrap: [vault] type, then
- * badges for what the item carries (2FA, passkeys).
- */
 function head(it) {
   const v = vaultById(it.vault);
   const fav = h('button', {
@@ -96,7 +88,7 @@ function head(it) {
 }
 
 async function toggleFav(id, btn) {
-  if (btn.dataset.busy) return; // one request at a time, so a double click can't send the same value twice
+  if (btn.dataset.busy) return;
   const it = itemById(id);
   if (!it) return;
   const next = !it.fav;
@@ -110,7 +102,7 @@ async function toggleFav(id, btn) {
     if (!live(token)) return;
     const cur = itemById(id) || it;
     replaceItem(mergeSaved(res?.item, { ...cur, fav: next }));
-    emit('listChanged'); // re-runs filtering + selection (un-★ under the ★ filter)
+    emit('listChanged');
   } catch (e) {
     if (!live(token)) return;
     btn.setAttribute('aria-pressed', String(!next));
@@ -138,13 +130,6 @@ function weakBox(it) {
     h('span', { class: 'weak-text' }, warnText(it)),
     h('button', { class: 'btn-fix', type: 'button', onclick: () => emit('openGen', { target: it.id }) }, t('強化する'), icon('arrowRight', 11, 2.6)));
 }
-
-// ---- a password change on the site ----------------------------------------------------
-//
-// 強化する holds the new password as pendingPassword (views/generator.js) instead of replacing
-// the current one, which the site still wants (its "current password" field, and autofill on
-// the login form). The banner keeps it at hand until the user confirms the change or drops it;
-// every replaced password stays in the history below the fields.
 
 async function settlePending(id, action, btns) {
   const cur = itemById(id);
@@ -185,7 +170,6 @@ function pendingBox(it) {
       }, t('サイトで変更'), icon('external', 10)) : null,
       h('span', { class: 'grow' }), drop, confirm);
   };
-  // Dropping it after the site took it would lock the user out: ask first.
   function askDrop() {
     const yes = h('button', { class: 'btn-mini danger', type: 'button' }, t('破棄する'));
     yes.addEventListener('click', () => settlePending(it.id, 'discard', [yes]));
@@ -202,7 +186,6 @@ function pendingBox(it) {
     acts);
 }
 
-/** Earlier passwords of a login (newest first), folded; each can be shown, copied or put back. */
 function historyBlock(it) {
   const list = it.passwordHistory || [];
   if (!list.length) return [];
@@ -316,13 +299,10 @@ function totpRow(it) {
   return row;
 }
 
-// Extra fields that are more addresses of the same login: imports keep a login's second,
-// third… URL there (Proton Pass, Bitwarden, 1Password, KeePass, NordPass label them "URL").
 const URL_LABEL = /^(url|uri|website|web ?site|ウェブサイト|サイト|ホームページ)\s*\d*$/i;
 const isUrlExtra = (x) => !!x && !x.secret && URL_LABEL.test(str(x.label).trim())
   && !!str(x.value).trim() && !str(x.value).includes('\n');
 
-/** A login's addresses in one box, each opening in a new tab (http/https only; others stay text). */
 function websitesRow(it) {
   const seen = new Set();
   const urls = [it.url, ...(Array.isArray(it.extra) ? it.extra : []).filter(isUrlExtra).map((x) => x.value)]
@@ -330,8 +310,6 @@ function websitesRow(it) {
     .filter((u) => u && !seen.has(u) && seen.add(u));
   if (!urls.length) return null;
   const list = h('div', { class: 'w-list', role: 'list', 'aria-label': t('detail.websites', null, 'ウェブサイト') });
-  // https:// and a bare trailing / are left out so similar addresses differ before the ellipsis;
-  // http:// stays visible (not encrypted). The full address is in the tooltip.
   const shortOf = (u) => u.replace(/^https:\/\//i, '').replace(/^([^/?#]+)\/$/, '$1');
   for (const u of urls) {
     const href = safeHttpUrl(u);
@@ -349,14 +327,11 @@ function noteRow(note) {
   return h('div', { class: 'f-row wide top' }, h('span', { class: 'f-label' }, t('メモ')), h('div', { class: 'f-note' }, note));
 }
 
-/* ───────── templated fields ───────── */
-
 const str = (v) => (v == null ? '' : String(v));
 
-/** "期限切れ" / "あと N 日" next to an expiry (date or card month), null when far away. */
 function expiryTag(value) {
   const days = daysUntil(value);
-  if (days == null || days > 60) return null;
+  if (days == null || days > EXPIRY_WARNING_DAYS) return null;
   if (days < 0) return h('span', { class: 'tag exp-tag over' }, t('detail.expired', null, '期限切れ'));
   return h('span', { class: 'tag exp-tag soon' }, t('detail.expiresIn', { days }, 'あと {days} 日'));
 }
@@ -365,10 +340,6 @@ function labelEl(label, sub) {
   return h('span', { class: 'f-label', title: label }, sub ? [h('span', { class: 'f-label-t' }, label), h('span', { class: 'f-sub' }, sub)] : label);
 }
 
-/**
- * A non-secret value with its copy button. `kind` picks the presentation: url → link opened
- * with chrome.tabs.create (http/https only), multiline → scrollable mono box, else one line.
- */
 function plainRow({ key, label, kind, display, copyValue, tag = null }) {
   if (!display) {
     return h('div', { class: 'f-row' }, labelEl(label), h('span', { class: 'f-value empty-val' }, '—'), h('span'));
@@ -391,23 +362,17 @@ function maskOf(v, { card, multiline }) {
     const d = digitsOnly(v);
     return d.length > 4 ? '•••• •••• •••• ' + d.slice(-4) : masked(v);
   }
-  if (multiline) return '•'.repeat(16);
+  if (multiline) return FIXED_MULTILINE_MASK;
   return masked(v);
 }
 
-/**
- * A secret value: masked until the eye reveals it (scramble), copied with clipboard
- * auto-clear. Card numbers are grouped in 4s when shown and copied as digits only;
- * secret-multiline values reveal into the scrollable mono box. `mirror` (an element elsewhere,
- * the card face's CVV) shows the same masked or revealed value.
- */
 function secretRow({ key, label, get, multiline = false, card = false, sub = '', mirror = null }) {
   view.scr.add(key);
   const text = h(multiline ? 'div' : 'span', {
     class: multiline ? 'ml-box secret' : 'pw-text' + (card ? ' card-num' : ''), 'aria-label': label,
     ...(multiline ? { tabindex: '0', role: 'region' } : {}),
   });
-  const hint = multiline ? h('span', { class: 'ml-hint' }, t('detail.secretHidden', null, '秘密の値 · 表示で確認')) : null;
+  const secretHiddenHint = multiline ? h('span', { class: 'ml-hint' }, t('detail.secretHidden', null, '秘密の値 · 表示で確認')) : null;
   const eye = h('button', { class: 'ibtn', type: 'button' });
   const paint = (on, animate) => {
     const v = get();
@@ -417,7 +382,7 @@ function secretRow({ key, label, get, multiline = false, card = false, sub = '',
     eye.title = on ? t('detail.hide', null, '隠す') : t('detail.show', null, '表示');
     eye.replaceChildren(icon(on ? 'eyeOff' : 'eye', 14));
     text.classList.toggle('revealed', on);
-    if (hint) hint.hidden = on; // a fixed hint: line or word counts would say how long the secret is
+    if (secretHiddenHint) secretHiddenHint.hidden = on;
     if (on) {
       const target = card ? groupDigits(v) : v;
       if (animate) scramble(key, text, target, multiline ? 420 : 520, card ? DIGITS : undefined);
@@ -441,11 +406,10 @@ function secretRow({ key, label, get, multiline = false, card = false, sub = '',
   paint(view.shown.has(key), false);
   const copy = copyButton(key, () => (card ? digitsOnly(get()) : get()), label, { label, secret: true });
   const btns = h('div', { class: 'f-btns' }, eye, copy);
-  if (multiline) return h('div', { class: 'f-row top' }, labelEl(label, sub), h('div', { class: 'ml-col' }, text, hint), btns);
+  if (multiline) return h('div', { class: 'f-row top' }, labelEl(label, sub), h('div', { class: 'ml-col' }, text, secretHiddenHint), btns);
   return h('div', { class: 'f-row' }, labelEl(label, sub), text, btns);
 }
 
-/** Display text of a template field: ISO dates through formatIsoDate, select ids through optionLabel. */
 function displayOf(typeId, fd, v) {
   if (fd.kind === 'date' || fd.kind === 'month') return formatIsoDate(v, fd.kind);
   if (fd.kind === 'select') return optionLabel(typeId, fd.key, v);
@@ -461,7 +425,7 @@ function fieldRows(it) {
     const get = () => str(itemById(it.id)?.fields?.[fd.key]);
     if (isSecretKind(fd.kind)) {
       const card = fd.format === 'card';
-      const mirror = it.type === 'card' && fd.key === 'cvv' ? view.els.faceCvv || null : null; // the card face's CVV
+      const mirror = it.type === 'card' && fd.key === 'cvv' ? view.els.faceCvv || null : null;
       rows.push(secretRow({ key: 'f:' + fd.key, label, get, multiline: fd.kind === 'secret-multiline', card, sub: card ? cardBrand(v) : '', mirror }));
       continue;
     }
@@ -474,10 +438,6 @@ function fieldRows(it) {
   return rows;
 }
 
-/**
- * User-defined fields, after the template (or login) fields, in the same style. A web address
- * in one is a link. `skip` leaves out fields shown elsewhere (a login's URLs: websitesRow).
- */
 function extraRows(it, skip = () => false) {
   const rows = [];
   (Array.isArray(it.extra) ? it.extra : []).forEach((x, i) => {
@@ -491,10 +451,6 @@ function extraRows(it, skip = () => false) {
   return rows;
 }
 
-/**
- * The card's face in one line: brand · •••• 1234 · CVV ••• · MM/YY. The CVV stays masked
- * like its field row below and is revealed with that row's eye (secretRow's `mirror`).
- */
 function cardLine(it) {
   const x = it.fields || {};
   const num = digitsOnly(x.number);
@@ -507,7 +463,7 @@ function cardLine(it) {
   view.els.faceCvv = cvvText;
   return h('div', {
     class: 'cardline' + (days != null && days < 0 ? ' expired' : ''), dataset: { f: '' }, vars: { '--h': String(hueOf(it)) },
-    'aria-hidden': 'true', // the same facts are in the field rows below
+    'aria-hidden': 'true',
   },
   h('span', { class: 'cl-chip' }),
   h('span', { class: 'cl-brand' }, brand || typeLabel('card')),
@@ -628,7 +584,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   D.append(head(it));
   const box = h('div', { class: 'box', dataset: { f: '' } });
   if (it.type === 'login') {
-    if (it.pendingPassword?.password) D.append(pendingBox(it)); // the change in progress, rather than the warning
+    if (it.pendingPassword?.password) D.append(pendingBox(it));
     else if (isWeak(it)) D.append(weakBox(it));
     box.append(userRow(it), passwordRow(it, animate));
     if (it.totp?.secret) box.append(totpRow(it));
@@ -649,7 +605,6 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
         h('span', { class: 'f-value empty-val' }, t('detail.noFields', null, 'まだ何も入力されていません'))));
     }
   } else {
-    // secure note (and any type this popup does not know yet): title, note, extra
     box.append(noteRow(it.note || ''), ...extraRows(it));
   }
   D.append(box);
@@ -659,7 +614,6 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   if (animate) rise(D);
 }
 
-/** After the generator saved a new password: decode it with a long scramble, then the toast. */
 export async function showPasswordUpdated(id, { password, label, bits }) {
   setSel(id);
   renderDetail({ reveal: true, animate: true });

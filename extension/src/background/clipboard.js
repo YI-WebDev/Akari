@@ -1,8 +1,3 @@
-// Clears the clipboard some seconds after an extension page copied a secret.
-// The SW has no DOM, so the actual clearing happens in an offscreen document.
-// chrome.alarms may clamp delays to >= 30 s, so a setTimeout also covers short
-// delays while the SW is alive; the alarm covers a SW that was shut down.
-
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import { ERR, MSG } from '../shared/messages.js';
@@ -61,7 +56,6 @@ export function createClipboardService({
     }
   }
 
-  // Serialized: the timer and the alarm may both fire, and there is only one offscreen document.
   function clearNow() {
     const run = tail.then(doClear);
     tail = run.catch(() => {});

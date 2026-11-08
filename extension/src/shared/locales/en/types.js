@@ -1,18 +1,12 @@
-// English for the types strings. Keys are the Japanese source text (or a dotted key used
-// with a Japanese fallback); values are the English. Japanese needs no entry.
-
 export default {
-  // the default vaults of a new vault (lib/vault/schema.js defaultData)
   'vault.default.personal': 'Personal',
   'vault.default.work': 'Work',
   'vault.default.family': 'Family',
-  // Groups (group.<id>)
   'group.basic': 'Basic',
   'group.tech': 'Technology',
   'group.finance': 'Finance',
   'group.personal': 'Personal',
 
-  // Types (type.<id>)
   'type.login': 'Login',
   'type.note': 'Secure note',
   'type.card': 'Credit card',
@@ -32,7 +26,6 @@ export default {
   'type.rewardProgram': 'Reward program',
   'type.socialSecurity': 'Social security',
 
-  // Fields (field.<type>.<key>)
   'field.card.cardholder': 'Cardholder',
   'field.card.number': 'Card number',
   'field.card.expiry': 'Expiry date',
@@ -156,7 +149,6 @@ export default {
   'field.socialSecurity.fullName': 'Full name',
   'field.socialSecurity.number': 'Number (SSN, My Number, etc.)',
 
-  // Options (option.<type>.<key>.<id>)
   'option.wifi.security.wpa3': 'WPA3',
   'option.wifi.security.wpa2': 'WPA2',
   'option.wifi.security.wpa': 'WPA',

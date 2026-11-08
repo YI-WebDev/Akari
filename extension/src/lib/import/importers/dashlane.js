@@ -1,11 +1,3 @@
-// Dashlane exports:
-//  - ZIP of CSVs: credentials.csv (username,username2,username3,title,password,note,url,
-//    category,otpSecret|otpUrl), securenotes.csv (title,note,…), payments.csv (cards and bank
-//    accounts), ids.csv (passports, driver's licences, ID cards, social security / tax numbers),
-//    personalInfo.csv (names, emails, phone numbers, addresses, websites).
-//  - a single credentials.csv (or any of the CSVs above on its own).
-//  - the legacy JSON layout ({ AUTHENTIFIANT: [...], SECURENOTE: [...], … }), bare or zipped.
-
 import { ImportError, fieldsToNote, parseOtp, bytesToText, parseJson, isZip } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { readZip } from '../zip.js';
@@ -14,7 +6,6 @@ import { personName } from '../../../shared/item-types.js';
 import { L, typed, fromEntries, looksSecret } from './_fields.js';
 import { monthOf } from './_values.js';
 
-/** Column → label for rows kept as notes (kinds with no Akari type) and for leftover columns. */
 const LABELS = {
   account_name: '名称', account_holder: '名義', cc_number: 'カード番号', code: 'セキュリティコード',
   expiration_month: '有効期限（月）', expiration_year: '有効期限（年）', routing_number: 'ルーティング番号',
@@ -25,17 +16,11 @@ const LABELS = {
   city: '市区町村', zip: '郵便番号', address_recipient: '宛名', address_door_code: 'ドアコード', job_title: '役職',
   url: 'URL', category: 'カテゴリ', type: '種類', title: 'タイトル', item_name: '名称',
 };
-const label = (col) => (LABELS[col] ? L(col, LABELS[col]) : col); // an unknown column keeps the file's own name
+const label = (col) => (LABELS[col] ? L(col, LABELS[col]) : col);
 
-/** Legacy JSON section → Japanese name of a kind kept as a note (translated when reported or used as a title). */
 const JSON_NOTE_KINDS = { FISCALSTATEMENT: '税務情報' };
-/** Legacy JSON keys that are bookkeeping, not data. */
 const LEGACY_SKIP = /^(id|anonid|spaceid|localeformat|lastbackuptime|creationdatetime|usermodificationdatetime|creationdate|updatedate|kwtype|attachments|lastuse|color)$/i;
 
-/**
- * Legacy JSON section → [Akari type, title keys, rules] (keys lower-cased). Title keys that are
- * not also mapped by a rule are not repeated as extra fields.
- */
 const LEGACY = {
   PAYMENTMEANS_CREDITCARD: ['card', ['name'], [
     ['cardholder', 'owner', 'cardowner', 'ownername'], ['number', 'cardnumber'], ['cvv', 'securitycode'],
@@ -72,6 +57,8 @@ const str = (v) => (v == null ? '' : String(v).trim());
 const isIban = (v) => /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(str(v).replace(/\s/g, '').toUpperCase());
 const isBic = (v) => /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(str(v).toUpperCase());
 
+const columnPairs = (rec, headers) => headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]);
+
 function makeRun() {
   return { items: [], skipped: 0, converted: {}, badTotp: 0 };
 }
@@ -92,7 +79,6 @@ function login(run, { title, url, usernames, password, note, otp, extra }) {
   run.items.push({ type: 'login', title, url, username, password, totp, note, extra: [...list, ...extra] });
 }
 
-/** Leftover CSV columns of a typed row → extra fields. */
 const rest = (b, rec, headers, used) => {
   for (const h of headers) if (h && !used.includes(h)) b.add(label(h), rec[h], looksSecret(h));
 };
@@ -120,16 +106,15 @@ function payment(run, rec, headers) {
     rest(b, rec, headers, ['type', 'account_name', 'account_holder', 'account_number', 'routing_number', 'issuing_bank', 'bank_name', 'bank', 'iban', 'bic', 'note']);
     run.items.push(b.item({ title, note: rec.note }));
   } else {
-    asNote(run, '支払い情報', title || t('支払い情報'), headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
+    asNote(run, '支払い情報', title || t('支払い情報'), columnPairs(rec, headers), rec.note);
   }
 }
 
-/** ids.csv row type → [Akari type, rules]; tax numbers have no Akari type and stay notes. */
 const ID_TYPES = {
   passport: ['passport', [['fullName', 'name'], ['number', 'number'], ['issuedOn', 'issue_date'], ['expiry', 'expiration_date'], ['authority', 'place_of_issue']]],
   license: ['driverLicense', [['fullName', 'name'], ['number', 'number'], ['issuedOn', 'issue_date'], ['expiry', 'expiration_date'], ['issuer', 'place_of_issue', 'state']]],
   social_security: ['socialSecurity', [['fullName', 'name'], ['number', 'number']]],
-  card: ['socialSecurity', [['fullName', 'name'], ['number', 'number']]], // national ID card
+  card: ['socialSecurity', [['fullName', 'name'], ['number', 'number']]],
 };
 
 const ID_ALIASES = { driver_license: 'license', driving_licence: 'license', id_card: 'card', ssn: 'social_security' };
@@ -140,14 +125,13 @@ function idRow(run, rec, headers) {
   const title = pick(rec, 'name', 'title');
   if (!known) {
     const name = kind === 'tax_number' ? '税番号' : '身分証明書';
-    asNote(run, name, title || t(name), headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
+    asNote(run, name, title || t(name), columnPairs(rec, headers), rec.note);
     return;
   }
   const entries = headers.filter((h) => h && h !== 'type' && h !== 'note').map((h) => ({ id: h, label: label(h), value: rec[h], secret: looksSecret(h) }));
   run.items.push(fromEntries(known[0], entries, known[1]).item({ title, note: rec.note }));
 }
 
-/** personalInfo.csv rows → identities: merged into one when there is exactly one "name" row. */
 function personalInfo(run, records) {
   const used = ['type', 'title', 'first_name', 'middle_name', 'last_name', 'login', 'date_of_birth', 'email', 'email_type',
     'item_name', 'phone_number', 'address', 'country', 'state', 'city', 'zip', 'address_building', 'address_apartment',
@@ -217,12 +201,11 @@ function fromCsv(run, text, fileName) {
       idRow(run, rec, headers);
     } else {
       const title = pick(rec, 'title', 'item_name', 'account_name', 'name') || t('その他');
-      asNote(run, 'その他', title, headers.filter((h) => h && h !== 'note').map((h) => [label(h), rec[h]]), rec.note);
+      asNote(run, 'その他', title, columnPairs(rec, headers), rec.note);
     }
   }
 }
 
-/** One legacy JSON record of a typed section. */
 function legacyTyped(run, section, e) {
   const [type, titleKeys, rules] = LEGACY[section];
   const entries = Object.entries(e)
@@ -234,7 +217,8 @@ function legacyTyped(run, section, e) {
     const i = entries.findIndex((x) => x.id === id);
     return i < 0 ? undefined : entries.splice(i, 1)[0].value;
   };
-  if (titleEntry && !mapped.has(titleEntry.id)) entries.splice(entries.indexOf(titleEntry), 1);
+  const titleIsAlsoMapped = titleEntry && mapped.has(titleEntry.id);
+  if (titleEntry && !titleIsAlsoMapped) entries.splice(entries.indexOf(titleEntry), 1);
   const month = type === 'card' ? take('expiremonth') : undefined;
   const year = type === 'card' ? take('expireyear') : undefined;
   const b = fromEntries(type, entries, rules);
@@ -279,7 +263,6 @@ function fromLegacyJson(run, json) {
 const isLegacyJson = (j) => j && typeof j === 'object' && !Array.isArray(j)
   && Object.keys(j).some((k) => k === 'AUTHENTIFIANT' || k === 'SECURENOTE' || k === 'PAYMENTMEAN_PAYPAL' || k in LEGACY || k in JSON_NOTE_KINDS);
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file) {
   const run = makeRun();
   if (isZip(file.bytes)) {

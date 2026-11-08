@@ -1,6 +1,3 @@
-// Apple Passwords app / Safari CSV: Title,URL,Username,Password,Notes,OTPAuth
-// (OTPAuth is an otpauth:// URI; older Safari exports have no Notes column).
-
 import { pick } from '../csv.js';
 import { t } from '../../../shared/i18n.js';
 import { collect, fits, otpOf, readCsv } from './_csv.js';

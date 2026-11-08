@@ -1,7 +1,3 @@
-// Lock screen and first-run setup (design 1a): the 灯 Akari mark, and the boot log whose
-// lines appear as the real steps finish — key derivation (vault/unlock or vault/setup),
-// decryption (vault/getAll) and loading the items.
-
 import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
 import { t } from '../../shared/i18n.js';
@@ -12,7 +8,11 @@ import { setMeter } from './meter.js';
 
 const $ = (id) => document.getElementById(id);
 const KDF = 'PBKDF2-SHA256 600k';
-const LINE_GAP = 220; // ms between two boot lines, so a fast step still reads as a step
+const LINE_GAP = 220;
+const GATE_FADE_MS = 220;
+const FOCUS_DELAY_INSTANT_MS = 30;
+const FOCUS_DELAY_AFTER_FADE_IN_MS = 200;
+const LAST_LINE_PAUSE_MS = 300;
 let hooks = { load: async () => 0, enter: () => {} };
 let busy = false;
 let bootGen = 0;
@@ -34,19 +34,15 @@ export function gateOpen() {
   return $('gate').classList.contains('on');
 }
 
-/** Status line under the current gate form. */
 export function setGateStatus(text, opts = {}) {
   status($($('gate').dataset.mode === 'setup' ? 'setupStatus' : 'lockStatus'), text, opts);
 }
-
-/* ── boot log ── */
 
 function bootClear() {
   bootGen++;
   clear($('bootLog'));
 }
 
-/** Append "[ ok ] key ······ value" (or a pulsing "[ .. ]" while `running`). */
 function bootLine(k, v, { running = false } = {}) {
   const tag = h('span', { class: 'boot-tag' }, running ? '[ .. ]' : '[ ok ]');
   const val = h('span', { class: 'boot-v' }, v);
@@ -63,7 +59,6 @@ function bootLine(k, v, { running = false } = {}) {
   };
 }
 
-/** Lines pushed here appear in order, each at least LINE_GAP after the previous one. */
 function bootQueue() {
   const gen = bootGen;
   let chain = Promise.resolve();
@@ -82,8 +77,6 @@ function bootQueue() {
 
 const secs = (t0) => `${((performance.now() - t0) / 1000).toFixed(2)}s`;
 
-/* ── the master password field: show / hide, and the Caps Lock warning ── */
-
 function setRevealed(on) {
   const input = $('lockInput');
   const btn = $('lockReveal');
@@ -97,7 +90,6 @@ function setRevealed(on) {
   btn.append(icon(on ? 'eyeOff' : 'eye', 15));
 }
 
-/** Caps Lock as the last key or click in `input` reported it; cleared when the field loses focus. */
 function watchCaps(input, out) {
   const show = (on) => {
     if (on === !!out.firstChild) return;
@@ -111,9 +103,6 @@ function watchCaps(input, out) {
   input.addEventListener('blur', () => show(false));
 }
 
-/* ── gate ── */
-
-/** Show the lock or setup screen. `instant` skips the fade (used at popup open). */
 export function showGate(mode, { instant = false } = {}) {
   const gate = $('gate');
   gate.dataset.mode = mode;
@@ -132,24 +121,25 @@ export function showGate(mode, { instant = false } = {}) {
     $('lockInput').disabled = false;
     $('lockField').classList.remove('err');
     status($('lockStatus'), idleHint());
-    setTimeout(() => $('lockInput').focus(), instant ? 30 : 200);
+    const focusDelay = instant ? FOCUS_DELAY_INSTANT_MS : FOCUS_DELAY_AFTER_FADE_IN_MS;
+    setTimeout(() => $('lockInput').focus(), focusDelay);
   } else {
     $('setupPw').value = '';
     $('setupPw2').value = '';
     updateSetup();
     status($('setupStatus'), '');
-    setTimeout(() => $('setupPw').focus(), instant ? 30 : 200);
+    const focusDelay = instant ? FOCUS_DELAY_INSTANT_MS : FOCUS_DELAY_AFTER_FADE_IN_MS;
+    setTimeout(() => $('setupPw').focus(), focusDelay);
   }
 }
 
-/** Fade the gate out over the main view (popup.css: .gate, .2 s), then reset it. */
 async function leave() {
   const gate = $('gate');
   hooks.enter();
   gate.classList.remove('on');
   gate.setAttribute('aria-hidden', 'true');
   syncInert();
-  await wait(reducedMotion() ? 0 : 220);
+  await wait(reducedMotion() ? 0 : GATE_FADE_MS);
   if (!gate.classList.contains('on')) bootClear();
 }
 
@@ -169,7 +159,7 @@ async function unlock(e) {
   busy = true;
   field.classList.remove('err');
   $('lockSubmit').classList.add('busy');
-  setRevealed(false); // the password does not stay on screen while the key is derived
+  setRevealed(false);
   input.blur();
   bootClear();
   status(st, t('認証しています…'));
@@ -207,8 +197,7 @@ async function finish(st, { created }) {
     $('lockSubmit').classList.remove('busy');
     $('setupSubmit').classList.remove('busy');
     if ($('gate').dataset.mode === 'setup') {
-      // the vault exists now: never leave the user on a spent setup form
-      try { await send(MSG.VAULT_LOCK); } catch { /* best effort */ }
+      try { await send(MSG.VAULT_LOCK); } catch { }
       setPhase('locked');
       document.getElementById('app').dataset.phase = 'locked';
       showGate('lock');
@@ -219,7 +208,7 @@ async function finish(st, { created }) {
     return;
   }
   await push(t('アイテムを読込'), t('{n} 件', { n: count }));
-  await wait(300);
+  await wait(LAST_LINE_PAUSE_MS);
   await leave();
   busy = false;
   $('lockSubmit').classList.remove('busy');
@@ -279,12 +268,11 @@ export function initGate({ load, enter }) {
   hooks = { load, enter };
   try {
     $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
-  } catch { /* keep the static text */ }
+  } catch { }
   $('lockForm').addEventListener('submit', unlock);
-  // the eye keeps focus in the field: a click on it must not move the caret away
   $('lockReveal').addEventListener('pointerdown', (e) => e.preventDefault());
   $('lockReveal').addEventListener('click', () => {
-    if (busy) return; // the password stays hidden while the key is derived
+    if (busy) return;
     setRevealed($('lockInput').type === 'password');
     $('lockInput').focus({ preventScroll: true });
   });

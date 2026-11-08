@@ -1,14 +1,5 @@
-// Client side of the message contract, for extension pages (popup, passkey window).
-
 import { AkariError } from './errors.js';
 
-/**
- * Send a message to the service worker and unwrap the `{ ok, data | error }` envelope.
- * @param {string} type one of MSG.*
- * @param {object} [payload]
- * @returns {Promise<any>} data
- * @throws {AkariError}
- */
 export async function send(type, payload = {}) {
   let res;
   try {

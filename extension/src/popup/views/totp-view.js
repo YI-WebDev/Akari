@@ -1,6 +1,3 @@
-// Live TOTP code with the design's 30-tick countdown bar (red for the last 5 s,
-// the code is re-decoded with a scramble whenever it changes).
-
 import { generateTotp } from '../../lib/totp.js';
 import { t } from '../../shared/i18n.js';
 import { h } from './dom.js';
@@ -8,6 +5,7 @@ import { formatCode } from './format.js';
 import { scramble, cancelScramble, DIGITS } from './fx.js';
 
 const TICKS = 30;
+const WARN_SECONDS = 5;
 let seq = 0;
 
 export function totpView(config) {
@@ -56,7 +54,7 @@ export function totpView(config) {
       lastOn = on;
       for (let i = 0; i < TICKS; i++) ticks.children[i].classList.toggle('on', i < on);
     }
-    host?.classList.toggle('warn', ri <= 5);
+    host?.classList.toggle('warn', ri <= WARN_SECONDS);
   }
 
   return {

@@ -1,6 +1,3 @@
-// Passkeys stored on logins: the shape check for passkeys from a backup, and passkeys taken over
-// from another manager's export. Pure: no chrome.* access.
-
 import { toB64url, fromB64url } from '../../shared/bytes.js';
 import { registrableDomain, isPublicSuffix, isIpAddress } from '../../shared/domain.js';
 import { encode as cborEncode } from '../cbor.js';
@@ -10,7 +7,6 @@ import { isObject, clampTs, lengthIn } from './common.js';
 const HOST_LIKE = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const optString = (v, max) => v == null || (typeof v === 'string' && v.length <= max);
 
-/** Full shape check of an imported passkey; returns a copy with only known fields, or null. */
 export function normalizePasskey(pk, nowMs) {
   const ok = isObject(pk)
     && lengthIn(pk.credentialId, 16, 1023)
@@ -47,13 +43,6 @@ export function normalizePasskeys(list, nowMs) {
   return [...out.values()];
 }
 
-/**
- * Passkey from another manager's export (lib/import ImportedItem: PKCS8 ES256 private
- * key, no public key) → stored Passkey, or null. The private key must import as a
- * P-256 ECDSA key; its COSE public key is derived from it, then the passkey goes
- * through the same checks as a backup import. The rpId must also be a registrable
- * domain that is not a public suffix ("com", "github.io"), or "localhost"; no IPs.
- */
 export async function passkeyFromImport(pk, nowMs = Date.now()) {
   if (!isObject(pk) || !lengthIn(pk.privateKey, 32, 2048) || !importableRpId(pk.rpId)) return null;
   let publicKey;

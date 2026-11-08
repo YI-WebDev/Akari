@@ -1,17 +1,9 @@
-// The two type menus (design 1a), each under a `$ akari …` line that follows focus:
-// ＋ 新規作成 lists the 基本 types with icons and opens the other groups in a second panel,
-// and the 表示 menu (the list's one filter) offers すべて / 最近 / お気に入り, then the types
-// present in the vault, with counts, as 3-column grids grouped by GROUPS. Built from static
-// type metadata only; counts are numbers.
-
 import { GROUPS, ITEM_TYPES, typeLabel, groupLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { h, clear, icon } from './dom.js';
 
-// single-letter shortcuts in the ＋ menu's first panel (L / N also in the welcome commands)
 const KEYS = { login: 'l', note: 'n', card: 'c', identity: 'i' };
 
-// Icon per type, and tile hues (oklch): one per 基本 type, one per group in the その他 panel.
 export const TYPE_ICONS = {
   login: 'login', note: 'note', card: 'card', identity: 'idCard',
   apiCredential: 'code', database: 'database', server: 'server', softwareLicense: 'badge', sshKey: 'terminal', wifi: 'wifi',
@@ -20,7 +12,6 @@ export const TYPE_ICONS = {
 };
 const HUES = { login: 45, note: 85, card: 150, identity: 255, gen: 350, tech: 210, finance: 150, personal: 300 };
 
-/** A coloured icon tile; without a hue it is greyed (その他). */
 function tileIcon(name, hue, size) {
   const vars = hue == null ? { '--tile-c': '0.02', '--tile-bg-c': '0.02' } : { '--h': String(hue) };
   return h('span', { class: 'tile pm-tile', vars, 'aria-hidden': 'true' }, icon(name, size));
@@ -32,7 +23,6 @@ function cmdLine(initial) {
   return { el, set: (s) => { arg.textContent = s; } };
 }
 
-/** The command line follows the focused / hovered cell (data-cmd). */
 function followCmd(menu, cmd, fallback) {
   const show = (e) => {
     const b = e.target.closest?.('[data-cmd]');
@@ -51,12 +41,6 @@ function groupHead(groupId, count) {
     h('span', null, groupLabel(groupId)), h('span', { class: 'group-line' }), count != null ? h('span', null, String(count)) : null);
 }
 
-/**
- * ＋ menu. First panel: the 基本 types, その他 (#newOther), パスワード生成. その他 swaps in
- * the other groups as 2-column grids under a back button; Esc / Backspace / ← on the back
- * button return. Static, so it is built once; resetPlusMenu shows the first panel again.
- * Ids #newLogin / #newNote / #newGen and the L / N / G keys are kept from the old menu.
- */
 export function buildPlusMenu(menu, { onNew, onGen }) {
   clear(menu);
   const cmd = cmdLine('new login');
@@ -115,7 +99,7 @@ export function buildPlusMenu(menu, { onNew, onGen }) {
     }
     if (e.key === 'Escape' || e.key === 'Backspace' || (e.key === 'ArrowLeft' && at === back)) {
       e.preventDefault();
-      e.stopPropagation(); // Esc goes back a panel instead of closing the menu
+      e.stopPropagation();
       show('main', otherBtn);
     }
   });
@@ -124,13 +108,11 @@ export function buildPlusMenu(menu, { onNew, onGen }) {
   followCmd(menu, cmd, () => 'new');
 }
 
-/** Back to the ＋ menu's first panel (before it opens). */
 export function resetPlusMenu(menu) {
   menu.dataset.panel = 'main';
   menu.querySelector('#newOther')?.setAttribute('aria-expanded', 'false');
 }
 
-/** The list's views besides the types: id → [i18n key, name, icon, `akari ls` flag]. */
 const VIEWS = {
   all: ['list.viewAll', 'すべて', 'rows', ''],
   recent: ['list.viewRecent', '最近', 'clock', ' --recent'],
@@ -140,11 +122,6 @@ export const isView = (id) => Object.hasOwn(VIEWS, id);
 export const viewName = (id) => (isView(id) ? t(VIEWS[id][0], null, VIEWS[id][1]) : typeLabel(id));
 export const viewIcon = (id) => (isView(id) ? VIEWS[id][2] : TYPE_ICONS[id] || 'note');
 
-/**
- * 表示 menu: one choice for what the list shows. すべて / 最近 / お気に入り first, then the
- * types that have items in the current vault (and the chosen one), grouped, each with its
- * count. `counts` = { all, recent, fav, types: Map }.
- */
 export function renderViewMenu(menu, { counts, current, onPick }) {
   clear(menu);
   const lsOf = (id) => (isView(id) ? 'ls' + VIEWS[id][3] : `ls --type ${id}`);
@@ -176,12 +153,9 @@ export function renderViewMenu(menu, { counts, current, onPick }) {
   followCmd(menu, cmd, () => lsOf(current));
 }
 
-const navX = new WeakMap(); // menu → { x, el }: the column a run of ↑↓ started in
+const navX = new WeakMap();
+const SAME_ROW_PX = 4;
 
-/**
- * Arrow keys inside an open menu: ↑↓ move to the nearest cell in the row above / below
- * (wrapping), ←→ step through grid cells, Home / End jump. Returns true when handled.
- */
 export function moveMenuFocus(menu, key) {
   const items = [...menu.querySelectorAll('button')].filter((b) => !b.disabled && b.offsetParent !== null);
   if (!items.length) return false;
@@ -199,15 +173,14 @@ export function moveMenuFocus(menu, key) {
   const down = key === 'ArrowDown';
   const box = (b) => b.getBoundingClientRect();
   const r = box(cur);
-  // keep the column through short rows (セキュアノート ↓ ID ↓ データベース)
   const sticky = navX.get(menu);
   const cx = sticky && sticky.el === cur ? sticky.x : r.left + r.width / 2;
   const rows = items.map((b) => ({ b, r: box(b) }));
-  const ahead = rows.filter((x) => (down ? x.r.top > r.top + 4 : x.r.top < r.top - 4));
-  const pool = ahead.length ? ahead : rows; // wrap around
+  const ahead = rows.filter((x) => (down ? x.r.top > r.top + SAME_ROW_PX : x.r.top < r.top - SAME_ROW_PX));
+  const pool = ahead.length ? ahead : rows;
   const tops = pool.map((x) => x.r.top);
-  const rowTop = down ? Math.min(...tops) : Math.max(...tops); // next row, or the far end when wrapping
-  const row = pool.filter((x) => Math.abs(x.r.top - rowTop) < 4);
+  const rowTop = down ? Math.min(...tops) : Math.max(...tops);
+  const row = pool.filter((x) => Math.abs(x.r.top - rowTop) < SAME_ROW_PX);
   row.sort((a, b) => Math.abs(a.r.left + a.r.width / 2 - cx) - Math.abs(b.r.left + b.r.width / 2 - cx));
   navX.set(menu, { x: cx, el: row[0].b });
   return go(row[0].b);

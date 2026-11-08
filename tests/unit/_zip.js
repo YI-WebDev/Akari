@@ -1,7 +1,5 @@
-// Test helper: build a ZIP archive in memory.
 import { deflateRawSync, crc32 } from 'node:zlib';
 
-/** Build a ZIP in memory (stored or deflated entries) for tests. */
 export function makeZip(files, { deflate = true } = {}) {
   const locals = [], centrals = [];
   let offset = 0;

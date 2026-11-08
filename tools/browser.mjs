@@ -1,7 +1,3 @@
-// Launches a headless Chromium for the screenshot / icon tools.
-// Playwright's bundled Chromium does not start on every machine ("spawn UNKNOWN"),
-// so fall back to the installed Chrome (CHROME_PATH or the default Windows path).
-
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 

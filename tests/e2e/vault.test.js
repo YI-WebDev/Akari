@@ -1,4 +1,3 @@
-// Vault lifecycle through the real service worker in Chromium.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { launch, extensionMessenger, MASTER } from './helpers.js';
@@ -29,7 +28,6 @@ test('setup → save → lock → unlock', async () => {
   assert.equal(r.data.items.length, 1);
   assert.equal(r.data.vaults.length, 3);
 
-  // Nothing decrypted may sit in storage.local.
   const local = await ext.sw.evaluate(() => chrome.storage.local.get(null));
   assert.ok(!JSON.stringify(local).includes('pw-1'));
 

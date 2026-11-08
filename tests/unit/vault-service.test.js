@@ -68,7 +68,6 @@ function makeService(opts = {}) {
     ...opts.factory,
   });
   svc.install();
-  // Handlers as the router would call them; errors come back as AkariError.
   const call = (type, payload = {}) => svc.handlers[type]({ type, ...payload }, {});
   return { chrome, clock, sleeps, svc, call };
 }
@@ -120,33 +119,28 @@ test('settings: "ロックしない" needs the master password, opens again afte
   assert.equal(typeof chrome.storage.local.map.get(KEEP_KEY)?.dek, 'string', 'key kept on this device');
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'kept' } });
 
-  // Browser restart: storage.session is empty and the service worker starts fresh.
   const after = restart();
   assert.equal(await after.svc.isLocked(), false, 'opens without the master password');
   assert.equal((await after.call(MSG.VAULT_GET_ALL)).items[0].title, 'kept');
   assert.ok(chrome.storage.session.map.has(SESSION_KEY), 'session restored from the kept key');
   assert.equal(await after.call(MSG.VAULT_UNLOCK, { masterPassword: 'wrong' }).catch((e) => e.code), 'BAD_PASSWORD');
 
-  // A new master password rotates the DEK; the kept key follows it.
   const before = chrome.storage.local.map.get(KEEP_KEY).dek;
   await after.call(MSG.VAULT_CHANGE_PASSWORD, { current: PW, next: 'another-master-password' });
   assert.notEqual(chrome.storage.local.map.get(KEEP_KEY).dek, before);
   assert.equal(await restart().svc.isLocked(), false, 'still opens after the change');
 
-  // Locking by hand drops the kept key: locked, also after a restart. Unlocking keeps it again.
   await after.call(MSG.VAULT_LOCK);
   assert.equal(chrome.storage.local.map.has(KEEP_KEY), false);
   assert.equal(await restart().svc.isLocked(), true);
   await after.call(MSG.VAULT_UNLOCK, { masterPassword: 'another-master-password' });
   assert.equal(chrome.storage.local.map.has(KEEP_KEY), true);
 
-  // Already "ロックしない": setting it again needs no password. Any other choice drops the key.
   await after.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK } });
   await after.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: 0 } });
   assert.equal(chrome.storage.local.map.has(KEEP_KEY), false);
   assert.equal(await restart().svc.isLocked(), true, 'locked after a restart again');
 
-  // A key left behind from before (setting no longer "ロックしない") is ignored.
   await chrome.storage.local.set({ [KEEP_KEY]: { dek: before } });
   assert.equal(await restart().svc.isLocked(), true);
 
@@ -203,7 +197,6 @@ test('saveItem creates/updates; passkey private keys are kept from storage, neve
   assert.deepEqual(created.passkeys, []);
   assert.equal(created.passwordUpdatedAt, clock.t);
 
-  // Another SW service (passkey) adds a passkey with a private key.
   await svc.mutateData((d) => {
     d.items.find((i) => i.id === created.id).passkeys.push({
       credentialId: 'cred1', rpId: 'github.com', privateKey: 'PRIVATE', publicKey: 'PUB', alg: -7, signCount: 0,
@@ -263,7 +256,6 @@ test('deleteItems: the selection goes in one write; ids already gone are skipped
   const set = chrome.storage.local.set.bind(chrome.storage.local);
   chrome.storage.local.set = async (obj) => { writes.push(Object.keys(obj)); return set(obj); };
 
-  // 'gone' was deleted from another window meanwhile: skipped, the rest is deleted.
   const res = await call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[0], ids[2], 'gone'] });
   assert.equal(res.deleted, 2);
   assert.deepEqual(res.ids.sort(), [ids[0], ids[2]].sort());
@@ -298,7 +290,6 @@ test('mutateData is serialized and persisted encrypted; readData returns a deep 
   assert.equal((await svc.readData()).items.length, 3);
   assert.ok(!JSON.stringify(chrome.storage.local.map.get(VAULT_KEY)).includes('note #1'));
 
-  // A failing mutation writes nothing and does not block the queue.
   const before = chrome.storage.local.map.get(VAULT_KEY);
   await assert.rejects(svc.mutateData((d) => { d.items.length = 0; throw new Error('boom'); }));
   assert.deepEqual(chrome.storage.local.map.get(VAULT_KEY), before);
@@ -309,7 +300,6 @@ test('mutateData is serialized and persisted encrypted; readData returns a deep 
 test('SW restart resumes from the session DEK; lock clears it', async () => {
   const first = await setupUnlocked();
   await first.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Persisted' } });
-  // New service instance over the same storage = SW restarted.
   const second = makeService({ chrome: fakeChrome({ local: first.chrome.storage.local, session: first.chrome.storage.session }) });
   assert.equal(await second.svc.isLocked(), false);
   assert.equal((await second.svc.readData()).items[0].title, 'Persisted');
@@ -378,7 +368,6 @@ test('ゴミ箱: restore puts items back (into the first vault when theirs is go
   assert.deepEqual(all.trash.map((e) => e.title).sort(), ['A', 'B', 'C']);
   assert.ok(all.trash.every((e) => typeof e.deletedAt === 'number'));
 
-  // the vault of A is deleted meanwhile: A comes back into the first vault
   await call(MSG.VAULT_DELETE_VAULT, { id: 'work' });
   const back = await call(MSG.VAULT_RESTORE_ITEMS, { ids: [a.id] });
   assert.deepEqual(back.items.map((i) => [i.title, i.vault]), [['A', 'personal']]);
@@ -391,21 +380,18 @@ test('ゴミ箱: restore puts items back (into the first vault when theirs is go
   assert.deepEqual(purged.trash.map((e) => e.title), ['C']);
   await assert.rejects(call(MSG.VAULT_PURGE_ITEMS, {}), { code: 'INVALID' });
 
-  // 30 days later C is gone on its own: not listed, and dropped with the next write
   clock.t += 30 * 24 * 3600 * 1000;
   assert.deepEqual((await call(MSG.VAULT_GET_ALL)).trash, []);
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'D' } });
   assert.deepEqual((await svc.readData()).trash, []);
   await assert.rejects(call(MSG.VAULT_PURGE_ITEMS, { all: true }), { code: 'NOT_FOUND' });
 
-  // the trash holds what its sheet shows, no secrets
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'S', password: 'secret-pw', note: 'n' } });
   const s = (await svc.readData()).items.find((i) => i.title === 'S');
   const shown = (await call(MSG.VAULT_DELETE_ITEM, { id: s.id })).trash[0];
   assert.deepEqual(Object.keys(shown).sort(), ['deletedAt', 'hue', 'id', 'title', 'type', 'vault']);
   await call(MSG.VAULT_PURGE_ITEMS, { all: true });
 
-  // a vault deleted with its items sends them to the trash too
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'E', vault: 'family' } });
   const gone = await call(MSG.VAULT_DELETE_VAULT, { id: 'family', deleteItems: true });
   assert.equal(gone.deleted, 1);
@@ -444,8 +430,7 @@ test('changePassword rotates salt and DEK, re-encrypts data, keeps the session u
   assert.notEqual(chrome.storage.session.map.get(SESSION_KEY).dek, toB64(await exportDek(oldDek)), 'session DEK replaced');
   await assert.rejects(decryptJson(oldDek, after.data), { code: 'INVALID' }, 'old DEK no longer opens the vault');
 
-  // Still unlocked, also after a SW restart (session resume with the new DEK), and writes keep working.
-  assert.equal(await svc.isLocked(), false);
+  assert.equal(await svc.isLocked(), false, 'Still unlocked, also after a SW restart (session resume with the new DEK), and writes keep working');
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'After change' } });
   const restarted = makeService({ chrome: fakeChrome({ local: chrome.storage.local, session: chrome.storage.session }) });
   assert.deepEqual((await restarted.svc.readData()).items.map((i) => i.title), ['Keep me', 'After change']);
@@ -499,8 +484,7 @@ test('export/import: backup opens with its own password and merges by id', async
   const data = await b.svc.readData();
   assert.deepEqual(data.items.map((i) => i.title).sort(), ['From A', 'From B']);
   assert.deepEqual(data.items.find((i) => i.id === item.id).passkeys, [pk]);
-  // Re-importing the same backup changes nothing (not newer).
-  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 0 });
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 0 }, 'Re-importing the same backup changes nothing (not newer)');
 
   await b.call(MSG.VAULT_LOCK);
   await assert.rejects(b.call(MSG.VAULT_EXPORT), { code: 'LOCKED' });
@@ -564,10 +548,10 @@ test('vault/importItems: one write, counts added/duplicates/invalid/passkeys, pr
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Mine', url: 'https://github.com', username: 'hina', password: 'pw1' } });
   const pk = await importedPasskey();
   const items = [
-    { type: 'login', title: 'GitHub', url: 'https://github.com/login', username: 'hina', password: 'pw1', passkeys: [] }, // duplicate
+    { type: 'login', title: 'GitHub', url: 'https://github.com/login', username: 'hina', password: 'pw1', passkeys: [] },
     { type: 'login', title: 'GitHub alt', url: 'https://github.com', username: 'hina2', password: 'pw2', passkeys: [pk, { ...pk }] },
     { type: 'note', title: 'メモ', note: '本文', passkeys: [] },
-    { type: 'note', title: 'メモ', note: '本文', passkeys: [] }, // in-batch duplicate
+    { type: 'note', title: 'メモ', note: '本文', passkeys: [] },
     { type: 'login', title: 'bad', password: 7 },
   ];
   let writes = 0;
@@ -587,8 +571,7 @@ test('vault/importItems: one write, counts added/duplicates/invalid/passkeys, pr
   assert.equal(stored.passkeys[0].privateKey, pk.privateKey);
   assert.equal(stored.createdAt, clock.t, 'no createdAt in the file → now');
 
-  // Same file again: everything is a duplicate, passkeys are not added twice.
-  assert.deepEqual(await call(MSG.VAULT_IMPORT_ITEMS, { items, vault: 'work' }), { added: 0, duplicates: 4, invalid: 1, passkeys: 0 });
+  assert.deepEqual(await call(MSG.VAULT_IMPORT_ITEMS, { items, vault: 'work' }), { added: 0, duplicates: 4, invalid: 1, passkeys: 0 }, 'Same file again: everything is a duplicate, passkeys are not added twice');
 });
 
 test('vault/importItems: unknown vault / bad payload → INVALID without writing; locked → LOCKED', async () => {
@@ -643,9 +626,6 @@ test('vault/exportPlain: master password re-check (throttled), CSV and Bitwarden
   await assert.rejects(call(MSG.VAULT_EXPORT_PLAIN, { format: 'csv', masterPassword: PW }), { code: 'LOCKED' });
 });
 
-// ---- item types (shared/item-types.js) ---------------------------------------
-
-/** A valid value for every template field of `type`, by kind. */
 function sampleFields(type) {
   const byKind = {
     text: (fd) => fd.key + ' value', secret: (fd) => 's3cret ' + fd.key, multiline: () => 'line 1\nline 2',
@@ -695,12 +675,10 @@ test('saveItem: partial saves keep fields/extra, full saves replace them; bad pa
   const { item: fav } = await call(MSG.VAULT_SAVE_ITEM, { item: { id: card.id, fav: true } });
   assert.deepEqual([fav.fav, fav.fields, fav.extra, fav.updatedAt], [true, card.fields, extra, clock.t]);
 
-  // Partial update of fields alone: the stored type is used.
   const { item: f2 } = await call(MSG.VAULT_SAVE_ITEM, { item: { id: card.id, fields: { number: '5555555555554444' } } });
   assert.deepEqual(f2.fields, { number: '5555555555554444' }, 'fields are replaced as a whole');
   assert.deepEqual(f2.extra, extra);
 
-  // Full save from the popup (whole item back, minus passkeys).
   const { item: full } = await call(MSG.VAULT_SAVE_ITEM, { item: { ...f2, title: 'Visa 2', fields: { ...f2.fields, cvv: '000' }, extra: [] } });
   assert.deepEqual([full.title, full.fields, full.extra], ['Visa 2', { number: '5555555555554444', cvv: '000' }, []]);
   assert.equal(full.createdAt, card.createdAt);
@@ -726,12 +704,10 @@ test('saveItem: a legacy note (url/username/password = \'\') still saves and los
   const { items } = await call(MSG.VAULT_GET_ALL);
   assert.equal(items.find((i) => i.id === 'legacy-1').url, '', 'read as stored');
 
-  // The popup's favourite toggle sends the whole item back.
   const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { ...items.find((i) => i.id === 'legacy-1'), fav: true } });
   assert.deepEqual(Object.keys(item).sort(), ['createdAt', 'fav', 'hue', 'id', 'lastUsedAt', 'note', 'title', 'type', 'updatedAt', 'vault']);
   assert.equal(item.fav, true);
 
-  // A filled legacy value is kept (never lost) but cannot be changed.
   const { item: kept } = await call(MSG.VAULT_SAVE_ITEM, { item: { ...items.find((i) => i.id === 'legacy-2'), note: 'edited' } });
   assert.deepEqual([kept.url, kept.username, kept.password, kept.note], ['https://router.example', 'admin', 'pw', 'edited']);
   assert.ok(!('totp' in kept) && !('passkeys' in kept));
@@ -751,7 +727,6 @@ test('autofill over the real vault service never offers or fills non-login types
     }
     others.push((await call(MSG.VAULT_SAVE_ITEM, { item })).item);
   }
-  // A legacy note that still carries a matching url / username / password.
   await svc.mutateData((d) => {
     d.items.push({ ...svc.makeItem({ title: 'legacy', url: 'https://github.com', username: 'old', password: 'old-pw' }), type: 'note', id: 'legacy-note' });
   });
@@ -770,7 +745,6 @@ test('autofill over the real vault service never offers or fills non-login types
     await assert.rejects(autofill.fill({ tabId: 1, itemId: id }), { code: 'NOT_FOUND' }, id);
     await assert.rejects(autofill.requestFill({ itemId: id }, sender), { code: 'NOT_FOUND' }, id);
   }
-  // The save prompt matches against logins only: "old" (legacy note's username) is a new login.
   assert.equal((await autofill.offerSave({ username: 'old', password: 'old-pw' }, sender)).action, 'new');
   assert.deepEqual((await autofill.requestFill({ itemId: loginItem.id }, sender)), { username: 'hina', password: 'pw' });
 });
@@ -780,7 +754,7 @@ test('vault/importItems and exportPlain with typed items', async () => {
   const visa = { type: 'card', title: 'Visa', fields: { number: '4111 1111 1111 1111', expiry: '2030-04', cvv: '123' }, extra: [{ label: 'PIN2', value: '1', secret: true }] };
   const items = [
     visa,
-    { ...visa, fields: { ...visa.fields, number: '4111111111111111' } }, // exact duplicate (number separators do not count)
+    { ...visa, fields: { ...visa.fields, number: '4111111111111111' } },
     { type: 'identity', title: 'Me', fields: { lastName: '佐藤', firstName: 'ひな', email: 'hina@example.jp', website: 'example.jp' } },
     { type: 'wifi', title: 'Home', fields: { ssid: 'Home', password: 'wifi-pw', security: 'wpa3' } },
     { type: 'card', title: 'bad', url: 'https://x.example' },
@@ -821,7 +795,7 @@ test('vaults: create / rename / recolor, with names validated and nothing writte
     [{ name: 42, hue: 10 }, 'name not a string'],
   ]) await assert.rejects(call(MSG.VAULT_CREATE_VAULT, payload), { code: 'INVALID' }, why);
   assert.deepEqual(chrome.storage.local.map.get(VAULT_KEY), before, 'refused calls write nothing');
-  await call(MSG.VAULT_CREATE_VAULT, { name: 'あ'.repeat(40), hue: 10 }); // exactly the limit is fine
+  await call(MSG.VAULT_CREATE_VAULT, { name: 'あ'.repeat(40), hue: 10 });
   await call(MSG.VAULT_DELETE_VAULT, { id: (await svc.readData()).vaults.at(-1).id, moveTo: null });
 
   const id = made.vault.id;
@@ -836,7 +810,6 @@ test('vaults: create / rename / recolor, with names validated and nothing writte
   const stored = (await svc.readData()).vaults.find((v) => v.id === id);
   assert.deepEqual(stored, { id, name: 'ホビー', hue: 200 });
 
-  // at most VAULT_LIMITS.count vaults
   while ((await svc.readData()).vaults.length < 20) await call(MSG.VAULT_CREATE_VAULT, { name: 'v' + (await svc.readData()).vaults.length, hue: 1 });
   await assert.rejects(call(MSG.VAULT_CREATE_VAULT, { name: 'one too many', hue: 1 }), { code: 'INVALID' });
 
@@ -860,7 +833,6 @@ test('vaults: delete moves the items to another vault, or deletes them with it; 
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: 'personal', deleteItems: true }), { code: 'INVALID' });
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', deleteItems: 'yes' }), { code: 'INVALID' });
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'nope', moveTo: null }), { code: 'NOT_FOUND' });
-  // Items go with a vault only when the request says so: a popup that thought it empty is refused.
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work' }), { code: 'NOT_EMPTY' });
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'work', moveTo: null, deleteItems: false }), { code: 'NOT_EMPTY' });
   assert.equal((await svc.readData()).vaults.length, 3, 'nothing removed by the refused calls');
@@ -884,8 +856,7 @@ test('vaults: delete moves the items to another vault, or deletes them with it; 
 
   await assert.rejects(call(MSG.VAULT_DELETE_VAULT, { id: 'personal', moveTo: null }), { code: 'INVALID' });
   assert.equal((await svc.readData()).items.length, 3);
-  // a new item can only go into a vault that exists
-  await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { title: 'x', vault: 'work' } }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { title: 'x', vault: 'work' } }), { code: 'INVALID' }, 'a new item can only go into a vault that exists');
 });
 
 test('saveItem keeps the replaced password; vault/pendingPassword holds, confirms and discards', async () => {
@@ -893,7 +864,6 @@ test('saveItem keeps the replaced password; vault/pendingPassword holds, confirm
   const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Site', password: 'one' } });
   clock.t += 1000;
   await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, password: 'two' } });
-  // A full save from the popup carries its copy of the history: it is ignored, the stored one stays.
   await call(MSG.VAULT_SAVE_ITEM, { item: { ...item, password: 'two', passwordHistory: [{ password: 'forged', changedAt: 1 }] } });
   let stored = (await svc.readData()).items[0];
   assert.deepEqual(stored.passwordHistory, [{ password: 'one', changedAt: clock.t }]);

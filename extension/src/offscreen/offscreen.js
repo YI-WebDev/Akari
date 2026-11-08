@@ -1,21 +1,17 @@
-// Offscreen document (reason CLIPBOARD). navigator.clipboard needs focus, which an
-// offscreen document never has, so overwrite the clipboard via execCommand('copy').
-
 function clearClipboard() {
   const ta = document.getElementById('clip');
-  // The copy handler forces an empty string even when the selection is empty.
-  const onCopy = (e) => {
+  const forceEmptyClipboardOnCopy = (e) => {
     e.clipboardData.setData('text/plain', '');
     e.preventDefault();
   };
-  document.addEventListener('copy', onCopy);
+  document.addEventListener('copy', forceEmptyClipboardOnCopy);
   try {
     ta.value = '';
     ta.focus();
     ta.select();
     return document.execCommand('copy');
   } finally {
-    document.removeEventListener('copy', onCopy);
+    document.removeEventListener('copy', forceEmptyClipboardOnCopy);
   }
 }
 

@@ -1,6 +1,3 @@
-// The current tab: its site (for the search box and new logins), its autofill matches, and the
-// fill itself from the 現在のタブ card.
-
 import { MSG } from '../../shared/messages.js';
 import { hostnameOf, registrableDomain } from '../../shared/domain.js';
 import { t } from '../../shared/i18n.js';
@@ -20,16 +17,14 @@ export async function activeTab() {
 
 export const isWebTab = (tab) => /^https?:\/\//i.test(tab?.url || '');
 
-/** The tab's site as a search: its registrable domain, so "accounts.google.com" also finds google.com logins. */
 export function siteQueryOf(tab) {
   if (!isWebTab(tab)) return '';
   const host = hostnameOf(tab.url);
   return host ? registrableDomain(host) || host.replace(/^www\./, '') : '';
 }
 
-/** Autofill matches for the tab, or null. Does not touch state. */
-export async function fetchAutofill(tabP) {
-  const tab = await tabP;
+export async function fetchAutofill(tabPromise) {
+  const tab = await tabPromise;
   if (!tab?.id || !isWebTab(tab)) return null;
   try {
     const res = await call(MSG.AUTOFILL_MATCHES, { tabId: tab.id });
@@ -41,18 +36,17 @@ export async function fetchAutofill(tabP) {
   }
 }
 
-/** Re-query matches after an edit (a saved URL may now match the tab, or no longer). */
 export async function refreshAutofill() {
   const token = liveToken();
   const res = await fetchAutofill(activeTab());
-  if (!live(token) || (S.af && S.af.state !== 'idle')) return;
+  const fillInProgressOrDone = S.af && S.af.state !== 'idle';
+  if (!live(token) || fillInProgressOrDone) return;
   setAutofill(res);
   renderList();
 }
 
 export async function doAutofill() {
   if (!S.af || S.af.state !== 'idle') return;
-  // exactly the account the card shows (vault filter applied)
   const target = afCandidate();
   if (!target) return;
   const { tabId, site } = S.af;

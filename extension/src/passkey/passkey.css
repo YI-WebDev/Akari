@@ -1,6 +1,3 @@
-/* Akari passkey consent window — "Akari Terminal" look (design 1a, design/Akari Terminal.dc.html).
-   Palette, fonts and tile colours come from shared/tokens.css. */
-
 @keyframes akt-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes akt-spin { to { transform: rotate(360deg); } }
 @keyframes akt-pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -9,7 +6,6 @@
 @keyframes pk-arm { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 :root {
-  /* window-only tints from the design (selection overlay, chosen vault chip, request card) */
   --pk-card: rgb(var(--soot-rgb) / .9);
   --pk-sel: rgb(var(--accent-rgb) / .11);
   --pk-sel-ring: rgb(var(--accent-rgb) / .3);
@@ -51,8 +47,6 @@ input::placeholder { color: var(--text-faint); }
 
 .app { height: 100%; display: flex; flex-direction: column; }
 
-/* ---------- header ---------- */
-
 .top {
   flex: none;
   height: 40px;
@@ -82,8 +76,6 @@ input::placeholder { color: var(--text-faint); }
   font-size: 11px; font-weight: 600;
 }
 .chip svg { stroke-width: 2.4; }
-
-/* ---------- screens ---------- */
 
 .main {
   flex: 1; min-height: 0;
@@ -135,8 +127,6 @@ input::placeholder { color: var(--text-faint); }
 .strong { font-size: 12px; font-weight: 600; word-break: break-all; }
 .big { margin: 4px 0 2px; font-size: 26px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); line-height: 1.2; }
 
-/* ---------- request card ---------- */
-
 .card {
   flex: none;
   border: 1px solid rgb(var(--ink-rgb) / .1);
@@ -164,8 +154,6 @@ input::placeholder { color: var(--text-faint); }
   font-size: 12px; font-weight: 700; line-height: 1;
 }
 .tile-user { background: rgb(var(--ink-rgb) / .05); border-color: var(--border); color: var(--text-muted); }
-
-/* ---------- vault chooser ---------- */
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .vaults { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -203,8 +191,6 @@ input::placeholder { color: var(--text-faint); }
 }
 .bang { flex: none; color: var(--accent); font-weight: 700; font-size: 13px; line-height: 1.3; }
 
-/* ---------- password wells (unlock + UV) ---------- */
-
 .pw {
   height: 36px;
   display: flex; align-items: center; gap: 8px;
@@ -233,10 +219,7 @@ input::placeholder { color: var(--text-faint); }
 .hint { min-height: 15px; font-size: 11px; color: var(--text-soft); transition: color .2s; }
 .hint.error { color: var(--danger); }
 
-/* ---------- lock screen ---------- */
-
 .screen.lock { overflow: hidden; padding: 12px 24px; }
-/* the lock screen's own atmosphere, as in the popup */
 .lock .scan {
   position: absolute; left: 0; right: 0; top: 0;
   height: 60px;
@@ -280,8 +263,6 @@ input::placeholder { color: var(--text-faint); }
 .boot-line .bk { color: var(--text-2); }
 .boot-line .dots { flex: 1; border-bottom: 1px dotted rgb(var(--ink-rgb) / .22); transform: translateY(-3px); }
 .boot-line .bv { color: var(--text-soft); }
-
-/* ---------- account list (sign-in) ---------- */
 
 .list-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-soft); }
 .list-head .rule { flex: 1; height: 1px; background: var(--line); }
@@ -334,8 +315,6 @@ input::placeholder { color: var(--text-faint); }
 .account .col { flex: 1; display: flex; flex-direction: column; }
 .account .name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account .meta { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* ---------- footer / buttons ---------- */
 
 .foot {
   margin-top: auto;
@@ -408,8 +387,6 @@ input::placeholder { color: var(--text-faint); }
 [data-screen="loading"] .spinner { margin-top: auto; }
 [data-screen="loading"] .faint { margin-bottom: auto; }
 
-/* ---------- status bar ---------- */
-
 .status {
   flex: none;
   height: 24px;
@@ -426,8 +403,6 @@ input::placeholder { color: var(--text-faint); }
 .status .dot[data-state="locked"] { background: var(--accent); }
 .st-origin { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
 .status .grow { flex: 1; }
-
-/* ---------- toast ---------- */
 
 .toast {
   position: fixed;

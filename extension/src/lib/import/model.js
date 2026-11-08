@@ -1,24 +1,8 @@
-// Shared types and helpers for importers (PLAN.md §7).
-//
-// ImportedItem = {
-//   type: one of shared/item-types.js TYPE_IDS ('login', 'note', 'card', 'identity', 'sshKey', …),
-//   title, note,                                  // strings ('' when absent)
-//   url, username, password, totp, passkeys,      // login only
-//   fields: { [templateKey]: string },            // every other type except note (see item-types.js)
-//   extra: [{ label, value, secret: boolean }],   // custom fields that fit no template key, any type
-//   fav: boolean, createdAt?: number, updatedAt?: number,   // ms
-// }
-// totp: TotpConfig | null (lib/totp.js). passkeys: [{ credentialId, rpId, userHandle, userName,
-// userDisplayName, privateKey /* PKCS8 ES256, b64url */, createdAt }].
-// Records of a kind with no Akari type at all become 'note' items whose note lists their
-// fields as "label: value" lines (fieldsToNote), so nothing is lost.
-
 import { parseOtpauthUri, normalizeSecret, isValidSecret } from '../totp.js';
 import { TYPE_IDS, typeOf, typeLabel, hasTemplate, LIMITS } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 
 export class ImportError extends Error {
-  /** @param {'NEEDS_PASSWORD'|'BAD_PASSWORD'|'INVALID_FORMAT'|'UNSUPPORTED'|'EMPTY'} code */
   constructor(code, message) {
     super(message);
     this.name = 'ImportError';
@@ -26,9 +10,13 @@ export class ImportError extends Error {
   }
 }
 
+const EPOCH_SECONDS_BELOW = 1e11;
+const PGP_ARMOR_HEADER = '-----BEGIN PGP MESSAGE-----';
+const PGP_PUBLIC_KEY_ENCRYPTED_SESSION_KEY = 1;
+const PGP_SYMMETRIC_KEY_ENCRYPTED_SESSION_KEY = 3;
+
 const str = (v) => (v == null ? '' : String(v)).trim();
 
-/** Keep only the template's keys, as non-empty strings (secrets keep surrounding spaces). */
 function cleanFields(type, fields) {
   const out = {};
   if (!fields || typeof fields !== 'object') return out;
@@ -47,13 +35,11 @@ function cleanExtra(extra) {
     .filter((e) => e.value.trim());
 }
 
-/** Fill defaults and trim strings; returns null for items with nothing worth keeping. */
 export function makeImported(p) {
   const type = TYPE_IDS.includes(p.type) ? p.type : 'login';
   const extra = cleanExtra(p.extra);
   let note = p.note == null ? '' : String(p.note).replace(/\r\n?/g, '\n').trim();
   if (extra.length > LIMITS.extraCount) {
-    // The SW accepts at most LIMITS.extraCount extra fields; keep the rest as note lines.
     note = [note, fieldsToNote(extra.splice(LIMITS.extraCount).map((e) => [e.label, e.value]))].filter(Boolean).join('\n\n');
   }
   const it = { type, title: str(p.title), note, fav: !!p.fav, extra };
@@ -61,7 +47,7 @@ export function makeImported(p) {
     Object.assign(it, {
       url: str(p.url),
       username: str(p.username),
-      password: p.password == null ? '' : String(p.password), // passwords keep surrounding spaces
+      password: p.password == null ? '' : String(p.password),
       totp: p.totp || null,
       passkeys: Array.isArray(p.passkeys) ? p.passkeys : [],
     });
@@ -80,13 +66,11 @@ export function makeImported(p) {
   return empty ? null : it;
 }
 
-/** "label: value" lines for fields of item kinds Akari doesn't model. Empty values are dropped. */
 export function fieldsToNote(fields, extra = '') {
   const lines = fields.filter(([, v]) => str(v)).map(([k, v]) => `${k}: ${String(v).trim()}`);
   return [lines.join('\n'), str(extra)].filter(Boolean).join('\n\n');
 }
 
-/** Accepts an otpauth:// URI or a bare base32 secret; anything else (e.g. steam://) → null. */
 export function parseOtp(value, fallbackLabel = '') {
   const v = str(value);
   if (!v) return null;
@@ -106,13 +90,12 @@ export function hostOf(url) {
   }
 }
 
-/** Parse a date given as ms, s, or an ISO / "YYYY-MM-DD hh:mm" string. */
 export function toMs(v) {
   if (v == null || v === '') return undefined;
   if (typeof v === 'number' || /^\d+(\.\d+)?$/.test(String(v))) {
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0) return undefined;
-    return n < 1e11 ? Math.round(n * 1000) : Math.round(n); // seconds vs ms
+    return n < EPOCH_SECONDS_BELOW ? Math.round(n * 1000) : Math.round(n);
   }
   const t = Date.parse(String(v).replace(' ', 'T'));
   return Number.isFinite(t) ? t : undefined;
@@ -121,7 +104,6 @@ export function toMs(v) {
 const truthy = new Set(['1', 'true', 'yes', 'y', 'on']);
 export const isTruthy = (v) => truthy.has(str(v).toLowerCase());
 
-/** Decode text: UTF-8 (BOM stripped) or UTF-16 with BOM. */
 export function bytesToText(bytes) {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
@@ -131,15 +113,16 @@ export function bytesToText(bytes) {
 
 export const isZip = (b) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
 
-/** OpenPGP: ASCII armor, or a binary packet (new or old format tag byte). */
 export function isPgp(b) {
   if (b.length < 2) return false;
   const head = new TextDecoder().decode(b.subarray(0, 64)).trimStart();
-  if (head.startsWith('-----BEGIN PGP MESSAGE-----')) return true;
+  if (head.startsWith(PGP_ARMOR_HEADER)) return true;
   const tag = b[0];
-  if (!(tag & 0x80)) return false;
-  const id = tag & 0x40 ? tag & 0x3f : (tag >> 2) & 0x0f;
-  return id === 1 || id === 3; // PKESK or SKESK starts an encrypted message
+  const isPacketHeader = tag & 0x80;
+  if (!isPacketHeader) return false;
+  const isNewFormat = tag & 0x40;
+  const packetType = isNewFormat ? tag & 0x3f : (tag >> 2) & 0x0f;
+  return packetType === PGP_PUBLIC_KEY_ENCRYPTED_SESSION_KEY || packetType === PGP_SYMMETRIC_KEY_ENCRYPTED_SESSION_KEY;
 }
 
 export function parseJson(text, what) {

@@ -1,6 +1,3 @@
-// Settings bottom sheet: language, theme, auto-lock, clipboard clearing, master password, and the
-// 保管庫 / インポート / エクスポート pages (views/vaults.js, import.js, export.js) shown inside the same sheet.
-
 import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
 import { S, emit, call, strengthOf, errText, liveToken, live, setSettings, putSetting } from '../state.js';
 import { syncInert, keepFocus } from './dom.js';
@@ -14,10 +11,10 @@ import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
+const RELOAD_DELAY_MS = 120;
+const SHEET_FOCUS_DELAY_MS = 60;
 
 export const isSettingsOpen = () => $('setSheet').classList.contains('open');
-
-/* ── pages: the settings list, 保管庫, インポート, エクスポート ── */
 
 const PAGES = {
   main: { el: 'setMain', title: () => t('設定') },
@@ -26,7 +23,7 @@ const PAGES = {
   export: { el: 'exportPage', title: () => t('エクスポート') },
 };
 let page = 'main';
-let entry = 'main'; // the page the sheet was opened on: going back from it closes the sheet
+let entry = 'main';
 
 function showPage(name, { focus = true } = {}) {
   const prev = page;
@@ -35,7 +32,7 @@ function showPage(name, { focus = true } = {}) {
   sheet.dataset.page = name;
   for (const [k, p] of Object.entries(PAGES)) $(p.el).hidden = k !== name;
   $('setTitle').textContent = PAGES[name].title();
-  $('setCmdLine').hidden = name !== 'main'; // the pages draw their own command line
+  $('setCmdLine').hidden = name !== 'main';
   $('setBack').hidden = name === 'main';
   if (prev === 'vaults' && name !== 'vaults') resetVaults();
   if (prev === 'import' && name !== 'import') resetImport();
@@ -53,7 +50,6 @@ function showPage(name, { focus = true } = {}) {
   }
 }
 
-/** One step back: inside a page first, then to the list — or out, from the page the sheet opened on. */
 function back() {
   if (page === 'vaults' && vaultsBack()) return;
   if (page === 'import' && importBack()) return;
@@ -62,8 +58,6 @@ function back() {
   else showPage('main');
 }
 
-/** Esc peels one layer: an open form on the list, then the same steps as 戻る; it closes the
- *  sheet from the list, from the page it opened on, and after a finished import. */
 export function escapeSettings() {
   if (page === 'main') {
     if (!$('neverForm').hidden) { showNeverForm(false); chipOf('autoLockMinutes', NEVER_LOCK)?.focus(); return; }
@@ -80,8 +74,6 @@ export function escapeSettings() {
   back();
 }
 
-/* ── the list's command line: `akari config`, then what was just set ── */
-
 const CMD_VALUES = {
   language: (v) => `language ${v}`,
   theme: (v) => `theme ${v}`,
@@ -93,11 +85,8 @@ function setCmd(text) {
   $('setCmd').textContent = text;
 }
 
-/* ── settings list ── */
-
 const chipOf = (key, value) => document.querySelector(`#setSheet .chips[data-setting="${key}"] [data-value="${value}"]`);
 
-/** What the chosen value does, in one line under its chips. */
 function hintFor(key, v) {
   if (key === 'language') {
     if (v !== 'auto') return v === 'en' ? t('画面を英語で表示します') : t('画面を日本語で表示します');
@@ -135,7 +124,7 @@ async function setSetting(key, raw) {
   const value = valueOf(key, raw);
   if (S.settings[key] === value) return;
   const prev = putSetting(key, value);
-  if (key === 'theme') globalThis.__akariTheme?.apply(value); // at once; undone below if it cannot be saved
+  if (key === 'theme') globalThis.__akariTheme?.apply(value);
   syncChips();
   try {
     const next = await call(MSG.SETTINGS_SET, { patch: { [key]: value } });
@@ -143,10 +132,9 @@ async function setSetting(key, raw) {
     syncChips();
     setCmd(`akari config set ${CMD_VALUES[key](value)}`);
     emit('settingsChanged', key);
-    // every view builds its text in the language it starts in: reload, and come back here
     if (key === 'language') {
-      try { sessionStorage.setItem('akari.reopen', 'settings'); } catch { /* storage blocked */ }
-      setTimeout(() => location.reload(), 120);
+      try { sessionStorage.setItem('akari.reopen', 'settings'); } catch { }
+      setTimeout(() => location.reload(), RELOAD_DELAY_MS);
     }
   } catch (e) {
     putSetting(key, prev);
@@ -156,9 +144,6 @@ async function setSetting(key, raw) {
   }
 }
 
-/* 自動ロック「しない」: the service worker keeps the vault key on this device, so it asks for
-   the master password; the form says what that means before anything changes. */
-
 function showNeverForm(open) {
   const form = $('neverForm');
   form.hidden = !open;
@@ -166,7 +151,6 @@ function showNeverForm(open) {
   $('neverPw').value = '';
   $('neverErr').textContent = '';
   if (open) {
-    // one master-password form at a time
     setExpanded($('pwToggle'), $('pwForm'), false);
     resetPwForm();
     $('neverWarn').textContent = t('settings.neverWarn', null,
@@ -214,7 +198,6 @@ function resetPwForm() {
   updatePwMeter();
 }
 
-/** The strength meter and the three conditions, as the new password is typed. */
 function updatePwMeter() {
   const v = $('pwNext').value;
   const st = strengthOf(v);
@@ -255,11 +238,8 @@ async function changePassword(e) {
   }
 }
 
-/* ── sheet ── */
-
 let restoreFocus = null;
 
-/** Open the sheet on the settings list, or straight on 'vaults' / 'import' / 'export'. */
 export function openSettings({ page: start = 'main' } = {}) {
   entry = start;
   syncChips();
@@ -276,11 +256,9 @@ export function openSettings({ page: start = 'main' } = {}) {
   $('setMain').scrollTop = 0;
   syncInert();
   if (start !== 'main') showPage(start);
-  else setTimeout(() => sheet.querySelector('[data-close]').focus({ preventScroll: true }), 60);
+  else setTimeout(() => sheet.querySelector('[data-close]').focus({ preventScroll: true }), SHEET_FOCUS_DELAY_MS);
 }
 
-/** Close the sheet. Whatever the import/export pages held (file bytes, parsed items,
- *  typed passwords, pending download URLs) is dropped here — also on lock (popup.js lockNow). */
 export function closeSettings() {
   const sheet = $('setSheet');
   resetVaults();
@@ -304,7 +282,7 @@ export function initSettings() {
   try {
     const m = chrome.runtime.getManifest();
     $('setVersion').textContent = `akari v${m.version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
-  } catch { /* ignore */ }
+  } catch { }
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
@@ -317,8 +295,6 @@ export function initSettings() {
       if (key === 'autoLockMinutes') showNeverForm(false);
       setSetting(key, b.dataset.value);
     });
-    // a radio group: arrows choose; landing on しない only moves focus (it asks for the password on Enter),
-    // and so do the languages (choosing one reloads the popup)
     arrowNav(group, 'button[data-value]', {
       onMove: (b) => {
         if (key === 'language') return;
@@ -332,7 +308,7 @@ export function initSettings() {
   $('neverCancel').addEventListener('click', () => { showNeverForm(false); chipOf('autoLockMinutes', NEVER_LOCK)?.focus(); });
   $('pwToggle').addEventListener('click', () => {
     const open = $('pwToggle').getAttribute('aria-expanded') !== 'true';
-    if (open) showNeverForm(false); // one master-password form at a time
+    if (open) showNeverForm(false);
     setExpanded($('pwToggle'), $('pwForm'), open);
     if (open) $('pwCurrent').focus();
     else resetPwForm();
@@ -343,7 +319,6 @@ export function initSettings() {
   $('vaultsOpen').addEventListener('click', () => showPage('vaults'));
   $('importOpen').addEventListener('click', () => showPage('import'));
   $('exportOpen').addEventListener('click', () => showPage('export'));
-  // Alt+← goes one step back on the vaults / import / export pages
   $('setSheet').addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.altKey && e.key === 'ArrowLeft' && page !== 'main') { e.preventDefault(); back(); }

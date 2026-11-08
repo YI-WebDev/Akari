@@ -1,17 +1,5 @@
-// Login passwords: the history of replaced ones and the pending new one. Pure: no chrome.* access.
-
 import { invalid, isObject, clampTs } from './common.js';
 import { FIELD_CAPS } from './items.js';
-
-// ---- login passwords: history and the pending new one ----------------------
-//
-// Changing a password only in Akari locks the user out until the site has the new one too, so
-//  - a login keeps the passwords it had (passwordHistory: [{ password, changedAt }], newest
-//    first, changedAt = when it stopped being current, no duplicates, at most 10), and
-//  - a password made for a change on the site waits as pendingPassword: { password, createdAt }
-//    while autofill keeps using the current one (the site asks for it to change it), until the
-//    user confirms the change (or the save prompt sees the site accept it).
-// Both keys are absent on logins that never needed them.
 
 export const PASSWORD_HISTORY_MAX = 10;
 const passwordOk = (v) => typeof v === 'string' && v.length >= 1 && v.length <= FIELD_CAPS.password;
@@ -33,7 +21,6 @@ function normalizePending(p, nowMs) {
     : null;
 }
 
-/** The history / pending keys of a stored login (backup import), never repeating `current`. */
 export function passwordKeys(raw, current, nowMs) {
   const history = normalizeHistory(raw.passwordHistory, nowMs).filter((h) => h.password !== current);
   const pending = normalizePending(raw.pendingPassword, nowMs);
@@ -43,7 +30,6 @@ export function passwordKeys(raw, current, nowMs) {
   };
 }
 
-/** Both histories of a login a backup merge replaces, plus its replaced password, newest first. */
 export function mergedHistory(incoming, existing) {
   const seen = new Set([incoming.password]);
   const replaced = existing.password && existing.password !== incoming.password
@@ -54,11 +40,6 @@ export function mergedHistory(incoming, existing) {
     .slice(0, PASSWORD_HISTORY_MAX);
 }
 
-/**
- * Make `next` the login's password (in place), keeping the one it replaces in the history.
- * A password taken back from the history leaves it; a pending password that is now current is
- * settled. Returns false when nothing changed.
- */
 export function setLoginPassword(item, next, nowMs) {
   const prev = typeof item.password === 'string' ? item.password : '';
   if (item.pendingPassword?.password === next) delete item.pendingPassword;
@@ -72,7 +53,6 @@ export function setLoginPassword(item, next, nowMs) {
   return true;
 }
 
-/** Hold `password` for a change on the site (replacing an earlier pending one); null clears it. */
 export function setPendingPassword(item, password, nowMs) {
   if (password == null) {
     delete item.pendingPassword;

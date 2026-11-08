@@ -1,5 +1,3 @@
-// Validators and helpers shared by the lib/vault/ modules. Pure: no chrome.* access.
-
 import { fromB64url } from '../../shared/bytes.js';
 import { AkariError } from '../../shared/errors.js';
 import { ERR } from '../../shared/messages.js';
@@ -9,8 +7,6 @@ export const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
 export const isHue = (v) => Number.isInteger(v) && v >= 0 && v <= 359;
 export const isBox = (b) => isObject(b) && typeof b.iv === 'string' && typeof b.ct === 'string';
 
-// Timestamps from a backup are clamped to [0, now] so a crafted far-future
-// updatedAt cannot win every later merge.
 export const clampTs = (v, fallback, nowMs) => (Number.isFinite(v) ? Math.min(Math.max(v, 0), nowMs) : fallback);
 
 const B64URL = /^[A-Za-z0-9_-]+$/;

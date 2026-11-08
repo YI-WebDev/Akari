@@ -1,22 +1,16 @@
-// Host/domain rules used for autofill matching and WebAuthn rpId checks, based on
-// the full Public Suffix List (psl-data.js, regenerate with scripts/build-psl.mjs).
-// Hosts under a TLD the list doesn't know get no registrable domain at all, so
-// they only ever match themselves exactly.
-
 import PSL from './psl-data.js';
 
 const EXACT = new Set();
-const WILDCARD = new Set(); // "*.ck" stored as "ck"
-const EXCEPTION = new Set(); // "!www.ck" stored as "www.ck"
+const WILDCARD = new Set();
+const EXCEPTION = new Set();
 for (const rule of PSL.split('\n')) {
   if (rule.startsWith('!')) EXCEPTION.add(rule.slice(1));
   else if (rule.startsWith('*.')) WILDCARD.add(rule.slice(2));
   else EXACT.add(rule);
 }
 
-const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+const IPV4_ADDRESS = /^\d{1,3}(\.\d{1,3}){3}$/;
 
-/** Number of labels in the public suffix of `labels`, or 0 when no PSL rule matches. */
 function suffixLength(labels) {
   for (let i = 0; i < labels.length; i++) {
     const name = labels.slice(i).join('.');
@@ -27,7 +21,6 @@ function suffixLength(labels) {
   return 0;
 }
 
-/** Lower-cased hostname of a URL, or '' if it cannot be parsed. Accepts bare hosts ("github.com"). */
 export function hostnameOf(url) {
   if (!url) return '';
   try {
@@ -38,9 +31,8 @@ export function hostnameOf(url) {
   }
 }
 
-export const isIpAddress = (host) => IPV4.test(host) || host.includes(':') || host.startsWith('[');
+export const isIpAddress = (host) => IPV4_ADDRESS.test(host) || host.includes(':') || host.startsWith('[');
 
-/** True for a public suffix ("com", "co.jp", "github.io") and for any single label except localhost. */
 export function isPublicSuffix(domain) {
   const d = domain.toLowerCase().replace(/\.$/, '');
   if (d === 'localhost') return false;
@@ -48,22 +40,16 @@ export function isPublicSuffix(domain) {
   return labels.length === 1 || suffixLength(labels) === labels.length;
 }
 
-/**
- * eTLD+1 ("accounts.google.com" → "google.com", "www.amazon.co.jp" → "amazon.co.jp").
- * IPs and localhost are returned as-is. Returns null for a public suffix itself and
- * for hosts under a TLD the PSL doesn't know.
- */
 export function registrableDomain(host) {
   const h = host.toLowerCase().replace(/\.$/, '');
   if (!h) return null;
   if (isIpAddress(h) || h === 'localhost') return h;
   const labels = h.split('.');
-  const n = suffixLength(labels);
-  if (n === 0 || n >= labels.length) return null;
-  return labels.slice(-(n + 1)).join('.');
+  const suffixLabels = suffixLength(labels);
+  if (suffixLabels === 0 || suffixLabels >= labels.length) return null;
+  return labels.slice(-(suffixLabels + 1)).join('.');
 }
 
-/** True when the saved item URL belongs to the same site (registrable domain) as the tab URL. */
 export function sameSite(itemUrl, tabUrl) {
   const a = hostnameOf(itemUrl);
   const b = hostnameOf(tabUrl);
@@ -74,7 +60,6 @@ export function sameSite(itemUrl, tabUrl) {
   return !!ra && ra === registrableDomain(b);
 }
 
-/** Secure context for WebAuthn: https, or http on localhost/127.0.0.1. */
 export function isSecureOrigin(url) {
   try {
     const u = new URL(url);
@@ -85,10 +70,6 @@ export function isSecureOrigin(url) {
   }
 }
 
-/**
- * WebAuthn rpId rule: rpId must equal the origin's host or be a parent domain of it
- * on a label boundary, and must not be a public suffix.
- */
 export function isValidRpId(rpId, originUrl) {
   const host = hostnameOf(originUrl);
   const rp = String(rpId || '').toLowerCase();
@@ -96,6 +77,5 @@ export function isValidRpId(rpId, originUrl) {
   if (rp === host) return !isPublicSuffix(rp);
   if (isIpAddress(host)) return false;
   if (!host.endsWith('.' + rp)) return false;
-  // A parent domain must itself be registrable (not a suffix, not under an unknown TLD).
   return registrableDomain(rp) !== null;
 }

@@ -1,8 +1,4 @@
-// English for the passkey strings. Keys are the Japanese source text (or a dotted key used
-// with a Japanese fallback); values are the English. Japanese needs no entry.
-
 export default {
-  // ---- passkey window: passkey.html (static text, translated by translateDom) ----
   'Akari パスキー': 'Akari passkey',
   '読み込み中': 'Loading',
   '読み込み中…': 'Loading…',
@@ -33,7 +29,6 @@ export default {
     'The site cancelled it, or it timed out. You can close this window.',
   '閉じる': 'Close',
 
-  // ---- passkey window: passkey.js ----
   'たった今': 'just now',
   '{n}分前': '{n} min ago',
   '{n}時間前': '{n} h ago',
@@ -58,13 +53,11 @@ export default {
   'Akari のセットアップがまだ済んでいません': 'Akari is not set up yet',
   '解除できませんでした。もう一度入力してください': 'Could not unlock. Enter it again.',
 
-  // ---- lib/strength.js: strength labels ----
   '弱い': 'Weak',
   '普通': 'Fair',
   '強い': 'Strong',
   '非常に強い': 'Very strong',
 
-  // ---- lib/totp.js: errors shown in the item editor ----
   '秘密鍵に使えない文字が含まれています': 'The secret has characters that are not allowed',
   '未対応のアルゴリズムです: {name}': 'Unsupported algorithm: {name}',
   'otpauth:// から始まる URI ではありません': 'Not an otpauth:// URI',
@@ -75,7 +68,6 @@ export default {
   '桁数は 6 または 8 のみ対応しています': 'Only 6 or 8 digits are supported',
   '更新間隔（period）は 1〜300 秒のみ対応しています': 'Only a period of 1–300 seconds is supported',
 
-  // ---- lib/pgp.js: errors shown on the import page ----
   'PGP で暗号化されたファイルです。パスフレーズを入力してください': 'This file is PGP encrypted. Enter its passphrase.',
   'PGP のファイルとして読めませんでした': 'Could not read this as a PGP file',
   '公開鍵で暗号化されたファイルには対応していません。パスフレーズ（共通鍵）で暗号化して書き出してください':

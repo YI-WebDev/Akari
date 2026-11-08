@@ -48,8 +48,6 @@
       return res.json();
     }
 
-    // Serialize the way @simplewebauthn/browser does (getters + response methods),
-    // so this also exercises the object shape, not just toJSON().
     function registrationToJSON(cred) {
       const r = cred.response;
       return {

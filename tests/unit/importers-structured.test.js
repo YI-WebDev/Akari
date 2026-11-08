@@ -30,10 +30,6 @@ const rejectsWith = (p, code, re) => assert.rejects(p, (e) => {
   if (re) assert.match(e.message, re);
   return true;
 });
-/**
- * Every item an importer returns must survive the shared normaliser, keep only the keys of its
- * type (no url / username / password on notes and typed items) and store language-neutral data.
- */
 const allValid = (out) => {
   for (const it of out.items) {
     const m = makeImported(it);
@@ -51,7 +47,6 @@ const allValid = (out) => {
     for (const e of it.extra || []) assert.equal(typeof e.secret, 'boolean', `"${it.title}" extra "${e.label}" secret flag`);
   }
 };
-/** The extra field labelled `label` (it must exist). */
 const extra = (it, label) => {
   const e = it.extra?.find((x) => x.label === label);
   assert.ok(e, `extra "${label}" missing on "${it.title}"; got ${(it.extra || []).map((x) => x.label).join(', ')}`);
@@ -60,19 +55,14 @@ const extra = (it, label) => {
 const noExtra = (it, label) => assert.ok(!it.extra?.some((x) => x.label === label), `"${it.title}" should not have extra "${label}"`);
 const noNoteWarnings = (out) => assert.ok(!out.warnings.some((w) => /セキュアノート/.test(w)), out.warnings.join(' / '));
 
-// --- shared helpers (_fields.js) -----------------------------------------------------------
-
 test('secret-looking field names and person names', () => {
   for (const s of ['PIN', 'Support PIN', 'API Key', 'パスワード', '暗証番号', '合言葉', 'recovery seed']) assert.ok(looksSecret(s), s);
   for (const s of ['アカウント ID', 'Public key', '公開鍵', 'Pinterest', 'Keyboard layout']) assert.ok(!looksSecret(s), s);
 
-  // Name parts without a full-name string of their own: family name first for CJK names only.
   assert.equal(personName('三郎', '', '田中'), '田中 三郎');
   assert.equal(personName('Hanako', 'M', 'Yamada'), 'Hanako M Yamada');
   assert.equal(personName('', '', 'Yamada'), 'Yamada');
 });
-
-// --- 1Password -----------------------------------------------------------------------------
 
 const onePux = () => makeZip({
   'export.attributes': fx('1password/1pux/export.attributes'),
@@ -84,7 +74,7 @@ test('1Password 1pux: logins, TOTP, favourites, URLs, typed items, trash', async
   const out = await onepassword.parse({ name: 'export.1pux', bytes: onePux() }, { source: '1password' });
   allValid(out);
   assert.equal(out.items.length, 7);
-  assert.equal(out.skipped, 1); // the trashed login
+  assert.equal(out.skipped, 1);
   assert.ok(!out.items.some((i) => i.title === 'ゴミ箱のログイン'));
 
   const shop = find(out, '通販サイト');
@@ -96,11 +86,11 @@ test('1Password 1pux: logins, TOTP, favourites, URLs, typed items, trash', async
   assert.equal(shop.createdAt, 1700000000000);
   assert.equal(shop.updatedAt, 1710000000000);
   assert.deepEqual(shop.totp, { secret: 'GEZDGNBVGY3TQOJQ', algorithm: 'SHA1', digits: 8, period: 30, issuer: 'Shop', label: 'hanako' });
-  assert.equal(shop.note, '家族共有のアカウント。'); // custom fields are extra fields now, not note lines
+  assert.equal(shop.note, '家族共有のアカウント。');
   assert.equal(extra(shop, 'URL').value, 'https://app.shop.example.jp');
   assert.deepEqual(extra(shop, '秘密の質問の答え'), { label: '秘密の質問の答え', value: 'ポチ', secret: true });
   assert.equal(extra(shop, 'タグ').value, '買い物, 家族');
-  assert.ok(!shop.extra.some((e) => /remember|✓/.test(e.label + e.value))); // checkbox form fields are noise
+  assert.ok(!shop.extra.some((e) => /remember|✓/.test(e.label + e.value)), 'checkbox form fields are noise');
 
   const memo = find(out, '家電メモ');
   assert.equal(memo.type, 'note');
@@ -112,9 +102,9 @@ test('1Password 1pux: logins, TOTP, favourites, URLs, typed items, trash', async
   assert.equal(card.note, 'ETC カード付き');
   assert.equal(extra(card, '住所').value, '丸の内 1-1, 千代田区, 東京都, 100-0005, jp');
   assert.equal(extra(card, '電話').value, '0120-000-000');
-  noExtra(card, '種類'); // "mc": Akari tells the brand from the number
+  noExtra(card, '種類');
 
-  const router = find(out, 'ルーター管理画面'); // archived "Password" item is still imported
+  const router = find(out, 'ルーター管理画面');
   assert.equal(router.type, 'login');
   assert.equal(router.password, 'router-admin-pass');
   assert.equal(router.fav, true);
@@ -123,7 +113,7 @@ test('1Password 1pux: logins, TOTP, favourites, URLs, typed items, trash', async
   assert.equal(wifi.type, 'wifi');
   assert.deepEqual(wifi.fields, { ssid: 'Akari-Home-5G', password: 'wifi-secret-123', security: 'wpa2' });
   assert.match(find(out, '保険証').note, /ファイル名: 保険証\.pdf/);
-  assert.equal(find(out, 'GitLab').totp.secret, 'JBSWY3DPEHPK3PXP'); // bare base32 secret
+  assert.equal(find(out, 'GitLab').totp.secret, 'JBSWY3DPEHPK3PXP');
 
   assert.deepEqual(out.warnings.filter((w) => /セキュアノート/.test(w)), ['ドキュメント 1 件をセキュアノートとして読み込みました']);
   assert.ok(out.warnings.some((w) => /添付ファイル/.test(w)));
@@ -144,7 +134,7 @@ test('1Password 1pux: every category with an Akari type', async () => {
   const corp = find(out, '社内システム');
   assert.equal(corp.totp.issuer, 'Corp');
   assert.equal(corp.note, '');
-  assert.deepEqual(extra(corp, 'company_code'), { label: 'company_code', value: 'C-001', secret: false }); // custom login form field
+  assert.deepEqual(extra(corp, 'company_code'), { label: 'company_code', value: 'C-001', secret: false }, 'custom login form field');
   assert.deepEqual(extra(corp, '金庫の暗証番号'), { label: '金庫の暗証番号', value: '4321', secret: true });
   assert.equal(extra(corp, '入社日').value, '2015-04-01');
   assert.deepEqual(extra(corp, '予備の OTP'), { label: '予備の OTP', value: 'steam://ABCDE', secret: true });
@@ -167,7 +157,7 @@ test('1Password 1pux: every category with an Akari type', async () => {
   assert.deepEqual(db.fields, { dbType: 'postgresql', host: 'db.example.jp', port: '5432', database: 'akari', username: 'app', password: 'db-secret' });
   assert.equal(extra(db, '接続オプション').value, 'sslmode=require');
   const dl = find(out, '運転免許証');
-  assert.equal(dl.fields.expiry, '2029-03-31'); // monthYear 2029/03 → last day of the month
+  assert.equal(dl.fields.expiry, '2029-03-31');
   assert.equal(dl.fields.issuer, '東京都公安委員会');
   assert.equal(dl.fields.licenseClass, '普通');
   assert.equal(extra(dl, '国').value, '日本');
@@ -187,7 +177,7 @@ test('1Password 1pux: every category with an Akari type', async () => {
   assert.deepEqual(find(out, 'マイナンバー').fields, { fullName: '山田 花子', number: '123456789012' });
   const wifi = find(out, '実家の Wi-Fi');
   assert.deepEqual(wifi.fields, { ssid: 'Jikka-WiFi', password: 'jikka-pass' });
-  assert.equal(extra(wifi, 'セキュリティ').value, 'enterprise-x'); // not one of the options: kept as is
+  assert.equal(extra(wifi, 'セキュリティ').value, 'enterprise-x');
   assert.equal(extra(wifi, 'ベースステーションのパスワード').secret, true);
   const vps = find(out, 'VPS');
   assert.deepEqual(vps.fields, { host: 'vps.example.jp', username: 'root', password: 'root-pass', url: 'https://panel.example.jp' });
@@ -229,7 +219,7 @@ test('1Password 1pif: records, TOTP, favourites, trashed and system records', as
   const out = await onepassword.parse({ name: 'data.1pif', bytes: fx('1password/export.1pif') }, {});
   allValid(out);
   assert.deepEqual(out.items.map((i) => i.title), ['ネットバンク', '旅行の持ち物', 'JCB カード', '本人情報']);
-  assert.equal(out.skipped, 1); // trashed; the folder record is not an item
+  assert.equal(out.skipped, 1);
 
   const bank = find(out, 'ネットバンク');
   assert.equal(bank.type, 'login');
@@ -246,7 +236,6 @@ test('1Password 1pif: records, TOTP, favourites, trashed and system records', as
   assert.equal(find(out, '旅行の持ち物').type, 'note');
   const card = find(out, 'JCB カード');
   assert.equal(card.type, 'card');
-  // Section values and the duplicated flat legacy keys (expiry_mm / expiry_yy) agree: kept once.
   assert.deepEqual(card.fields, { cardholder: 'TARO YAMADA', number: '3530111333300000', expiry: '2030-07', cvv: '999' });
   assert.deepEqual(card.extra, [{ label: '発行日', value: '2023-11-14', secret: false }]);
   const me = find(out, '本人情報');
@@ -258,14 +247,12 @@ test('1Password 1pif: records, TOTP, favourites, trashed and system records', as
   noNoteWarnings(out);
 });
 
-// --- Bitwarden -----------------------------------------------------------------------------
-
 const P256_PKCS8 = 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgUNGd8JJzMSEFfmjUow94J0D3gQHQEevbG2U_6nMP2gihRANCAARe3luLVPXhUQDY7RNcFHuQf1ddqaywJbqg4jWYJ_t2zko1MpnR_pYojMcC6My2Xl9jT31vNNH29mgyQhOHVTmA';
 
 function checkBitwarden(out) {
   allValid(out);
   assert.equal(out.items.length, 6);
-  assert.equal(out.skipped, 1); // deletedDate
+  assert.equal(out.skipped, 1);
   const portal = find(out, '社内ポータル');
   assert.equal(portal.type, 'login');
   assert.equal(portal.url, 'https://portal.example.co.jp/login');
@@ -276,10 +263,10 @@ function checkBitwarden(out) {
   assert.equal(portal.totp.secret, 'JBSWY3DPEHPK3PXP');
   assert.equal(portal.totp.issuer, 'Example');
   assert.equal(portal.note, 'VPN 接続が必要です。');
-  assert.deepEqual(portal.extra, [ // the linked field has no value of its own
+  assert.deepEqual(portal.extra, [
     { label: 'URL', value: 'https://sso.example.co.jp', secret: false },
     { label: '社員番号', value: 'E-1024', secret: false },
-    { label: 'PIN', value: '8642', secret: true }, // hidden field
+    { label: 'PIN', value: '8642', secret: true },
     { label: '管理者', value: 'true', secret: false },
   ]);
 
@@ -312,7 +299,7 @@ function checkBitwarden(out) {
 
   noNoteWarnings(out);
   assert.ok(out.warnings.some((w) => /TOTP/.test(w)));
-  assert.ok(out.warnings.some((w) => /パスキー 1 件/.test(w))); // the P-384 one
+  assert.ok(out.warnings.some((w) => /パスキー 1 件/.test(w)));
   return portal;
 }
 
@@ -325,8 +312,8 @@ test('Bitwarden JSON: cards, identities, SSH keys, bank accounts, driver\'s lice
   allValid(out);
   assert.equal(out.items.length, 7);
   const card = find(out, '家族カード');
-  assert.deepEqual(card.fields, { cardholder: 'HANAKO YAMADA', number: '6250941006528599', expiry: '2027-11', cvv: '321' }); // 2-digit year
-  assert.deepEqual(card.extra, [{ label: '暗証番号（ネット）', value: '2580', secret: true }]); // brand "Other" dropped: UnionPay by number
+  assert.deepEqual(card.fields, { cardholder: 'HANAKO YAMADA', number: '6250941006528599', expiry: '2027-11', cvv: '321' });
+  assert.deepEqual(card.extra, [{ label: '暗証番号（ネット）', value: '2580', secret: true }]);
 
   const me = find(out, '花子の ID');
   assert.equal(me.note, 'メモ');
@@ -377,7 +364,6 @@ test('Bitwarden passkeys: ES256 only; private key imports into WebCrypto as P-25
   const out = await bitwarden.parse({ name: 'bitwarden_export.json', bytes: fx('bitwarden/export.json') }, {});
   const [pk, ...rest] = find(out, '社内ポータル').passkeys;
   assert.equal(rest.length, 0);
-  // GUID credential id → its 16 raw bytes, b64url.
   assert.equal(pk.credentialId, Buffer.from('6f94caa66bda417a9c1720798334db13', 'hex').toString('base64url'));
   assert.equal(pk.rpId, 'portal.example.co.jp');
   assert.equal(pk.userHandle, 'dXNlci0xMDI0');
@@ -401,10 +387,9 @@ test('Bitwarden ZIP: data.json is read, attachments are reported', async () => {
   assert.ok(out.warnings.includes('添付ファイル 1 件は読み込まれません'));
 });
 
-/** Independent implementation (node:crypto) of Bitwarden's password-protected export. */
 function bitwardenProtect(plainText, password, { iterations = 5000, kdfType = 0 } = {}) {
   const salt = randomBytes(16).toString('base64');
-  const key = pbkdf2Sync(password, salt, iterations, 32, 'sha256'); // the salt string itself is the salt
+  const key = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
   const expand = (info) => createHmac('sha256', key).update(Buffer.concat([Buffer.from(info), Buffer.from([1])])).digest();
   const encKey = expand('enc'), macKey = expand('mac');
   const encString = (text) => {
@@ -434,7 +419,6 @@ test('Bitwarden password-protected JSON: encrypt → decrypt round trip, wrong /
   await rejectsWith(bitwarden.parse(file, { password: 'wrong' }), 'BAD_PASSWORD');
   await rejectsWith(bitwarden.parse(file, {}), 'NEEDS_PASSWORD');
 
-  // Tampering with the payload is reported as a broken file, not as a wrong password.
   const j = JSON.parse(new TextDecoder().decode(file.bytes));
   const [iv, ct, mac] = j.data.slice(2).split('|');
   const flipped = Buffer.from(ct, 'base64');
@@ -451,8 +435,6 @@ test('Bitwarden: Argon2id and account-restricted encrypted exports are rejected 
   await rejectsWith(bitwarden.parse({ name: 'x.json', bytes: enc('{"hello":1}') }, {}), 'INVALID_FORMAT');
   await rejectsWith(bitwarden.parse({ name: 'x.json', bytes: enc('not json') }, {}), 'INVALID_FORMAT');
 });
-
-// --- Dashlane ------------------------------------------------------------------------------
 
 const dashlaneZip = () => {
   const files = {};
@@ -501,11 +483,10 @@ test('Dashlane: ID kinds, merged personal info, IBAN accounts, legacy typed sect
   assert.deepEqual(ids.items.map((i) => i.type), ['driverLicense', 'socialSecurity', 'socialSecurity', 'note']);
   assert.deepEqual(ids.items[0].fields, { fullName: '山田 花子', number: '301234567890', issuedOn: '2021-03-05', expiry: '2026-04-05', issuer: '東京都公安委員会' });
   assert.deepEqual(ids.items[1].fields, { fullName: 'Hanako Yamada', number: '123-45-6789' });
-  assert.equal(ids.items[2].fields.number, 'AB1234567'); // national ID card
-  assert.match(ids.items[3].note, /番号: 98765/); // tax numbers have no Akari type
+  assert.equal(ids.items[2].fields.number, 'AB1234567');
+  assert.match(ids.items[3].note, /番号: 98765/);
   assert.deepEqual(ids.warnings, ['税番号 1 件をセキュアノートとして読み込みました']);
 
-  // One "name" row: the email, phone and address rows belong to the same person.
   const info = await dashlane.parse({ name: 'personalInfo.csv', bytes: fx('dashlane/types/personalInfo.csv') }, {});
   allValid(info);
   assert.equal(info.items.length, 1);
@@ -535,7 +516,7 @@ test('Dashlane: ID kinds, merged personal info, IBAN accounts, legacy typed sect
   assert.deepEqual(pp.fields, {
     fullName: 'TARO YAMADA', number: 'TK0000001', issuedOn: '2015-07-01', expiry: '2025-07-01', authority: '東京都', birthDate: '1985-12-24',
   });
-  assert.ok(!pp.extra.some((e) => e.label === 'id')); // bookkeeping keys are dropped
+  assert.ok(!pp.extra.some((e) => e.label === 'id'), 'bookkeeping keys are dropped');
   assert.deepEqual(find(legacy, 'Taro Yamada').fields, { firstName: 'Taro', lastName: 'Yamada', birthDate: '1985-12-24' });
   assert.equal(find(legacy, '税務情報').type, 'note');
   assert.deepEqual(legacy.warnings, ['税務情報 1 件をセキュアノートとして読み込みました']);
@@ -560,13 +541,11 @@ test('Dashlane single credentials.csv and legacy JSON', async () => {
   await rejectsWith(dashlane.parse({ name: 'd.zip', bytes: makeZip({ 'readme.txt': 'x' }) }, {}), 'INVALID_FORMAT');
 });
 
-// --- Enpass --------------------------------------------------------------------------------
-
 test('Enpass JSON: login fields, TOTP, favourites, trashed, archived, conversions', async () => {
   const out = await enpass.parse({ name: 'enpass.json', bytes: fx('enpass/export.json') }, {});
   allValid(out);
   assert.equal(out.items.length, 5);
-  assert.equal(out.skipped, 1); // trashed
+  assert.equal(out.skipped, 1);
   const mail = find(out, 'メール');
   assert.equal(mail.type, 'login');
   assert.equal(mail.username, 'jiro');
@@ -577,7 +556,7 @@ test('Enpass JSON: login fields, TOTP, favourites, trashed, archived, conversion
   assert.equal(mail.createdAt, 1700000000000);
   assert.equal(mail.updatedAt, 1710000000000);
   assert.equal(mail.note, 'メインのメールアカウント');
-  assert.deepEqual(mail.extra, [ // deleted fields and section headers are left out
+  assert.deepEqual(mail.extra, [
     { label: 'メール', value: 'jiro@example.jp', secret: false },
     { label: '予備のサイト', value: 'https://webmail.example.jp', secret: false },
     { label: '秘密の質問', value: '初めて飼ったペットは？', secret: false },
@@ -588,7 +567,7 @@ test('Enpass JSON: login fields, TOTP, favourites, trashed, archived, conversion
   assert.equal(onlyEmail.totp.period, 60);
 
   assert.equal(find(out, '引っ越しメモ').type, 'note');
-  const amex = find(out, 'アメックス'); // archived items are still imported
+  const amex = find(out, 'アメックス');
   assert.equal(amex.type, 'card');
   assert.deepEqual(amex.fields, { cardholder: 'JIRO SATO', number: '378282246310005', expiry: '2027-09', cvv: '1234' });
   assert.equal(amex.note, '海外旅行用');
@@ -604,7 +583,7 @@ test('Enpass JSON: identity, bank account, passport, driving licence, database, 
   const out = await enpass.parse({ name: 'types.json', bytes: fx('enpass/types.json') }, {});
   allValid(out);
   const me = find(out, '次郎の個人情報');
-  assert.deepEqual(me.fields, { // identity fields are found by their uid, whatever the UI language
+  assert.deepEqual(me.fields, {
     firstName: '次郎', lastName: '佐藤', birthDate: '1988-02-29', address1: '梅田 1-1', city: '大阪市', state: '大阪府', country: '日本',
     postalCode: '530-0001', phone: '06-0000-0000', company: '灯株式会社', email: 'jiro@example.jp',
   });
@@ -620,7 +599,7 @@ test('Enpass JSON: identity, bank account, passport, driving licence, database, 
   assert.deepEqual(pp.fields, {
     fullName: 'JIRO SATO', number: 'TZ1112223', nationality: 'JAPAN', issuingCountry: 'JPN', birthDate: '1988-02-29', issuedOn: '2022-04-01', authority: '外務省',
   });
-  assert.equal(extra(pp, 'Expiry date').value, '04/05/2032'); // day/month order unknown: kept as written
+  assert.equal(extra(pp, 'Expiry date').value, '04/05/2032');
   assert.deepEqual(find(out, '運転免許').fields, {
     number: '620000000001', fullName: '佐藤 次郎', licenseClass: '中型', expiry: '2027-03-31', issuedOn: '2023-11-14',
   });
@@ -629,11 +608,9 @@ test('Enpass JSON: identity, bank account, passport, driving licence, database, 
   });
   assert.deepEqual(find(out, 'カフェの Wi-Fi').fields, { ssid: 'Cafe-Akari', password: 'latte-123', security: 'wpa2' });
   assert.deepEqual(find(out, 'スポーツクラブ').fields, { organization: 'Akari Gym', memberName: 'Jiro Sato', memberId: 'G-77', since: '2023-04-01', pin: '0707' });
-  assert.match(find(out, 'プロバイダー').note, /ユーザー名: isp-user/); // internet provider: no Akari type
+  assert.match(find(out, 'プロバイダー').note, /ユーザー名: isp-user/, 'internet provider: no Akari type');
   assert.deepEqual(out.warnings, ['コンピューター 1 件をセキュアノートとして読み込みました']);
 });
-
-// --- Keeper --------------------------------------------------------------------------------
 
 test('Keeper JSON: logins with TOTP (legacy and v3), notes, converted record types', async () => {
   const out = await keeper.parse({ name: 'keeper.json', bytes: fx('keeper/export.json') }, {});
@@ -648,13 +625,13 @@ test('Keeper JSON: logins with TOTP (legacy and v3), notes, converted record typ
   assert.equal(bank.note, '第二暗証番号は別管理');
   assert.deepEqual(bank.extra, [
     { label: '予備 URL', value: 'https://bank2.example.jp', secret: false },
-    { label: '合言葉', value: 'さくら', secret: true }, // legacy field named like a secret
+    { label: '合言葉', value: 'さくら', secret: true },
     { label: '秘密の質問', value: '母の旧姓は？', secret: false },
     { label: '答え', value: '鈴木', secret: true },
   ]);
   assert.ok(!bank.extra.some((e) => /TFC:Keeper|otpauth/.test(e.label + e.value)));
 
-  const shop = find(out, 'ショッピング'); // record without $type = legacy login
+  const shop = find(out, 'ショッピング');
   assert.equal(shop.type, 'login');
   assert.equal(shop.totp.algorithm, 'SHA256');
 
@@ -690,7 +667,7 @@ test('Keeper JSON: record types mapped onto Akari types', async () => {
   assert.deepEqual(find(out, '三郎のパスポート').fields, {
     number: 'TS2223334', fullName: 'SABURO TANAKA', birthDate: '1985-09-09', expiry: '2030-01-01', issuedOn: '2020-01-01',
   });
-  assert.deepEqual(find(out, '三郎の免許').fields, { number: '600011112222', fullName: '田中 三郎', birthDate: '1985-09-09', expiry: '2028-01-01' }); // family name first
+  assert.deepEqual(find(out, '三郎の免許').fields, { number: '600011112222', fullName: '田中 三郎', birthDate: '1985-09-09', expiry: '2028-01-01' }, 'family name first');
   assert.deepEqual(find(out, '本番サーバー').fields, { host: 'srv.example.jp', port: '2222', username: 'deploy', password: 'srv-pass' });
   assert.deepEqual(find(out, '顧客 DB').fields, { dbType: 'PostgreSQL', host: 'crm-db.example.jp', port: '5432', username: 'crm', password: 'crm-pass' });
   const ssh = find(out, '踏み台の鍵');
@@ -704,7 +681,7 @@ test('Keeper JSON: record types mapped onto Akari types', async () => {
   assert.equal(extra(lic, '有効化日').value, '2024-01-01');
   assert.deepEqual(find(out, '書店の会員').fields, { memberId: 'BK-9999', memberName: '田中 三郎' });
   const med = find(out, '健康保険証');
-  assert.deepEqual(med.fields, { policyNumber: 'HI-12345', patientName: '田中 三郎' }); // the insured's name
+  assert.deepEqual(med.fields, { policyNumber: 'HI-12345', patientName: '田中 三郎' });
   assert.deepEqual(find(out, '社会保障カード').fields, { number: '078-05-1120', fullName: 'Saburo Tanaka' });
   const wifi = find(out, 'ゲスト Wi-Fi');
   assert.deepEqual(wifi.fields, { ssid: 'Akari-Guest', password: 'guest-pass', security: 'wpa3' });
@@ -712,8 +689,6 @@ test('Keeper JSON: record types mapped onto Akari types', async () => {
   assert.match(find(out, '出生証明書').note, /氏名: 田中 三郎\n生年月日: 1985-09-09/);
   assert.deepEqual(out.warnings, ['出生証明書 1 件をセキュアノートとして読み込みました']);
 });
-
-// --- label guesses and secrets -------------------------------------------------------------
 
 test('label guesses never unmask a secret value or turn a word into a link', async () => {
   const fl = (label, value, sensitive = 0, type = 'text') => ({ deleted: 0, label, sensitive, type, value });
@@ -730,7 +705,7 @@ test('label guesses never unmask a secret value or turn a word into a link', asy
   assert.deepEqual(two.extra, [{ label: 'API Key', value: 'AKIA-visible?', secret: true }]);
   assert.deepEqual(find(en, 'API 1 本').fields, { secret: 'only-key' });
   const srv = find(en, '管理サーバー');
-  assert.deepEqual(srv.fields, { host: 'srv.example.jp', password: 'root-pass' }); // no url: neither value is a link
+  assert.deepEqual(srv.fields, { host: 'srv.example.jp', password: 'root-pass' }, 'no url: neither value is a link');
   assert.deepEqual(srv.extra, [
     { label: '管理画面', value: 'hunter3', secret: false },
     { label: 'Admin Console Password', value: 'hunter2', secret: true },
@@ -743,7 +718,7 @@ test('label guesses never unmask a secret value or turn a word into a link', asy
   allValid(kp);
   const ks = kp.items[0];
   assert.deepEqual(ks.fields, { host: 'k.example.jp', port: '22', username: 'root', password: 'pw' });
-  assert.deepEqual(extra(ks, '管理画面'), { label: '管理画面', value: 'hunter2', secret: false }); // a URL field, but not a URL
+  assert.deepEqual(extra(ks, '管理画面'), { label: '管理画面', value: 'hunter2', secret: false }, 'a URL field, but not a URL');
   assert.deepEqual(extra(ks, 'Admin Console Password'), { label: 'Admin Console Password', value: 'hunter3', secret: true });
   assert.equal(extra(ks, 'Admin console URL').value, 'https://panel.example.jp');
 
@@ -773,9 +748,6 @@ test('label guesses never unmask a secret value or turn a word into a link', asy
   assert.deepEqual(extra(legacy.items[0], 'pinCode'), { label: 'pinCode', value: '9999', secret: true });
 });
 
-// --- Akari's own Bitwarden export (akari:type) ----------------------------------------------
-
-/** One item of each Akari type, every template field filled, plus a plain and a secret extra field. */
 function everyType() {
   const value = (type, fd) => {
     if (type === 'card' && fd.key === 'number') return '4111111111111111';
@@ -817,7 +789,7 @@ test("Bitwarden: Akari's own export of every item type imports back unchanged", 
     const it = makeImported(find(out, o.title));
     assert.equal(it.type, o.type, o.type);
     assert.deepEqual(it.fields, o.fields, `${o.type} fields`);
-    assert.deepEqual(it.extra, o.extra, `${o.type} extra`); // and never the akari:type marker itself
+    assert.deepEqual(it.extra, o.extra, `${o.type} extra, without the akari:type marker`);
     assert.equal(it.note, o.note, `${o.type} note`);
     assert.equal(it.fav, o.fav);
     if (o.type === 'login') for (const k of ['url', 'username', 'password']) assert.equal(it[k], o[k], k);
@@ -846,8 +818,6 @@ test('Bitwarden: the akari:type marker is only trusted with a known type, and ne
   }
 });
 
-// --- KeePass -------------------------------------------------------------------------------
-
 test('XML reader: entities, CDATA, comments, attributes, self-closing, errors', () => {
   const doc = keepass.parseXml('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e "v">]><!-- c --><a k="1 &gt; 0" j=\'&quot;q&quot;\'><b/>x&#x3042;&#12354;&amp;<c><![CDATA[<raw> & ]]></c></a>');
   const a = doc.children[0];
@@ -864,7 +834,7 @@ test('KeePass XML: entries, TOTP variants, history and recycle bin skipped', asy
   const out = await keepass.parse({ name: 'export.xml', bytes: fx('keepass/export.xml') }, {});
   allValid(out);
   assert.deepEqual(out.items.map((i) => i.title), ['クラウド管理画面', 'VPN', '金庫のメモ', 'Web メール', 'Steam']);
-  assert.equal(out.skipped, 2); // two entries in the recycle bin (one in a sub-group)
+  assert.equal(out.skipped, 2, 'two entries in the recycle bin (one in a sub-group)');
 
   const cloud = find(out, 'クラウド管理画面');
   assert.equal(cloud.type, 'login');
@@ -878,8 +848,8 @@ test('KeePass XML: entries, TOTP variants, history and recycle bin skipped', asy
   assert.deepEqual(cloud.extra, [
     { label: 'URL', value: 'https://console2.example.jp/', secret: false },
     { label: 'アカウント ID', value: '1234-5678-9012', secret: false },
-    { label: 'Support PIN', value: '4455', secret: true }, // named like a secret
-    { label: '復旧用の番号', value: 'R-0099-1188', secret: true }, // protected in memory
+    { label: 'Support PIN', value: '4455', secret: true },
+    { label: '復旧用の番号', value: 'R-0099-1188', secret: true },
     { label: 'タグ', value: '仕事, 重要', secret: false },
   ]);
 
@@ -889,7 +859,7 @@ test('KeePass XML: entries, TOTP variants, history and recycle bin skipped', asy
   assert.equal(memo.type, 'note');
   assert.equal(memo.note, '暗証番号 <1234> & 鍵の場所\n2 行目');
   assert.equal(find(out, 'Web メール').totp.secret, 'JBSWY3DPEHPK3PXP');
-  const steam = find(out, 'Steam'); // HOTP cannot be used; kept as an extra field
+  const steam = find(out, 'Steam');
   assert.equal(steam.totp, null);
   assert.equal(steam.note, '');
   assert.equal(extra(steam, 'otp').secret, true);
@@ -905,12 +875,10 @@ test('KeePass XML: rejects other XML and KDBX-protected values', async () => {
   await rejectsWith(keepass.parse({ name: 'x.xml', bytes: enc('<KeePassFile><Root>') }, {}), 'INVALID_FORMAT');
 });
 
-// --- Proton Pass ---------------------------------------------------------------------------
-
 function checkProton(out) {
   allValid(out);
   assert.equal(out.items.length, 6);
-  assert.equal(out.skipped, 1); // state 2 = trashed
+  assert.equal(out.skipped, 1);
   const travel = find(out, '旅行予約サイト');
   assert.equal(travel.type, 'login');
   assert.equal(travel.username, 'goro');
@@ -923,7 +891,7 @@ function checkProton(out) {
   assert.equal(extra(travel, 'URL').value, 'https://m.travel.example.jp');
   assert.equal(extra(travel, 'メール').value, 'goro@example.jp');
   assert.deepEqual(extra(travel, '会員番号'), { label: '会員番号', value: 'JL-0099', secret: false });
-  assert.deepEqual(extra(travel, '予備コード'), { label: '予備コード', value: 'rescue-42', secret: true }); // hidden field
+  assert.deepEqual(extra(travel, '予備コード'), { label: '予備コード', value: 'rescue-42', secret: true }, 'hidden field');
   assert.deepEqual(extra(travel, 'ワンタイムパスワード'), { label: 'ワンタイムパスワード', value: 'otpauth://totp/Second?secret=GEZDGNBVGY3TQOJQ', secret: true });
   assert.equal(find(out, '病院の診察券').type, 'note');
   const card = find(out, 'デビットカード');
@@ -932,7 +900,7 @@ function checkProton(out) {
   assert.match(find(out, 'ニュースレター用').note, /エイリアス: news\.goro@passmail\.net/);
   const badge = find(out, '社員証');
   assert.equal(badge.type, 'identity');
-  assert.deepEqual(badge.fields, { fullName: '伊藤 五郎', email: 'goro@work.example.jp', company: '灯株式会社' }); // full name as written
+  assert.deepEqual(badge.fields, { fullName: '伊藤 五郎', email: 'goro@work.example.jp', company: '灯株式会社' }, 'full name as written');
   assert.deepEqual(badge.extra, [
     { label: '社員番号', value: 'A-5050', secret: false },
     { label: '電話', value: '090-0000-0000', secret: false },
@@ -967,15 +935,14 @@ test('Proton Pass: SSH keys, Wi-Fi and the "custom" templates (English and Japan
   });
   assert.equal(extra(ssh, 'メモ用シークレット').secret, true);
   assert.deepEqual(find(out, 'リビングの Wi-Fi').fields, { ssid: 'Akari-Living', password: 'living-pass', security: 'wpa2' });
-  assert.deepEqual(find(out, '古いルーター').fields, { ssid: 'Old-Router', password: 'old-pass' }); // security unspecified
+  assert.deepEqual(find(out, '古いルーター').fields, { ssid: 'Old-Router', password: 'old-pass' }, 'security unspecified');
 
   const stripe = find(out, 'Stripe API');
-  // The hidden "API Key" is matched by name only, so it is never shown as the (visible) key id.
   assert.deepEqual(stripe.fields, { secret: 'sk_live_2', expiry: '2026-12-31' });
   assert.deepEqual(stripe.extra, [{ label: 'API Key', value: 'pk_live_1', secret: true }, { label: 'Permissions', value: 'read-only', secret: false }]);
-  assert.deepEqual(find(out, '翻訳 API').fields, { secret: 'deepl-key-3' }); // a lone API key is the secret
+  assert.deepEqual(find(out, '翻訳 API').fields, { secret: 'deepl-key-3' }, 'a lone API key is the secret');
   assert.deepEqual(find(out, '社内 DB').fields, { host: 'pg.example.jp', port: '5432', username: 'admin', password: 'pg-pass', dbType: 'PostgreSQL' });
-  const web = find(out, 'Web server'); // fields in a section
+  const web = find(out, 'Web server');
   assert.deepEqual(web.fields, { host: 'web.example.jp', username: 'ubuntu', password: 'web-pass' });
   assert.equal(extra(web, 'IP Address').value, '203.0.113.10');
   assert.equal(extra(web, 'Operating System').value, 'Ubuntu 24.04');
@@ -995,7 +962,6 @@ test('Proton Pass: SSH keys, Wi-Fi and the "custom" templates (English and Japan
     fullName: 'Shiro Suzuki', number: 'D-55', issuer: 'Aichi', expiry: '2029-07-07', birthDate: '1992-07-07', licenseClass: 'B',
   });
   const med = find(out, 'かかりつけ医');
-  // Proton hides the record number and medications; Akari's fields for them are not masked, so they stay secret extras.
   assert.deepEqual(med.fields, { patientName: '鈴木 四郎', doctor: '高橋 医師', provider: 'あかり病院' });
   assert.deepEqual(med.extra, [
     { label: 'レコード番号', value: 'MR-1', secret: true },
@@ -1014,7 +980,7 @@ test('Proton Pass: SSH keys, Wi-Fi and the "custom" templates (English and Japan
   assert.deepEqual(soft.fields, { licenseKey: 'IMG-0001', product: 'ImageEditor', expiry: '2025-12-31', licensee: '鈴木 四郎' });
   assert.deepEqual(soft.extra, []);
 
-  const locker = find(out, 'ロッカー'); // a custom item of no known template
+  const locker = find(out, 'ロッカー');
   assert.equal(locker.note, '自分で作った項目');
   assert.deepEqual(locker.extra, [{ label: '場所', value: '駅の東口', secret: false }, { label: '暗証番号', value: '7319', secret: true }]);
   const alias = find(out, '買い物用エイリアス');
@@ -1054,9 +1020,6 @@ test('Proton Pass: encrypted data.json is unsupported; zipped data.pgp needs a p
   await rejectsWith(protonpass.parse({ name: 'x.csv', bytes: enc('a,b\n1,2\n') }, {}), 'INVALID_FORMAT');
 });
 
-// --- hostile inputs: must finish quickly or be refused with an ImportError -----------------
-
-/** Run `fn`; it must settle within `ms` and either succeed or throw an ImportError. */
 async function fast(label, fn, ms = 200) {
   const t = performance.now();
   let out;
@@ -1098,7 +1061,7 @@ test('Proton Pass / Keeper / 1Password: many bad TOTPs, deep nesting and absurd 
   const arr = '["v",'.repeat(20000) + '{}' + ']'.repeat(20000);
   const keeperDeep = `{"records":[{"title":"t","$type":"bankCard","custom_fields":{"$x::1":${arr},"$birthDate::1":1e300}}]}`;
   const kd = await fast('keeper 20000-deep arrays', () => keeper.parse({ name: 'k.json', bytes: enc(keeperDeep) }, {}));
-  assert.equal(extra(kd.items[0], '生年月日').value, '1e+300'); // not a date: kept as written
+  assert.equal(extra(kd.items[0], '生年月日').value, '1e+300');
 
   const pux = { accounts: [{ vaults: [{ items: [{ categoryUuid: '002', overview: { title: 't' }, details: { sections: [{ fields: [{ title: 'd', value: { date: 1e300 } }] }] } }] }] }] };
   const o = await fast('1pux date 1e300', () => onepassword.parse({ name: 'export.data', bytes: enc(JSON.stringify(pux)) }, {}));
@@ -1115,7 +1078,6 @@ test('KeePass XML: nesting depth, node count and size are capped; formatting tex
   const deep = '<KeePassFile><Root>' + '<Group><Name>g</Name>'.repeat(20000) + '</Group>'.repeat(20000) + '</Root></KeePassFile>';
   const e1 = await fast('20000-deep groups', () => keepass.parse({ name: 'x.xml', bytes: enc(deep) }, {}));
   assert.equal(e1.code, 'UNSUPPORTED');
-  // Moderate nesting still imports.
   const ok = '<KeePassFile><Root>' + '<Group>'.repeat(100) + '<Entry><String><Key>Password</Key><Value>p</Value></String></Entry>' + '</Group>'.repeat(100) + '</Root></KeePassFile>';
   assert.equal((await keepass.parse({ name: 'x.xml', bytes: enc(ok) }, {})).items.length, 1);
 
@@ -1131,14 +1093,11 @@ test('KeePass XML: nesting depth, node count and size are capped; formatting tex
   await fast('entity-like runs', () => keepass.parse({ name: 'x.xml', bytes: enc('<KeePassFile><Root><Group><Entry><String><Key>Notes</Key><Value>' + '&#'.repeat(50000) + '&' + 'a'.repeat(200000) + '</Value></String></Entry></Group></Root></KeePassFile>') }, {}));
   await fast('1 MB of tag whitespace', () => keepass.parse({ name: 'x.xml', bytes: enc('<KeePassFile' + ' '.repeat(1e6) + 'a="1"><Root></Root></KeePassFile>') }, {}));
 
-  // Indentation between elements is not kept; whitespace-only values are.
   const doc = keepass.parseXml('<a>\r\n  <b>  </b>\n  <c>x\r\ny</c>\n</a>');
   assert.equal(doc.children[0].text, '');
   assert.equal(doc.children[0].children[0].text, '  ');
   assert.equal(doc.children[0].children[1].text, 'x\ny');
 });
-
-// --- through the shared entry point --------------------------------------------------------
 
 test('parseImport runs every structured importer end to end', async () => {
   const cases = [

@@ -1,6 +1,3 @@
-// "パスワード生成" bottom sheet (design 1a): CLI-style command line, coloured characters,
-// 12-segment meter, ランダム / パスフレーズ, [x] toggles.
-
 import { MSG } from '../../shared/messages.js';
 import { generatePassword } from '../../lib/generator.js';
 import { t } from '../../shared/i18n.js';
@@ -14,12 +11,11 @@ import { setMeter } from './meter.js';
 import { toastError } from './toast.js';
 
 const KEY = 'akari.gen';
-// strength names, translated when shown (the locale is chosen after the modules load)
 const levelLabel = (lv) => t(['—', '弱い', '普通', '強い', '非常に強い'][lv]);
 const RANGE = { random: [8, 48], phrase: [3, 8] };
 
 const opts = { mode: 'random', length: 20, words: 4, upper: true, digits: true, symbols: true, avoidAmbiguous: false };
-try { Object.assign(opts, pick(JSON.parse(localStorage.getItem(KEY) || '{}'))); } catch { /* ignore */ }
+try { Object.assign(opts, pick(JSON.parse(localStorage.getItem(KEY) || '{}'))); } catch { }
 
 function pick(o) {
   const out = {};
@@ -30,7 +26,7 @@ function pick(o) {
   return out;
 }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const saveOpts = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
+const saveOpts = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { } };
 
 export const levelFromBits = (bits) => (!bits ? 0 : bits < 40 ? 1 : bits < 64 ? 2 : bits < 88 ? 3 : 4);
 
@@ -45,7 +41,6 @@ let wipeTimer = 0;
 let busy = false;
 const $ = (id) => document.getElementById(id);
 
-/** Forget the generated password and the caller context (incl. the editor's onUse closure). */
 export function resetGenerator() {
   cancelScramble('gen');
   clearTimeout(wipeTimer);
@@ -77,7 +72,6 @@ function renderStrength() {
   setMeter($('genMeter'), { bits, level: lv, label: levelLabel(lv) });
 }
 
-/** The options as the equivalent `akari gen` command line. */
 export function genCommand(o = opts) {
   if (o.mode === 'phrase') {
     return `akari gen --words ${o.words} --dict ja-romaji${o.upper ? ' --capitalize' : ''}${o.digits ? ' --digits' : ''}${o.symbols ? ' --symbols' : ''}`;
@@ -115,7 +109,6 @@ function generate() {
   bits = Math.round(r.bits);
 }
 
-/** Decode the password into the output; #genChars is aria-busy until it has settled. */
 function decode(ms) {
   const box = $('genChars');
   box.setAttribute('aria-busy', 'true');
@@ -149,7 +142,6 @@ function setValue(v, animate) {
   else renderChars(pw);
 }
 
-/** The login's site, when the generator was opened for one (強化する). */
 const siteOf = (item) => (item?.type === 'login' ? safeHttpUrl(item.url) : '');
 
 function applyLabel() {
@@ -194,7 +186,6 @@ export function closeGenerator() {
   syncInert();
   restoreFocus?.();
   restoreFocus = null;
-  // drop the secret and the caller context now; the characters once the sheet has slid away
   pw = '';
   bits = 0;
   ctx = NO_CTX;
@@ -228,11 +219,6 @@ async function apply() {
   await holdForSite(password);
 }
 
-/**
- * 強化する: the site still has the old password, so the new one is held (pendingPassword) and
- * copied, and the login's saved URL opens (to sign in and change it there). The login keeps working with the current
- * password until the user confirms the change in the detail pane (or the save prompt sees it).
- */
 async function holdForSite(password) {
   const item = itemById(ctx.target);
   if (!item) { closeGenerator(); return; }
@@ -246,7 +232,7 @@ async function holdForSite(password) {
     const site = siteOf(item);
     closeGenerator();
     emit('passwordPending', item.id);
-    if (site) chrome.tabs.create({ url: site }); // the saved URL; the popup closes here
+    if (site) chrome.tabs.create({ url: site });
   } catch (e) {
     if (live(token)) toastError(t('保留できませんでした'), errText(e));
   } finally {
@@ -254,7 +240,6 @@ async function holdForSite(password) {
   }
 }
 
-/** Akari だけ更新: the site was already changed by hand. The replaced password stays in the history. */
 async function updateNow() {
   if (busy || !pw || !ctx.target) return;
   const password = pw;
@@ -306,7 +291,7 @@ export function initGenerator() {
   sl.addEventListener('pointerdown', (e) => {
     dragging = true;
     sl.classList.add('drag');
-    try { sl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    try { sl.setPointerCapture(e.pointerId); } catch { }
     slideTo(e.clientX);
   });
   sl.addEventListener('pointermove', (e) => { if (dragging) slideTo(e.clientX); });

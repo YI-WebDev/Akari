@@ -1,6 +1,3 @@
-// Passkey consent window. Opened by background/passkey-service.js with ?req=<id>.
-// Site-controlled strings (rp name, user names) are only ever set via textContent.
-
 import { send } from '../shared/api.js';
 import { AkariError } from '../shared/errors.js';
 import { MSG } from '../shared/messages.js';
@@ -8,9 +5,10 @@ import { t, getLocale } from '../shared/i18n.js';
 import { useLanguage } from '../shared/locale.js';
 
 const PORT_PREFIX = 'akari-passkey:';
-// Approve stays disabled this long after the window appears or regains focus, so a
-// keystroke or click aimed at the page cannot approve a window that just popped up.
 const ARM_MS = 600;
+const TOAST_MS = 2600;
+const PORT_PING_MS = 20_000;
+const UNLOCK_LOG_READ_MS = 380;
 const reqId = new URLSearchParams(location.search).get('req') || '';
 
 const $ = (id) => document.getElementById(id);
@@ -22,8 +20,6 @@ let busy = false;
 let loading = null;
 let armedAt = 0;
 let armTimer = 0;
-
-// ---------- helpers ----------
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -65,12 +61,12 @@ function show(name) {
 
 let toastTimer = 0;
 function toast(message) {
-  const t = $('toast');
+  const toastEl = $('toast');
   $('toastMsg').textContent = message;
-  t.classList.add('show');
-  $('toastBar').animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: 2600, easing: 'linear', fill: 'forwards' });
+  toastEl.classList.add('show');
+  $('toastBar').animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: TOAST_MS, easing: 'linear', fill: 'forwards' });
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), TOAST_MS);
 }
 
 function shake(node) {
@@ -105,8 +101,6 @@ function setBusy(on) {
 }
 
 const uvForm = () => document.querySelector(`[data-screen="${current}"] [data-uv]`);
-// 'preferred' (the default) is verified too, like platform authenticators do: sites such as
-// Google accept a passkey without a password only when the UV flag is set.
 const needsUv = () => !!info && !info.locked && info.uv !== 'discouraged' && !info.verified
   && !(info.kind === 'create' && info.excluded);
 
@@ -131,7 +125,6 @@ function uvError(message) {
   form.querySelector('.uv-pw').select();
 }
 
-/** Prove the master password for this request. Resolves true when verified. */
 async function verifyUv() {
   const input = uvForm().querySelector('.uv-pw');
   if (!input.value) { uvError(t('パスワードを入力してください')); return false; }
@@ -151,25 +144,17 @@ async function verifyUv() {
   }
 }
 
-// ---------- rendering ----------
-
-/**
- * Rewrite the sentence around `site` (an rp id span) from `template`, whose `{site}` marks
- * where the span goes: word order differs by language. The span keeps its textContent.
- */
 function withSite(site, template) {
   const [before, after = ''] = t(template).split('{site}');
   site.parentElement.replaceChildren(...[before, site, after].filter((n) => n !== ''));
 }
 
-/** Status bar and `$ passkey …` lines: the request's origin / rpId (textContent only). */
 function renderChrome() {
   for (const n of document.querySelectorAll('[data-rp]')) n.textContent = info.rpId;
   $('stOrigin').textContent = info.origin;
   $('stDot').dataset.state = info.locked ? 'locked' : 'ready';
 }
 
-/** One `[ ok ] key ····· value` line in the unlock log. */
 function bootLine(key, value) {
   const line = el('div', 'boot-line');
   line.append(el('span', 'ok', '[ ok ]'), el('span', 'bk', key), el('span', 'dots'), el('span', 'bv', value));
@@ -279,14 +264,11 @@ function load() {
   return loading;
 }
 
-// ---------- actions ----------
-
 async function respond(payload) {
   if (busy) return;
   setBusy(true);
   try {
     await send(MSG.PASSKEY_RESPOND, { reqId, ...payload });
-    // The service worker closes this window once the request settles.
   } catch (e) {
     const code = e instanceof AkariError ? e.code : '';
     if (code === 'LOCKED' || code === 'UV_REQUIRED') await load();
@@ -352,11 +334,10 @@ async function unlock(event) {
   try {
     await send(MSG.VAULT_UNLOCK, { masterPassword });
     bootLine(t('保管庫を解除'), 'PBKDF2 · AES-256-GCM');
-    // Unlocking here is a fresh proof for this request (sets user verification).
     const verified = await send(MSG.PASSKEY_VERIFY, { reqId, masterPassword }).then(() => true, () => false);
     if (verified) bootLine(t('本人確認'), t('マスターパスワード'));
     input.value = '';
-    await new Promise((r) => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 380)); // the log lines are read before the screen changes
+    await new Promise((r) => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : UNLOCK_LOG_READ_MS));
     setBusy(false);
     await load();
   } catch (e) {
@@ -374,8 +355,6 @@ async function unlock(event) {
   }
 }
 
-// ---------- wiring ----------
-
 document.addEventListener('click', (event) => {
   const act = event.target.closest('[data-act]')?.dataset.act;
   if (act === 'cancel') cancel();
@@ -389,9 +368,7 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     cancel();
   } else if (event.key === 'Enter') {
-    const t = event.target;
-    // Buttons, links and the unlock form handle Enter themselves.
-    if (t.closest?.('button, a, form')) return;
+    if (event.target.closest?.('button, a, form')) return;
     event.preventDefault();
     primary();
   }
@@ -404,30 +381,25 @@ for (const form of document.querySelectorAll('[data-uv]')) {
 window.addEventListener('focus', rearm);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') rearm(); });
 
-// A live port, pinged regularly, keeps the service worker (and this request) alive.
 try {
   const port = chrome.runtime.connect({ name: PORT_PREFIX + reqId });
   const ping = setInterval(() => {
     try { port.postMessage({ type: 'ping' }); } catch { clearInterval(ping); }
-  }, 20_000);
+  }, PORT_PING_MS);
   port.onMessage.addListener((msg) => {
-    // Ignored while this window is unlocking itself: it reloads after proving the password.
     if (msg?.type === 'refresh' && current === 'locked' && !busy) load();
   });
   port.onDisconnect.addListener(() => clearInterval(ping));
 } catch {
-  // extension context gone; the next action reports the request as expired
 }
 
-/** The 言語 and テーマ settings first (and the page's static text with them), then the request. */
 async function start() {
   let settings = null;
   try {
     settings = await send(MSG.SETTINGS_GET);
   } catch {
-    // no answer: follow the browser's language, keep the theme this window last used
   }
-  useLanguage(settings?.language || 'auto', document.documentElement); // <title> too
+  useLanguage(settings?.language || 'auto', document.documentElement);
   if (settings) globalThis.__akariTheme?.apply(settings.theme);
   load();
 }

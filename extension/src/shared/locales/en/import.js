@@ -1,11 +1,6 @@
-// English for the import strings. Keys are the Japanese source text (or a dotted key used
-// with a Japanese fallback); values are the English. Japanese needs no entry.
-
 export default {
-  // ---- import screen: source list ----
   'PGP 暗号化': 'PGP encrypted',
 
-  // ---- errors (ImportError messages shown in the import screen) ----
   'PGP で暗号化されたファイルです。パスフレーズを入力してください': 'This file is PGP encrypted. Enter its passphrase.',
   '未対応の読み込み元です: {source}': 'Unsupported import source: {source}',
   'ファイルが大きすぎます（64 MB まで）': 'The file is too large (64 MB max)',
@@ -88,7 +83,6 @@ export default {
   'Proton Pass の ZIP に data.json が見つかりませんでした': 'No data.json found in the Proton Pass ZIP',
   'PGP で暗号化された Proton Pass の書き出しです。パスフレーズを入力してください': 'This Proton Pass export is PGP-encrypted. Enter its passphrase',
 
-  // ---- warnings (listed in the import preview) ----
   '{kind} {n} 件をセキュアノートとして読み込みました': 'Imported as secure notes: {kind} ({n})',
   '種類の分からないアイテム {n} 件をセキュアノートとして読み込みました': 'Imported as secure notes: items of unknown type ({n})',
   '添付ファイル {n} 件は読み込まれません': 'Attachments are not imported ({n})',
@@ -101,7 +95,6 @@ export default {
   'フォルダー（グループ）の情報は取り込まれません': 'Folders (groups) are not imported',
   '次の列は Akari に対応する項目がないため取り込まれません: {columns}': 'These columns have no matching field in Akari and are not imported: {columns}',
 
-  // ---- kinds kept as secure notes (in the warning above; Dashlane also uses them as default titles) ----
   'クレジットカード': 'Credit card',
   '個人情報': 'Personal info',
   '金融情報': 'Financial info',
@@ -125,12 +118,10 @@ export default {
   'SSH キー': 'SSH key',
   'カスタムアイテム': 'Custom item',
 
-  // ---- values Akari writes into imported items (stored; evaluated at import time) ----
   'import.title.note': 'Note',
   '（添付ファイル: {name}）': '(Attachment: {name})',
   '（添付ファイル: 名前なし）': '(Attachment: unnamed)',
 
-  // ---- labels of extra fields Akari creates (stored; evaluated at import time) ----
   'import.label.field': 'Field',
   'import.label.otp': 'One-time password',
   'import.label.cardBrand': 'Brand',
@@ -151,7 +142,6 @@ export default {
   'import.label.fileName': 'File name',
   'import.label.alias': 'Alias',
   'import.label.wifiSecurity': 'Security',
-  // Bitwarden
   'import.label.ssn': 'Social security number',
   'import.label.passportNumber': 'Passport number',
   'import.label.licenseNumber': 'License number',
@@ -162,7 +152,6 @@ export default {
   'import.label.birthPlace': 'Place of birth',
   'import.label.passportType': 'Type',
   'import.label.nationalId': 'National ID number',
-  // Dashlane columns
   'import.label.account_name': 'Name',
   'import.label.account_holder': 'Holder name',
   'import.label.cc_number': 'Card number',
@@ -200,7 +189,6 @@ export default {
   'import.label.type': 'Type',
   'import.label.title': 'Title',
   'import.label.item_name': 'Name',
-  // Keeper field types, sub-keys and built-in labels
   'import.label.keeper.text': 'Text',
   'import.label.keeper.note': 'Note',
   'import.label.keeper.multiline': 'Note',
@@ -215,7 +203,7 @@ export default {
   'import.label.keeper.expirationDate': 'Expiry date',
   'import.label.keeper.paymentCard': 'Card',
   'import.label.keeper.bankAccount': 'Account',
-  'import.label.keeper.accountNumber': 'Number', // also the bank account's sub-key (口座番号)
+  'import.label.keeper.accountNumber': 'Number',
   'import.label.keeper.host': 'Host',
   'import.label.keeper.keyPair': 'Key pair',
   'import.label.keeper.securityQuestion': 'Security question',
@@ -257,7 +245,6 @@ export default {
   'import.label.keeper.identityNumber': 'Number',
   'import.label.keeper.insuredsName': 'Insured',
   'import.label.keeper.passportNumber': 'Passport number',
-  // Proton Pass content keys
   'import.label.proton.cardholderName': 'Cardholder name',
   'import.label.proton.number': 'Card number',
   'import.label.proton.verificationCode': 'Security code',

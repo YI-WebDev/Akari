@@ -1,10 +1,3 @@
-// Keeper JSON export: { shared_folders: [...], records: [{ title, $type, login, password,
-// login_url, notes, custom_fields: { name | "$type:label:n": value }, folders }] }.
-// TOTP lives in custom_fields "TFC:Keeper" (legacy) or "$oneTimeCode…" (v3 records).
-// Record types with an Akari type are mapped by Keeper's field types ($paymentCard, $name,
-// $accountNumber:passportNumber, …); everything else becomes extra fields.
-// Folders and shared folders are ignored.
-
 import { ImportError, fieldsToNote, parseOtp, bytesToText, parseJson } from '../model.js';
 import { t } from '../../../shared/i18n.js';
 import { personName } from '../../../shared/item-types.js';
@@ -15,10 +8,6 @@ const address = (p) => [
   ['postalCode', `${p}.zip`], ['country', `${p}.country`],
 ];
 
-/**
- * Keeper record $type → login / note, [Akari type, rules] (template key ← entry ids, see
- * entriesOf), or the Japanese name of a kind kept as a secure note (translated when reported).
- */
 const TYPES = {
   login: 'login', general: 'login', encryptedNotes: 'note',
   bankCard: ['card', [
@@ -63,7 +52,6 @@ const TYPES = {
   birthCertificate: '出生証明書', file: 'ファイル', photo: '写真',
 };
 
-/** Field types used as "$type" keys in custom_fields. */
 const FIELD_LABELS = {
   text: 'テキスト', note: 'メモ', multiline: 'メモ', secret: 'シークレット', url: 'URL', email: 'メール',
   phone: '電話', name: '氏名', address: '住所', birthDate: '生年月日', date: '日付',
@@ -71,7 +59,6 @@ const FIELD_LABELS = {
   host: 'ホスト', keyPair: '鍵ペア', securityQuestion: '秘密の質問', pinCode: 'PIN',
   licenseNumber: 'ライセンス番号', login: 'ユーザー名', password: 'パスワード', checkbox: 'チェック',
 };
-/** Keys inside object-valued fields (paymentCard, name, address, host, securityQuestion…). */
 const SUB_LABELS = {
   cardNumber: 'カード番号', cardExpirationDate: '有効期限', cardSecurityCode: 'セキュリティコード',
   question: '秘密の質問', answer: '答え', first: '名', middle: 'ミドルネーム', last: '姓',
@@ -80,7 +67,6 @@ const SUB_LABELS = {
   state: '州・地域', zip: '郵便番号', country: '国', privateKey: '秘密鍵', publicKey: '公開鍵', number: '番号', ext: '内線',
   region: '地域', type: '種類',
 };
-/** Labels Keeper's own record types give their fields ("$date:dateActive:1" …). */
 const BUILTIN_LABELS = {
   cardholderName: 'カード名義', company: '会社', dateActive: '有効化日', dateIssued: '発行日', dlNumber: '免許証番号',
   identityNumber: '番号', insuredsName: '被保険者', passportNumber: 'パスポート番号', type: '種類',
@@ -93,16 +79,16 @@ const SECRET_SUBS = new Set(['cardNumber', 'cardSecurityCode', 'privateKey', 'an
 const str = (v) => (v == null ? '' : String(v).trim());
 const joinNote = (...parts) => parts.map(str).filter(Boolean).join('\n\n');
 
-/** "$type:label:n" → { type, raw (label as written), label, custom }; `custom` = the user gave a label. */
 function fieldLabel(key) {
   if (!key.startsWith('$')) return { type: '', raw: key, label: key, custom: true };
   const [type, raw] = key.slice(1).split(':');
   const label = Object.hasOwn(BUILTIN_LABELS, str(raw)) ? L(`keeper.${raw}`, BUILTIN_LABELS[raw])
-    : str(raw) || (FIELD_LABELS[type] ? L(`keeper.${type}`, FIELD_LABELS[type]) : type); // unknown: the file's own text
+    : str(raw) || (FIELD_LABELS[type] ? L(`keeper.${type}`, FIELD_LABELS[type]) : type);
   return { type, raw: str(raw), label, custom: !!str(raw) };
 }
 
-const MAX_DEPTH = 8; // Keeper values nest a level or two; anything deeper is ignored
+const MAX_DEPTH = 8;
+const isOtpKey = (key) => key === 'TFC:Keeper' || /^\$oneTimeCode(:|$)/.test(key);
 
 function fieldValue(v, type, depth = 0) {
   if (v == null || depth > MAX_DEPTH) return '';
@@ -115,10 +101,6 @@ function fieldValue(v, type, depth = 0) {
   return String(v);
 }
 
-/**
- * One custom field → entries { id: [type, "type:label", "type.sub"…], label, value, secret }.
- * Objects give one entry per key ($name and $phone become one line unless `splitName`).
- */
 function entriesOf(key, v, out, splitName, depth = 0) {
   if (depth > MAX_DEPTH) return;
   const { type, raw, label } = fieldLabel(key);
@@ -144,7 +126,6 @@ function entriesOf(key, v, out, splitName, depth = 0) {
   }
 }
 
-/** @returns {Promise<{ items: object[], skipped: number, warnings: string[] }>} */
 export async function parse(file) {
   const json = parseJson(bytesToText(file.bytes), 'Keeper');
   if (!json || typeof json !== 'object' || !Array.isArray(json.records)) {
@@ -160,12 +141,12 @@ export async function parse(file) {
     const typedKind = Array.isArray(kind) ? kind : null;
     const otps = [], entries = [], bodies = [];
     for (const [key, v] of Object.entries(r.custom_fields && typeof r.custom_fields === 'object' ? r.custom_fields : {})) {
-      if (key === 'TFC:Keeper' || /^\$oneTimeCode(:|$)/.test(key)) {
+      if (isOtpKey(key)) {
         for (const line of fieldValue(v).split('\n')) if (line) otps.push(line);
         continue;
       }
       const { type, custom } = fieldLabel(key);
-      if (NOTE_TYPES.has(type) && !custom) bodies.push(fieldValue(v, type)); // e.g. the text of encryptedNotes
+      if (NOTE_TYPES.has(type) && !custom) bodies.push(fieldValue(v, type));
       else entriesOf(key, v, entries, typedKind?.[0] === 'identity');
     }
     const notes = joinNote(r.notes, bodies.join('\n\n'));
@@ -174,7 +155,7 @@ export async function parse(file) {
       { id: 'password', label: L('password', 'パスワード'), value: r.password == null ? '' : String(r.password), secret: true },
       { id: 'url', label: L('url', 'URL'), value: str(r.login_url) },
     ];
-    const otpExtra = (t) => ({ label: L('otp', 'ワンタイムパスワード'), value: t, secret: true });
+    const otpExtra = (value) => ({ label: L('otp', 'ワンタイムパスワード'), value, secret: true });
     const toExtra = (e) => ({ label: e.label, value: e.value, secret: !!e.secret });
 
     if (kind === 'login') {

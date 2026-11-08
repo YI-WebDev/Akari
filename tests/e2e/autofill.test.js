@@ -1,4 +1,3 @@
-// Autofill and save prompt on the fixture login pages.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -20,6 +19,8 @@ after(async () => {
 
 const tabIdOf = (url) => ext2.page.evaluate(async (u) => (await chrome.tabs.query({ url: u + '*' }))[0]?.id, url);
 
+const SAVE_BAR_BUTTON_AT = [1000 - 62, 116];
+
 test('popup-style fill only on the matching site', async () => {
   const saved = await send('vault/saveItem', {
     item: { type: 'login', title: 'localhost', url: site.origin + '/', username: 'haruka@example.jp', password: 'S0ra-Kumo!42', vault: 'personal' },
@@ -40,7 +41,6 @@ test('popup-style fill only on the matching site', async () => {
   assert.equal(await page.inputValue('#username'), 'haruka@example.jp');
   assert.equal(await page.inputValue('#password'), 'S0ra-Kumo!42');
 
-  // A different site must be refused even when asked explicitly.
   const other = await ext.context.newPage();
   await other.goto('http://127.0.0.1:' + new URL(site.origin).port + '/login.html');
   const otherTab = await tabIdOf('http://127.0.0.1:' + new URL(site.origin).port + '/login.html');
@@ -59,10 +59,8 @@ test('submitting a new password offers an update and saves it', async () => {
   await page.fill('#username', 'haruka@example.jp');
   await page.fill('#password', 'Brand-New-Pass-77');
   await page.click('#submit');
-  // The bar lives in a closed shadow root; click 保存 by its fixed position (top-right card).
-  // Clicks only count once the bar has been verifiably visible for 500 ms (clickjacking guard).
   await page.waitForTimeout(1300);
-  await page.mouse.click(1000 - 62, 116);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
   await page.waitForTimeout(500);
   const all = await send('vault/getAll');
   const item = all.data.items.find((i) => i.username === 'haruka@example.jp');
@@ -71,7 +69,6 @@ test('submitting a new password offers an update and saves it', async () => {
 });
 
 test('two-step login with a saved account (password on a new page) does not offer to save it again', async () => {
-  // Two accounts on this site, so the password page alone cannot tell which one is meant.
   await send('vault/saveItem', {
     item: { type: 'login', title: 'localhost', url: site.origin + '/', username: 'mori@example.jp', password: 'Mori-Pass-55', vault: 'personal' },
   });
@@ -86,16 +83,14 @@ test('two-step login with a saved account (password on a new page) does not offe
     await page.fill('#password', password);
     await page.click('#signin');
     await page.waitForSelector('#status[data-state="submitted"]');
-    // Where the save bar's 保存 button would be, once armed (closed shadow root: by position).
     await page.waitForTimeout(1300);
-    await page.mouse.click(1000 - 62, 116);
+    await page.mouse.click(...SAVE_BAR_BUTTON_AT);
     await page.waitForTimeout(500);
   };
 
   await signIn('Mori-Pass-55');
   assert.equal(await count(), before, 'no "Akari に保存しますか？" for a saved account');
 
-  // A new password on the password page updates that account (the username came from step 1).
   await signIn('Mori-Pass-56');
   const items = (await send('vault/getAll')).data.items;
   assert.equal(items.length, before, 'updated, not added');
@@ -104,8 +99,7 @@ test('two-step login with a saved account (password on a new page) does not offe
   await page.close();
 });
 
-// The inline menu lives in a closed shadow root: orb and first row are clicked by position.
-async function openMenu(page) {
+async function openMenuByClickingOrb(page) {
   await page.goto(site.origin + '/login.html');
   await page.locator('#username').click();
   await page.waitForTimeout(500);
@@ -113,15 +107,15 @@ async function openMenu(page) {
     const b = e.getBoundingClientRect();
     return { x: b.x, right: b.right, y: b.y, h: b.height, bottom: b.bottom };
   });
-  await page.mouse.click(r.right - 18, r.y + r.h / 2); // orb
+  await page.mouse.click(r.right - 18, r.y + r.h / 2);
   return { row: [r.x + 80, r.bottom + 32] };
 }
 const filled = (page) => page.evaluate(() => document.getElementById('password').value);
 
 test('inline menu: a click only counts after 500 ms of verified visibility', async () => {
   const page = await ext.context.newPage();
-  const { row } = await openMenu(page);
-  await page.mouse.click(...row); // straight away: refused
+  const { row } = await openMenuByClickingOrb(page);
+  await page.mouse.click(...row);
   await page.waitForTimeout(300);
   assert.equal(await filled(page), '', 'early click must be ignored');
   await page.waitForTimeout(1000);
@@ -133,18 +127,15 @@ test('inline menu: a click only counts after 500 ms of verified visibility', asy
 
 test('inline menu: invisible or covered menu never fills (clickjacking)', async () => {
   const page = await ext.context.newPage();
-  const { row } = await openMenu(page);
-  await page.waitForTimeout(1200); // menu is trusted by now...
+  const { row } = await openMenuByClickingOrb(page);
+  await page.waitForTimeout(1200);
 
-  // ...but the page fades the whole document: refused
   await page.evaluate(() => { document.documentElement.style.opacity = '0.01'; });
   await page.mouse.click(...row);
   await page.waitForTimeout(300);
   assert.equal(await filled(page), '', 'translucent <html> must block the click');
   await page.evaluate(() => { document.documentElement.style.opacity = ''; });
 
-  // pointer-events:none decoys painted over the menu: refused (and the timer restarts). One stacked above
-  // our host in the same layer, one in the top layer (popover), which nothing in the page can sit above.
   for (const kind of ['stacked', 'top-layer']) {
     await page.evaluate((k) => {
       const d = document.createElement('div');
@@ -155,7 +146,7 @@ test('inline menu: invisible or covered menu never fills (clickjacking)', async 
         document.body.append(d);
         d.showPopover();
       } else {
-        document.documentElement.append(d); // after Akari's host in tree order
+        document.documentElement.append(d);
       }
     }, kind);
     await page.waitForTimeout(1500);
@@ -166,7 +157,6 @@ test('inline menu: invisible or covered menu never fills (clickjacking)', async 
     await page.waitForTimeout(1000);
   }
 
-  // once the page is clean again and the menu has been visible long enough, it works
   await page.waitForTimeout(1000);
   await page.mouse.click(...row);
   await page.waitForTimeout(500);

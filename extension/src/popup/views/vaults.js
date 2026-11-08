@@ -1,8 +1,3 @@
-// 保管庫 page of the settings sheet: the vaults with their item counts; add one, rename or
-// recolor one in place, delete one (its items move to another vault, or go with it).
-// The service worker decides (vault/createVault, updateVault, deleteVault) and answers with
-// the whole vault list; this page only redraws from S.vaults.
-
 import { MSG, ERR, VAULT_LIMITS } from '../../shared/messages.js';
 import { t } from '../../shared/i18n.js';
 import { S, on, call, emit, errText, liveToken, live, setItems, setVaults } from '../state.js';
@@ -14,12 +9,9 @@ import { cmdLine, arrowNav, setRoving, setBusy, goButton } from './io.js';
 
 const $ = (id) => document.getElementById(id);
 
-/** Colour choices (oklch hues). The first three are the default vaults'. */
 export const VAULT_HUES = Object.freeze([55, 255, 150, 330, 200, 300, 100, 20]);
 const HUE_NAMES = { 55: '橙', 255: '青', 150: '緑', 330: '桃', 200: '水色', 300: '紫', 100: '黄緑', 20: '赤' };
 
-// mode: null (list) | 'add' | 'edit' | 'delete'; id: the vault being edited or deleted;
-// err: a message to show again after a redraw
 const st = { mode: null, id: null, hue: VAULT_HUES[0], moveTo: null, err: '' };
 
 const countIn = (id) => S.items.filter((i) => i.vault === id).length;
@@ -38,8 +30,6 @@ function cmdText() {
   }
   return 'akari vault ls';
 }
-
-/* ── rendering ── */
 
 function render(focus) {
   const page = $('vaultsPage');
@@ -85,7 +75,6 @@ function row(v) {
     }, icon('trash', 13)));
 }
 
-/** Name + colour form, for a new vault (v = null) or in place of a vault's row. */
 function form(v) {
   const hues = h('div', { class: 'vm-hues', role: 'radiogroup', 'aria-label': t('vaults.color', null, '色') });
   VAULT_HUES.forEach((hue, i) => hues.append(h('button', {
@@ -155,8 +144,6 @@ function confirmDelete(v) {
   queueMicrotask(sync);
   return box;
 }
-
-/* ── actions ── */
 
 function startAdd() {
   const used = new Set(S.vaults.map((v) => v.hue));
@@ -230,14 +217,11 @@ async function doDelete(v, btn) {
   const token = liveToken();
   setBusy(btn, true);
   try {
-    // Items are deleted only when the user chose so for the items they saw; the service worker
-    // refuses (NOT_EMPTY) if the vault holds items this popup does not know about yet.
     const res = await call(MSG.VAULT_DELETE_VAULT, { id: v.id, moveTo, deleteItems: n > 0 && moveTo === null });
     if (!live(token)) return;
     setVaults(res.vaults);
     st.mode = null;
     st.err = '';
-    // The same change on the popup's copy, so the counts are right at once; then read everything again.
     setItems(moveTo ? S.items.map((i) => (i.vault === v.id ? { ...i, vault: moveTo } : i)) : S.items.filter((i) => i.vault !== v.id));
     emit('reload');
     render('#vmAdd');
@@ -250,17 +234,14 @@ async function doDelete(v, btn) {
     st.err = errText(err);
     const e2 = $('vmErr');
     if (e2) e2.textContent = st.err;
-    if (err?.code === ERR.NOT_EMPTY) emit('reload'); // read the vault again; the question is redrawn with the real count
+    if (err?.code === ERR.NOT_EMPTY) emit('reload');
   }
 }
-
-/* ── page lifecycle (views/settings.js) ── */
 
 const isOpen = () => !$('vaultsPage').hidden;
 const snapshot = () => JSON.stringify(S.vaults.map((v) => [v.id, v.name, v.hue, countIn(v.id)]));
 let shown = '';
 
-/** Where focus is inside the page, as a selector that still finds it after a redraw. */
 function focusSelector() {
   const a = document.activeElement;
   if (!a || !$('vaultsPage').contains(a)) return null;
@@ -271,7 +252,6 @@ function focusSelector() {
   return null;
 }
 
-/** After the popup re-read the vault: redraw if counts or vaults changed (not over a half-typed name). */
 function onReloaded() {
   if (!isOpen() || st.mode === 'add' || st.mode === 'edit' || snapshot() === shown) return;
   if (st.mode === 'delete' && !vaultOf(st.id)) st.mode = null;
@@ -285,10 +265,9 @@ export function initVaults() {
 export function openVaults({ focus = true } = {}) {
   Object.assign(st, { mode: null, err: '' });
   render(focus ? '.vm-row [data-act="edit"]' : null);
-  emit('reload'); // counts from another popup or an import meanwhile
+  emit('reload');
 }
 
-/** One step back inside the page (an open form or delete question). Returns true when handled. */
 export function vaultsBack() {
   if (!st.mode) return false;
   cancel();

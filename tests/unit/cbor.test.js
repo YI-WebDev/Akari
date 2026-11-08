@@ -5,7 +5,6 @@ import { encode, decode, decodePartial } from '../../extension/src/lib/cbor.js';
 const hex = (b) => Buffer.from(b).toString('hex');
 const unhex = (h) => new Uint8Array(Buffer.from(h, 'hex'));
 
-// RFC 8949 Appendix A vectors (the subset this codec supports).
 const VECTORS = [
   [0, '00'], [1, '01'], [10, '0a'], [23, '17'], [24, '1818'], [25, '1819'], [100, '1864'],
   [1000, '1903e8'], [1000000, '1a000f4240'], [1000000000000, '1b000000e8d4a51000'],
@@ -33,14 +32,11 @@ test('byte strings round-trip as Uint8Array', () => {
 });
 
 test('maps use CTAP2 canonical key order', () => {
-  // COSE EC2 key: positive ints, then negative ints (major type order).
-  const cose = new Map([[-3, 1], [-2, 2], [-1, 1], [3, -7], [1, 2]]);
-  assert.equal(hex(encode(cose)), 'a5' + '0102' + '0326' + '2001' + '2102' + '2201');
-  // Text keys: shorter first -> fmt, attStmt, authData.
-  const att = encode({ authData: new Uint8Array(0), attStmt: {}, fmt: 'none' });
-  assert.equal(hex(att), 'a3' + '63666d74' + '646e6f6e65' + '6761747453746d74' + 'a0' + '686175746844617461' + '40');
-  // Integers sort before strings.
-  assert.equal(hex(encode(new Map([['a', 1], [1, 2]]))), 'a2' + '0102' + '616101');
+  const coseEc2Key = new Map([[-3, 1], [-2, 2], [-1, 1], [3, -7], [1, 2]]);
+  assert.equal(hex(encode(coseEc2Key)), 'a5' + '0102' + '0326' + '2001' + '2102' + '2201');
+  const attestationObject = encode({ authData: new Uint8Array(0), attStmt: {}, fmt: 'none' });
+  assert.equal(hex(attestationObject), 'a3' + '63666d74' + '646e6f6e65' + '6761747453746d74' + 'a0' + '686175746844617461' + '40');
+  assert.equal(hex(encode(new Map([['a', 1], [1, 2]]))), 'a2' + '0102' + '616101', 'Integers sort before strings');
 });
 
 test('decoded maps are Map instances', () => {
@@ -64,9 +60,9 @@ test('decoder rejects malformed input', () => {
   assert.throws(() => decode(unhex('0001')), /trailing/);
   assert.throws(() => decode(unhex('19')), /truncated/);
   assert.throws(() => decode(unhex('4501')), /truncated/);
-  assert.throws(() => decode(unhex('9fff')), /unsupported/); // indefinite length
+  assert.throws(() => decode(unhex('9fff')), /unsupported/, 'indefinite length');
   assert.throws(() => decode(unhex('c0')), /tags/);
-  assert.throws(() => decode(unhex('fa47c35000')), /unsupported/); // float
+  assert.throws(() => decode(unhex('fa47c35000')), /unsupported/, 'float');
   assert.throws(() => decode(unhex('a2010201 03'.replace(' ', ''))), /duplicate/);
   assert.throws(() => decode(unhex('9a7fffffff')), /truncated/);
 });

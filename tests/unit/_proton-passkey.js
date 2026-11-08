@@ -1,14 +1,5 @@
-// Builds a passkey the way Proton Pass writes it into data.json, for tests.
-//
-// Proton (proton-pass-common, Rust) serialises the passkey with rmp_serde::to_vec_named:
-// structs are MessagePack maps keyed by field name, Vec<u8> is an array of numbers,
-// Option::None is nil, and its enums are adjacently tagged ({ t, c }). The private COSE key
-// comes from passkey-rs: EC2 / ES256 with params crv (-1), x (-2), y (-3) and d (-4).
-// The result is wrapped as { c: <bytes>, v: 1 } and data.json stores it as base64.
-// This is an independent encoder, so the importer's decoder is checked against it.
-
 const T = (t, c) => (c === undefined ? { t } : { t, c });
-const bytes = (b) => ({ __bytes: Uint8Array.from(b) }); // Vec<u8>: an array of numbers
+const bytes = (b) => ({ __bytes: Uint8Array.from(b) });
 const int128 = (n) => {
   const inner = new Uint8Array(16);
   let v = BigInt(n);
@@ -53,10 +44,6 @@ function encode(v, out) {
 
 export const msgpack = (v) => { const out = []; encode(v, out); return Uint8Array.from(out); };
 
-/**
- * The `content` bytes of a Proton passkey. `key` is a P-256 JWK with d, x, y (base64url), or
- * `cose` overrides the whole COSE key (for unsupported kinds of key).
- */
 export function protonContent({ key, cose, credentialId, rpId, userHandle, userName = null, userDisplayName = null, version = 1 }) {
   const b = (s) => bytes(Buffer.from(s, 'base64url'));
   const coseKey = cose || {
@@ -85,7 +72,6 @@ export function protonContent({ key, cose, credentialId, rpId, userHandle, userN
   return msgpack({ c: bytes(inner), v: version });
 }
 
-/** One entry of a Proton login's content.passkeys, as data.json has it (byte fields in base64). */
 export function protonPasskeyEntry(opts) {
   const b64 = (u8) => (u8 ? Buffer.from(u8).toString('base64') : '');
   return {

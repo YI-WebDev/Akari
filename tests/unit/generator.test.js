@@ -6,7 +6,6 @@ import WORDS from '../../extension/src/lib/wordlist.js';
 const SYMBOLS = '!@#$%^&*-_=+?';
 const SEPS = '-_.!*#';
 
-// Pearson chi-square statistic for observed counts against a uniform expectation.
 function chiSquare(counts) {
   const total = counts.reduce((a, b) => a + b, 0);
   const expected = total / counts.length;
@@ -16,8 +15,6 @@ function chiSquare(counts) {
 function many(n, opts) {
   return Array.from({ length: n }, () => generatePassword(opts));
 }
-
-// ---- wordlist ----
 
 test('wordlist: frozen, >= 1024 unique lowercase romaji words of 3-8 letters', () => {
   assert.ok(Array.isArray(WORDS));
@@ -36,8 +33,6 @@ test('wordlist: contains the design words and no blocked words', () => {
   for (const w of blocked) assert.ok(!WORDS.includes(w), w);
   for (const w of WORDS) assert.doesNotMatch(w, /fuck|shit|cunt|dick|cock|pussy|whore|slut|nigg|rape|nazi|hitler/);
 });
-
-// ---- random mode ----
 
 test('random: default is 20 chars from the four sets, bits = round(len * log2(pool))', () => {
   const { password, bits } = generatePassword();
@@ -85,12 +80,10 @@ test('random: avoidAmbiguous removes i l o I O 0 1 and shrinks the pool', () => 
     assert.doesNotMatch(password, /[iloIO01]/);
     assert.equal(bits, Math.round(24 * Math.log2(23 + 24 + 8 + SYMBOLS.length)));
   }
-  // sanity: without the flag those characters do show up
   const plain = many(500, { length: 24 }).map((r) => r.password).join('');
   assert.match(plain, /[ilo]/);
   assert.match(plain, /[IO]/);
   assert.match(plain, /[01]/);
-  // the remaining characters of each class are still reachable
   const seen = new Set(batch.map((r) => r.password).join(''));
   for (const c of 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789') assert.ok(seen.has(c), c);
 });
@@ -107,8 +100,7 @@ test('random: characters are uniformly distributed (chi-square)', () => {
   for (const { password } of many(4000, { length: 48, upper: false, digits: false, symbols: false })) {
     for (const c of password) counts[c.charCodeAt(0) - 97]++;
   }
-  // df = 25; 99.99th percentile is about 52
-  assert.ok(chiSquare(counts) < 60, 'chi-square ' + chiSquare(counts));
+  assert.ok(chiSquare(counts) < 60, 'chi-square (df 25, 99.99th percentile about 52) ' + chiSquare(counts));
 });
 
 test('random: forced characters are shuffled to every position', () => {
@@ -116,8 +108,7 @@ test('random: forced characters are shuffled to every position', () => {
   for (const { password } of many(20000, { length: 8 })) {
     [...password].forEach((c, i) => { if (SYMBOLS.includes(c)) counts[i]++; });
   }
-  // df = 7; 99.99th percentile is about 26
-  assert.ok(chiSquare(counts) < 35, 'chi-square ' + chiSquare(counts));
+  assert.ok(chiSquare(counts) < 35, 'chi-square (df 7, 99.99th percentile about 26) ' + chiSquare(counts));
 });
 
 test('random: passwords are not repeated', () => {
@@ -136,13 +127,11 @@ test('uses crypto.getRandomValues and never Math.random', () => {
     generatePassword({ mode: 'phrase', words: 4 });
   } finally {
     Math.random = realRandom;
-    delete crypto.getRandomValues; // drop the own-property override, restoring the prototype method
+    delete crypto.getRandomValues;
   }
   assert.ok(calls > 0);
   assert.equal(crypto.getRandomValues, realGrv);
 });
-
-// ---- phrase mode ----
 
 test('phrase: default is 4 capitalised words, per-gap separators and a 2-digit number', () => {
   const { password, bits } = generatePassword({ mode: 'phrase' });

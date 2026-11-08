@@ -37,7 +37,6 @@
 
   <main class="body">
     <section class="col-list" aria-label="アイテム一覧">
-      <!-- one row: what the list shows (a view or a type, with its count), then sort and select -->
       <div class="list-bar">
         <button id="typeBtn" class="view-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="typeMenu">
           <span id="viewIco" class="view-ico" aria-hidden="true"></span>
@@ -65,7 +64,6 @@
     <div id="vaultItems"></div>
   </div>
 
-  <!-- ≡ メニュー: what is not about one vault -->
   <div id="mainMenu" class="menu menu-main" role="menu" aria-label="メニュー">
     <button id="openHealth" class="menu-item" type="button" role="menuitem">
       <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg>
@@ -88,7 +86,6 @@
     </button>
   </div>
 
-  <!-- ＋ 新規作成 and the 種類 filter: built from shared/item-types.js (views/type-menu.js) -->
   <div id="plusMenu" class="menu menu-plus" role="menu" aria-label="新規作成"></div>
   <div id="typeMenu" class="menu menu-type menu-types" role="menu" aria-label="種類で絞り込む"></div>
 
@@ -128,7 +125,6 @@
       <button type="button" class="tgl" data-opt="symbols" role="switch" aria-checked="true"><span class="tgl-mark" aria-hidden="true"></span>記号</button>
       <button type="button" class="tgl" data-opt="avoidAmbiguous" role="switch" aria-checked="false"><span class="tgl-mark" aria-hidden="true"></span>紛らわしい文字を除外</button>
     </div>
-    <!-- 強化する: the site keeps the old password until it is changed there too -->
     <div id="genSite" class="gen-site" role="note" hidden>
       <span>Akari で変えても、サイトのパスワードはまだ変わりません。新しいパスワードは保留にしてコピーします。サイトで変更してから、Akari で「確定」してください。</span>
     </div>
@@ -147,14 +143,12 @@
       <ol id="setTrail" class="trail" aria-label="手順" hidden></ol>
       <button class="icon-btn sheet-close" type="button" data-close title="閉じる" aria-label="閉じる"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <!-- the settings list's command line: it follows the last change (views/settings.js) -->
     <div id="setCmdLine" class="io-cmd set-cmd" aria-hidden="true"><span class="ps">$ </span><span id="setCmd">akari config</span><span class="cursor"></span></div>
     <div id="setMain" class="set-scroll">
       <section class="set-group" aria-labelledby="setGenHead">
         <h2 id="setGenHead" class="set-head">一般</h2>
         <div class="set-box">
         <div class="set-row">
-          <!-- in both languages: whoever cannot read the current one still finds it -->
           <div id="langLabel" class="set-label">言語 · Language</div>
           <div class="set-body">
             <div class="chips" role="radiogroup" aria-labelledby="langLabel" aria-describedby="langHint" data-setting="language">
@@ -198,7 +192,6 @@
               </span>
             </div>
             <p id="lockHint" class="set-hint"></p>
-            <!-- "しない" (NEVER_LOCK) is confirmed here with the master password -->
             <form id="neverForm" class="set-form never-form" hidden novalidate>
               <p id="neverWarn" class="set-warn"></p>
               <div class="set-field">
@@ -276,7 +269,6 @@
     <div id="exportPage" class="set-page" role="region" aria-label="エクスポート" hidden></div>
   </section>
 
-  <!-- パスワード診断: opened from the ≡ menu, built by views/health.js -->
   <section id="healthSheet" class="sheet health" role="dialog" aria-modal="true" aria-labelledby="hsTitle" aria-hidden="true">
     <div class="sheet-head">
       <span id="hsTitle" class="sheet-title">パスワード診断</span>
@@ -291,7 +283,6 @@
     </div>
   </section>
 
-  <!-- ゴミ箱: opened from the ≡ menu, built by views/trash.js -->
   <section id="trashSheet" class="sheet trash" role="dialog" aria-modal="true" aria-labelledby="tsTitle" aria-hidden="true">
     <div class="sheet-head">
       <span id="tsTitle" class="sheet-title">ゴミ箱</span>

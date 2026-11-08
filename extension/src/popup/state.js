@@ -1,9 +1,3 @@
-// Popup state, a tiny event bus, and derived views over the decrypted items.
-// Decrypted items live only in this page's memory and are dropped on lock.
-//
-// Other modules read `S` freely but change it only through the functions below
-// (tests/unit/popup-structure.test.js checks that no other file assigns to S).
-
 import { send } from '../shared/api.js';
 import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
 import { estimateStrength } from '../lib/strength.js';
@@ -15,22 +9,22 @@ import { compileQuery } from './search.js';
 import { toast, toastError } from './views/toast.js';
 
 export const S = {
-  phase: 'boot', // boot | setup | locked | main
-  epoch: 0, // bumped on every lock; async work started in an older epoch must not touch state
+  phase: 'boot',
+  epoch: 0,
   settings: { ...DEFAULT_SETTINGS },
-  vaults: [...DEFAULT_VAULTS], // replaced before anything shows them (setVaults)
+  vaults: [...DEFAULT_VAULTS],
   items: [],
-  trash: [], // the ゴミ箱: sanitized items with deletedAt, newest first (lib/vault/trash.js)
+  trash: [],
   vault: 'all',
-  filter: 'all', // all | recent | fav
-  type: 'all', // all | an item type id (shared/item-types.js)
-  sort: 'recent', // recent | az
+  filter: 'all',
+  type: 'all',
+  sort: 'recent',
   query: '',
-  siteQuery: '', // the active tab's site, put in the search box on open when it finds something
-  sel: null, // the item shown in the detail pane; in selection mode, the row the keyboard is on
-  picking: false, // selection mode: clicking a row checks it (for deleting several) instead of opening it
-  picked: new Set(), // ids checked in selection mode, always among the visible rows
-  af: null, // { tabId, url, site, items, state }
+  siteQuery: '',
+  sel: null,
+  picking: false,
+  picked: new Set(),
+  af: null,
 };
 
 const UI_KEY = 'akari.ui';
@@ -40,21 +34,17 @@ try {
   if (['recent', 'az'].includes(saved.sort)) S.sort = saved.sort;
   if (typeof saved.vault === 'string') S.vault = saved.vault;
   if (typeof saved.type === 'string' && typeOf(saved.type)) S.type = saved.type;
-  if (S.type !== 'all') S.filter = 'all'; // one view at a time (older versions combined ★ and a type)
-} catch { /* ignore */ }
+  if (S.type !== 'all') S.filter = 'all';
+} catch { }
 
 export function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ filter: S.filter, sort: S.sort, vault: S.vault, type: S.type })); } catch { /* ignore */ }
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ filter: S.filter, sort: S.sort, vault: S.vault, type: S.type })); } catch { }
 }
 
-/* ── changes to S (the only writers) ── */
-
-/** 'setup' | 'locked' | 'main'. */
 export function setPhase(phase) {
   S.phase = phase;
 }
 
-/** Lock: async work started before this must not touch state any more. */
 export function endEpoch() {
   S.phase = 'locked';
   S.epoch++;
@@ -64,14 +54,12 @@ export function setSettings(settings) {
   S.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
 }
 
-/** One setting, e.g. before the SW confirmed it; returns the previous value. */
 export function putSetting(key, value) {
   const prev = S.settings[key];
   S.settings = { ...S.settings, [key]: value };
   return prev;
 }
 
-/** The default vaults in the UI language: what a new vault starts with (lib/vault/schema.js), as a fallback. */
 export const defaultVaults = () => DEFAULT_VAULTS.map((v) => ({ ...v, name: t(`vault.default.${v.id}`, null, v.name) }));
 
 export function setVaults(vaults) {
@@ -79,13 +67,11 @@ export function setVaults(vaults) {
   if (S.vault !== 'all' && !S.vaults.some((v) => v.id === S.vault)) S.vault = 'all';
 }
 
-/** Show one vault ('all' = every vault). Saved for the next popup. */
 export function setVaultFilter(id) {
   S.vault = id;
   saveUi();
 }
 
-/** The list's one view: filter 'all' | 'recent' | 'fav', or a type id with filter 'all'. */
 export function setListView(filter, type = 'all') {
   S.filter = filter;
   S.type = type;
@@ -97,7 +83,6 @@ export function setSort(sort) {
   saveUi();
 }
 
-/** The search box's text (the input element is the caller's). */
 export function setSearch(q) {
   S.query = q;
 }
@@ -106,28 +91,23 @@ export function setSiteQuery(q) {
   S.siteQuery = q;
 }
 
-/** The item shown in the detail pane (in selection mode: the keyboard row). */
 export function setSel(id) {
   S.sel = id;
 }
 
-/** The current tab's autofill matches, or null. */
 export function setAutofill(af) {
   S.af = af;
 }
 
-/** 'idle' | 'run' | 'done' on the autofill card. */
 export function setAutofillState(state) {
   if (S.af) S.af.state = state;
 }
 
-/** Selection mode (delete several) on or off; either way nothing is checked yet. */
 export function setPickMode(on) {
   S.picking = on;
   S.picked = new Set();
 }
 
-/** Check `ids` (all = true) or exactly these (replace = true). */
 export function setPicked(ids, { replace = false } = {}) {
   if (replace) S.picked = new Set(ids);
   else for (const id of ids) S.picked.add(id);
@@ -138,14 +118,12 @@ export function togglePicked(id) {
   else S.picked.add(id);
 }
 
-/** Uncheck rows that are no longer shown. Returns true when something was unchecked. */
 export function prunePicked(shown) {
   const before = S.picked.size;
   for (const id of S.picked) if (!shown.has(id)) S.picked.delete(id);
   return S.picked.size !== before;
 }
 
-/* ── event bus ── */
 const subs = new Map();
 export function on(ev, fn) {
   if (!subs.has(ev)) subs.set(ev, new Set());
@@ -157,29 +135,26 @@ export function emit(ev, ...args) {
   }
 }
 
-/** Snapshot before an await; `live(token)` afterwards says whether the result may still be applied. */
 export const liveToken = () => S.epoch;
 export const live = (token) => S.phase === 'main' && S.epoch === token;
 
-// Requests that re-encrypt and store the vault; the status bar shows 保存中… while any is in flight.
 const WRITES = new Set([
   MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
   MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
   MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
 ]);
-let writing = 0;
+let writesInFlight = 0;
 
-/** send() that routes LOCKED errors to the lock screen. */
 export async function call(type, payload) {
   const write = WRITES.has(type);
-  if (write && writing++ === 0) emit('saving', true);
+  if (write && writesInFlight++ === 0) emit('saving', true);
   try {
     return await send(type, payload);
   } catch (e) {
     if (e?.code === ERR.LOCKED) emit('locked');
     throw e;
   } finally {
-    if (write && --writing === 0) emit('saving', false);
+    if (write && --writesInFlight === 0) emit('saving', false);
   }
 }
 
@@ -195,10 +170,9 @@ export function errText(e) {
   }
 }
 
-/* ── derived data ── */
 const strengthCache = new Map();
 let reuse = new Map();
-let health = null; // the パスワード診断 report, see healthReport()
+let health = null;
 
 export function strengthOf(pw) {
   if (!pw) return { bits: 0, level: 0, label: '—' };
@@ -215,12 +189,10 @@ export function setItems(items) {
   recomputeReuse();
 }
 
-/** The ゴミ箱 as the service worker last sent it. */
 export function setTrash(trash) {
   S.trash = Array.isArray(trash) ? trash : [];
 }
 
-/** Items back from the ゴミ箱, at the top like new ones. */
 export function addItems(items) {
   const ids = new Set(items.map((i) => i.id));
   S.items = [...items, ...S.items.filter((i) => !ids.has(i.id))];
@@ -236,11 +208,8 @@ export function recomputeReuse() {
   }
 }
 
-/* パスワード診断 (lib/health.js), over every vault so reuse across vaults counts; rebuilt when items change */
 export const healthReport = () => (health ??= passwordHealth(S.items, { strength: strengthOf }));
-/** The item's issues (ISSUES order), [] when it has none. */
 export const issuesOf = (it) => healthReport().issues.get(it?.id) || [];
-/** Logins per issue in the current vault, and how many need action: { logins, action, weak, reused, old, no2fa }. */
 export function healthCounts() {
   const out = { logins: 0, action: 0, ...Object.fromEntries(ISSUES.map((k) => [k, 0])) };
   for (const it of S.items) {
@@ -253,10 +222,8 @@ export function healthCounts() {
   return out;
 }
 
-/** How many *other* items share this item's password. */
 export const reuseOf = (it) => (it?.type === 'login' && it.password ? Math.max(0, (reuse.get(it.password) || 0) - 1) : 0);
 
-/** Weak / reused password warnings are for logins only. */
 export function isWeak(it) {
   if (!it || it.type !== 'login' || !it.password) return false;
   return strengthOf(it.password).level <= 1 || reuseOf(it) > 0;
@@ -298,20 +265,19 @@ export function clearSecrets() {
   health = null;
 }
 
-/* ── search (NFKC + lower-case, shared with the highlighter so offsets agree) ── */
+const NORM_CACHE_MAX = 2000;
 const normCache = new Map();
 export function normOf(text) {
   const s = String(text || '');
   let m = normCache.get(s);
   if (!m) {
     m = normMap(s);
-    if (normCache.size > 2000) normCache.clear();
+    if (normCache.size > NORM_CACHE_MAX) normCache.clear();
     normCache.set(s, m);
   }
   return m;
 }
 
-/* the search box's operators and text (popup/search.js), compiled once per query */
 let compiled = null;
 function query() {
   if (compiled?.raw !== S.query) {
@@ -325,12 +291,9 @@ function query() {
   return compiled;
 }
 
-/** The free text of the search (operators removed), normalised: what the list highlights. */
 export const searchQuery = () => query().text;
-/** Whether the search has anything in it (text or operators). */
 export const searching = () => !query().empty;
 let loose = false;
-/** The last visibleItems() found nothing exactly and fell back to a loose title match. */
 export const looseResults = () => loose;
 
 export function inVault(it) {
@@ -339,13 +302,9 @@ export function inVault(it) {
 
 export const inType = (it) => S.type === 'all' || it.type === S.type;
 
-const inFilter = (i, now) => S.filter === 'all' || (S.filter === 'recent' && groupIndex(i.lastUsedAt, now) <= 1) || (S.filter === 'fav' && i.fav);
+const LAST_USED_THIS_WEEK_GROUP = 1;
+const inFilter = (i, now) => S.filter === 'all' || (S.filter === 'recent' && groupIndex(i.lastUsedAt, now) <= LAST_USED_THIS_WEEK_GROUP) || (S.filter === 'fav' && i.fav);
 
-/**
- * The list: the current vault, view and search. Text is matched against the title and the item's
- * non-secret text (searchTextOf never contains secret values); when that finds nothing, against
- * the title loosely (popup/search.js).
- */
 export function visibleItems(now = Date.now()) {
   const q = query();
   const base = S.items.filter((i) => inVault(i) && inType(i) && inFilter(i, now));
@@ -365,7 +324,6 @@ export function visibleItems(now = Date.now()) {
   });
 }
 
-/** Keep the selection on a visible item when the visible set changes. Returns true if it changed. */
 export function ensureSel() {
   const vis = visibleItems();
   if (vis.length && !vis.some((i) => i.id === S.sel)) {
@@ -379,26 +337,18 @@ export function ensureSel() {
   return false;
 }
 
-/** Item payload for vault/saveItem: passkeys are owned by the service worker and never sent back. */
 export function forSave(item) {
   const { passkeys, ...rest } = item;
   return rest;
 }
 
-/** The saved item from the SW, keeping the local passkey list if the response omits it. */
 export function mergeSaved(saved, prev) {
   const base = saved && typeof saved === 'object' ? saved : prev;
   return { ...base, passkeys: base.passkeys ?? prev?.passkeys ?? [] };
 }
 
-/* ── clipboard ── */
-// i18n keys: translated when the toast is shown (t() at render time)
 const COPY_LABEL = { user: 'ユーザー名', pass: 'パスワード', totp: '認証コード', gen: '生成したパスワード' };
 
-/**
- * Copy and, for secrets, schedule the clipboard clear. `field` is one of COPY_LABEL's keys,
- * or any field with { label, secret } given (item fields and extra fields).
- */
 export async function copyText(field, value, { label = null, secret = null } = {}) {
   try {
     await navigator.clipboard.writeText(value);
@@ -415,7 +365,6 @@ export async function copyText(field, value, { label = null, secret = null } = {
       await call(MSG.CLIPBOARD_SCHEDULE_CLEAR, { seconds: secs });
       sub = t('{n}秒後にクリップボードから自動で消去します', { n: secs });
     } catch {
-      // copied, but nothing will clear it — say so instead of promising
       toastError(done, t('自動消去を設定できませんでした'));
       return true;
     }

@@ -1,6 +1,3 @@
-// Popup-wide keys: Esc (close the top layer), / (search), ↑↓ (move), ⏎ (copy the secret),
-// Ctrl+Z (the toast's 元に戻す), and selection mode's Ctrl+A / space / Delete.
-
 import { typeOf, hasTemplate, fieldLabel } from '../../shared/item-types.js';
 import { S, visibleItems, itemById, copyText, looseResults } from '../state.js';
 import { editorOpen, requestClose } from '../views/editor.js';
@@ -17,13 +14,15 @@ import { select, setQuery, flushTyping } from './view.js';
 
 const $ = (id) => document.getElementById(id);
 
+const IME_PROCESSING_KEYCODE = 229;
+
 export function onKey(e) {
-  // keys that confirm/cancel Japanese IME conversion must not trigger shortcuts
-  if (e.isComposing || e.keyCode === 229) return;
+  if (e.isComposing || e.keyCode === IME_PROCESSING_KEYCODE) return;
   if (S.phase !== 'main' || gateOpen()) return;
   const ae = document.activeElement;
   const typing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
   const search = $('search');
+  const withCommandKey = (key) => (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === key;
 
   if (e.key === 'Escape') {
     if (isGenOpen()) { closeGenerator(); e.preventDefault(); return; }
@@ -39,14 +38,12 @@ export function onKey(e) {
     }
     if (editorOpen()) { requestClose(); e.preventDefault(); return; }
     if (S.picking && pickerConfirming()) { resetPicker(); renderPicker(); e.preventDefault(); return; }
-    // In the search box Esc clears the query first; otherwise it leaves selection mode.
     if (S.picking && !(ae === search && S.query)) { setPicking(false); e.preventDefault(); return; }
     if (S.query) { setQuery(''); e.preventDefault(); return; }
     if (typing) ae.blur();
     return;
   }
-  // 元に戻す while the toast offers it (not in a text field, where Ctrl+Z undoes typing)
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && toastHasAction()) {
+  if (withCommandKey('z') && !typing && toastHasAction()) {
     e.preventDefault();
     runToastAction();
     return;
@@ -59,7 +56,7 @@ export function onKey(e) {
     return;
   }
   if (editorOpen()) return;
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'a' && !typing) {
+  if (withCommandKey('a') && !typing) {
     e.preventDefault();
     pickAll(true);
     return;
@@ -90,11 +87,9 @@ export function onKey(e) {
   if (e.key === 'Enter') {
     if (typing && ae !== search) return;
     if (ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A')) return;
-    if (S.picking) return; // no password copy while choosing what to delete
+    if (S.picking) return;
     flushTyping();
-    // only the row on screen: with 0 search results, S.sel may still point at a hidden item
     if (!S.sel || !visibleItems().some((i) => i.id === S.sel)) return;
-    // a near match (letters in order) is someone else's login until it is chosen with ↑↓ or a click
     if (looseResults() && ae === search) return;
     const target = primarySecret(itemById(S.sel));
     if (!target) return;
@@ -104,7 +99,6 @@ export function onKey(e) {
   }
 }
 
-/** What ⏎ copies: a login's password, or the first filled single-line secret of a templated item. */
 function primarySecret(it) {
   if (!it) return null;
   if (it.type === 'login') return it.password ? { field: 'pass', value: it.password } : null;
