@@ -1,17 +1,19 @@
 // Popup-wide keys: Esc (close the top layer), / (search), ↑↓ (move), ⏎ (copy the secret),
-// and selection mode's Ctrl+A / space / Delete.
+// Ctrl+Z (the toast's 元に戻す), and selection mode's Ctrl+A / space / Delete.
 
 import { typeOf, hasTemplate, fieldLabel } from '../../shared/item-types.js';
-import { S, visibleItems, itemById, copyText } from '../state.js';
+import { S, visibleItems, itemById, copyText, looseResults } from '../state.js';
 import { editorOpen, requestClose } from '../views/editor.js';
 import { closeGenerator, isGenOpen } from '../views/generator.js';
 import { escapeSettings, isSettingsOpen } from '../views/settings.js';
 import { closeHealth, isHealthOpen } from '../views/health.js';
+import { escapeTrash, isTrashOpen } from '../views/trash.js';
+import { runToastAction, toastHasAction } from '../views/toast.js';
 import { gateOpen } from '../views/lock.js';
 import { askDelete, pickerConfirming, resetPicker, renderPicker } from '../views/picker.js';
 import { MENUS, closeMenus, menuOpen, openMenuKey } from './menus.js';
 import { setPicking, pick, pickAll } from './picking.js';
-import { select, setQuery } from './view.js';
+import { select, setQuery, flushTyping } from './view.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,6 +29,7 @@ export function onKey(e) {
     if (isGenOpen()) { closeGenerator(); e.preventDefault(); return; }
     if (isSettingsOpen()) { escapeSettings(); e.preventDefault(); return; }
     if (isHealthOpen()) { closeHealth(); e.preventDefault(); return; }
+    if (isTrashOpen()) { escapeTrash(); e.preventDefault(); return; }
     if (menuOpen()) {
       const which = openMenuKey();
       closeMenus();
@@ -42,7 +45,13 @@ export function onKey(e) {
     if (typing) ae.blur();
     return;
   }
-  if (isGenOpen() || isSettingsOpen() || isHealthOpen() || menuOpen()) return;
+  // 元に戻す while the toast offers it (not in a text field, where Ctrl+Z undoes typing)
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && toastHasAction()) {
+    e.preventDefault();
+    runToastAction();
+    return;
+  }
+  if (isGenOpen() || isSettingsOpen() || isHealthOpen() || isTrashOpen() || menuOpen()) return;
   if (e.key === '/' && !typing) {
     e.preventDefault();
     search.focus();
@@ -69,6 +78,7 @@ export function onKey(e) {
   }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     if (typing && ae !== search) return;
+    flushTyping();
     const v = visibleItems();
     if (!v.length) return;
     e.preventDefault();
@@ -81,8 +91,11 @@ export function onKey(e) {
     if (typing && ae !== search) return;
     if (ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A')) return;
     if (S.picking) return; // no password copy while choosing what to delete
+    flushTyping();
     // only the row on screen: with 0 search results, S.sel may still point at a hidden item
     if (!S.sel || !visibleItems().some((i) => i.id === S.sel)) return;
+    // a near match (letters in order) is someone else's login until it is chosen with ↑↓ or a click
+    if (looseResults() && ae === search) return;
     const target = primarySecret(itemById(S.sel));
     if (!target) return;
     e.preventDefault();

@@ -3,13 +3,13 @@
 import { MSG, ERR } from '../../shared/messages.js';
 import { t } from '../../shared/i18n.js';
 import {
-  S, emit, call, errText, visibleItems, removeItems, liveToken, live, setPickMode, setPicked, togglePicked, setSel,
+  S, emit, call, errText, visibleItems, liveToken, live, setPickMode, setPicked, togglePicked, setSel,
 } from '../state.js';
 import { renderList, markSelected } from '../views/list.js';
 import { renderDetail } from '../views/detail.js';
 import { renderPicker, resetPicker, setPickerBusy } from '../views/picker.js';
 import { editorOpen, requestClose } from '../views/editor.js';
-import { toast, toastError } from '../views/toast.js';
+import { toastError } from '../views/toast.js';
 import { closeMenus } from './menus.js';
 
 const $ = (id) => document.getElementById(id);
@@ -108,17 +108,12 @@ export async function deletePicked() {
   try {
     const res = await call(MSG.VAULT_DELETE_ITEMS, { ids });
     if (!live(token)) return;
-    const first = visibleItems().findIndex((i) => S.picked.has(i.id));
-    removeItems(ids);
     setPickMode(false);
     pickAnchor = null;
     resetPicker();
     renderPickMode();
-    const rest = visibleItems();
-    setSel(rest[Math.min(Math.max(first, 0), rest.length - 1)]?.id || S.items[0]?.id || null);
-    renderList({ animate: true });
-    renderDetail({ animate: true });
-    toast(t('{n} 件を削除しました', { n: Number(res?.deleted) || ids.length }));
+    // the list, the selection and the toast with 元に戻す: popup.js onTrashed
+    emit('trashed', Array.isArray(res?.ids) ? res.ids : ids, { trash: res?.trash });
   } catch (e) {
     if (!live(token)) return;
     resetPicker();

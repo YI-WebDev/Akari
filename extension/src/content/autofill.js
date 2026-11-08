@@ -262,7 +262,7 @@
   // ---- shadow UI plumbing (shadow-ui.js) ----------------------------------------
 
   const ui = globalThis.__akariShadowUi;
-  const { el, orb, visibilityGuard } = ui;
+  const { el, orb, themed, visibilityGuard } = ui;
 
   function makeHost() {
     const made = ui.makeHost();
@@ -326,7 +326,7 @@
     const offscreen = r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth;
     field.btn.style.display = offscreen || r.width < size * 3 ? 'none' : 'block';
     field.btn.style.width = field.btn.style.height = field.btn.style.lineHeight = size + 'px';
-    field.btn.style.fontSize = Math.round(size * 0.58) + 'px';
+    field.btn.style.fontSize = Math.max(11, Math.round(size * 0.58)) + 'px'; // the 灯 glyph never below 11px
     field.btn.style.left = Math.round(r.right - size - 6) + 'px';
     field.btn.style.top = Math.round(r.top + (r.height - size) / 2) + 'px';
     if (field.menu) placeMenu(r);
@@ -345,7 +345,7 @@
     if (!field.root || !field.el) return;
     if (field.guard) field.guard.stop();
     if (field.menu) field.menu.remove();
-    const menu = el('div', 'menu');
+    const menu = themed(el('div', 'menu'));
     menu.setAttribute('role', 'listbox');
     menu.addEventListener('mousedown', (e) => e.preventDefault());
     field.rows = [];
@@ -480,7 +480,7 @@
     hideSaveBar();
     const { host, root } = makeHost();
     bar.host = host;
-    const card = el('div', 'bar');
+    const card = themed(el('div', 'bar'));
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-label', 'Akari');
     const head = el('div', 'head');

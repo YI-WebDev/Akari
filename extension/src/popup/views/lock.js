@@ -6,7 +6,7 @@ import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
 import { t } from '../../shared/i18n.js';
 import { S, strengthOf, setPhase } from '../state.js';
-import { h, clear, syncInert } from './dom.js';
+import { h, clear, syncInert, icon } from './dom.js';
 import { shake, wait, reducedMotion } from './fx.js';
 import { setMeter } from './meter.js';
 
@@ -82,6 +82,35 @@ function bootQueue() {
 
 const secs = (t0) => `${((performance.now() - t0) / 1000).toFixed(2)}s`;
 
+/* ── the master password field: show / hide, and the Caps Lock warning ── */
+
+function setRevealed(on) {
+  const input = $('lockInput');
+  const btn = $('lockReveal');
+  input.type = on ? 'text' : 'password';
+  input.classList.toggle('shown', on);
+  btn.setAttribute('aria-pressed', String(on));
+  const label = on ? t('パスワードを隠す') : t('パスワードを表示');
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  clear(btn);
+  btn.append(icon(on ? 'eyeOff' : 'eye', 15));
+}
+
+/** Caps Lock as the last key or click in `input` reported it; cleared when the field loses focus. */
+function watchCaps(input, out) {
+  const show = (on) => {
+    if (on === !!out.firstChild) return;
+    clear(out);
+    if (on) out.append(h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'), t('Caps Lock がオンです'));
+  };
+  const check = (e) => { if (typeof e.getModifierState === 'function') show(e.getModifierState('CapsLock')); };
+  input.addEventListener('keydown', check);
+  input.addEventListener('keyup', check);
+  input.addEventListener('pointerdown', check);
+  input.addEventListener('blur', () => show(false));
+}
+
 /* ── gate ── */
 
 /** Show the lock or setup screen. `instant` skips the fade (used at popup open). */
@@ -96,7 +125,9 @@ export function showGate(mode, { instant = false } = {}) {
   busy = false;
   bootClear();
   for (const id of ['lockSubmit', 'setupSubmit']) $(id).classList.remove('busy');
+  for (const id of ['lockCaps', 'setupCaps']) clear($(id));
   if (mode === 'lock') {
+    setRevealed(false);
     $('lockInput').value = '';
     $('lockInput').disabled = false;
     $('lockField').classList.remove('err');
@@ -138,6 +169,7 @@ async function unlock(e) {
   busy = true;
   field.classList.remove('err');
   $('lockSubmit').classList.add('busy');
+  setRevealed(false); // the password does not stay on screen while the key is derived
   input.blur();
   bootClear();
   status(st, t('認証しています…'));
@@ -249,6 +281,16 @@ export function initGate({ load, enter }) {
     $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
   } catch { /* keep the static text */ }
   $('lockForm').addEventListener('submit', unlock);
+  // the eye keeps focus in the field: a click on it must not move the caret away
+  $('lockReveal').addEventListener('pointerdown', (e) => e.preventDefault());
+  $('lockReveal').addEventListener('click', () => {
+    if (busy) return; // the password stays hidden while the key is derived
+    setRevealed($('lockInput').type === 'password');
+    $('lockInput').focus({ preventScroll: true });
+  });
+  watchCaps($('lockInput'), $('lockCaps'));
+  watchCaps($('setupPw'), $('setupCaps'));
+  watchCaps($('setupPw2'), $('setupCaps'));
   $('lockInput').addEventListener('input', () => {
     if ($('lockField').classList.contains('err')) {
       $('lockField').classList.remove('err');

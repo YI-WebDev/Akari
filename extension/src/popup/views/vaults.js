@@ -60,7 +60,7 @@ function render(focus) {
     }, icon('plus', 12, 2.6), t('vaults.add', null, '新しい保管庫')),
     h('p', { class: 'set-note' }, full
       ? t('vaults.full', { n: VAULT_LIMITS.count }, '保管庫は {n} 個までです。')
-      : t('vaults.note', { n: VAULT_LIMITS.count }, '保管庫は {n} 個まで作れます。削除するときは、中のアイテムを別の保管庫に移すか、一緒に削除するかを選べます。')),
+      : t('vaults.noteTrash', { n: VAULT_LIMITS.count }, '保管庫は {n} 個まで作れます。削除するときは、中のアイテムを別の保管庫に移すか、一緒にゴミ箱に移すかを選べます。')),
   );
   if (focus) setTimeout(() => page.querySelector(focus)?.focus({ preventScroll: false }), 0);
 }
@@ -143,7 +143,7 @@ function confirmDelete(v) {
     pick.append(h('button', {
       class: 'vault-chip vm-purge', type: 'button', role: 'radio', dataset: { to: '' },
       onclick: () => { st.moveTo = null; sync(); },
-    }, t('vaults.withItems', null, '一緒に削除')));
+    }, t('vaults.toTrash', null, 'ゴミ箱に移す')));
     arrowNav(pick, '.vault-chip', { onMove: (b) => b.click() });
     box.append(pick);
   }
@@ -243,7 +243,7 @@ async function doDelete(v, btn) {
     render('#vmAdd');
     toast(t('vaults.deleted', { name: v.name }, '保管庫「{name}」を削除しました'),
       res.moved ? t('vaults.movedN', { n: res.moved, name: dest?.name || '' }, '{n} 件を「{name}」に移しました')
-        : res.deleted ? t('vaults.deletedN', { n: res.deleted }, '{n} 件を削除しました') : null);
+        : res.deleted ? t('vaults.trashedN', { n: res.deleted }, '{n} 件をゴミ箱に移しました') : null);
   } catch (err) {
     if (!live(token)) return;
     setBusy(btn, false);

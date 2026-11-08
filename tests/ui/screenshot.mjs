@@ -64,7 +64,11 @@ async function open(cfg = {}, { reducedMotion = 'no-preference' } = {}) {
 const shot = (page, name) => page.screenshot({ path: join(OUT, `popup-${name}.png`) });
 const settle = (page, ms = 1100) => page.waitForTimeout(ms);
 /** Let an earlier toast finish so it does not cover the next screenshot. */
-const quiet = (page) => page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 5000 });
+// toasts stay 3–8 s (views/toast.js) and hold while hovered: move the pointer off, then wait
+const quiet = async (page) => {
+  await page.mouse.move(2, 2);
+  await page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 9000 });
+};
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 /** Pick what the list shows in the 表示 menu: 'all' | 'recent' | 'fav' | a type id. */
 async function view(page, id) {
@@ -281,7 +285,7 @@ const scenarios = {
     await shot(page, 'mainmenu');
     expect(await page.evaluate(() => document.activeElement?.id) === 'openHealth', 'the menu opens on its first item');
     await page.keyboard.press('ArrowDown');
-    expect(await page.evaluate(() => document.activeElement?.id) === 'manageVaults', '↓ moves through the menu');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'openTrash', '↓ moves through the menu');
     await page.keyboard.press('Escape');
     expect(await page.evaluate(() => document.activeElement?.id) === 'menuBtn', 'Esc returns to ≡');
     await page.click('#plusBtn');
@@ -425,6 +429,84 @@ const scenarios = {
     await page.click('.ed-foot .btn-text.danger');
     await settle(page, 300);
     await shot(page, 'editor-delete-confirm');
+    expect(/ゴミ箱に移しますか/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'the question says where it goes');
+    await ctx.close();
+  },
+  // ゴミ箱: a delete can be undone from the toast (button or Ctrl+Z) and from the ゴミ箱 sheet
+  async trash() {
+    const { page, ctx } = await open({ name: 'trash', tabUrl: NEW_TAB });
+    await page.waitForSelector('.row');
+    const rowIds = () => page.$$eval('.row', (rows) => rows.map((r) => r.dataset.id));
+    const total = (await rowIds()).length;
+    const del = async (id) => {
+      await page.click(`.row[data-id="${id}"]`);
+      await settle(page, 500);
+      await page.click('.d-head .ibtn[title="編集"]');
+      await settle(page, 500);
+      await page.click('.ed-foot .btn-text.danger');
+      await page.click('.ed-confirm .btn-mini.danger');
+      await page.waitForSelector('#toast.on #toastAct:not([hidden])');
+    };
+    await del('wifi');
+    expect(/をゴミ箱に移しました/.test(await page.locator('#toastMsg').textContent()), 'toast says it went to the trash');
+    expect(!(await rowIds()).includes('wifi'), 'gone from the list');
+    await settle(page, 400);
+    await shot(page, 'trash-toast');
+    // hovering holds the toast past its 8 s
+    await page.hover('#toast');
+    await page.waitForTimeout(8600);
+    expect(await page.locator('#toast.on').count() === 1, 'hover holds the toast');
+    await page.click('#toastAct');
+    await page.waitForFunction(() => !!document.querySelector('.row[data-id="wifi"]'));
+    expect((await rowIds()).length === total, '元に戻す puts it back');
+    expect(/を元に戻しました/.test(await page.locator('#toastMsg').textContent()), 'and says so');
+    await quiet(page);
+
+    // Ctrl+Z while the toast offers it
+    await del('wifi');
+    await page.locator('#list').focus();
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => !!document.querySelector('.row[data-id="wifi"]'));
+    expect(await page.evaluate(() => window.__AKARI_DB__.trash.length) === 0, 'Ctrl+Z restores');
+    await quiet(page);
+
+    // the sheet: restore one, delete one for good, empty the rest
+    await del('wifi');
+    await quiet(page);
+    await page.click('#menuBtn');
+    await page.waitForSelector('#mainMenu.open');
+    expect((await page.locator('#trashCount').textContent()) === '1', 'the menu counts the trash');
+    await page.click('#openTrash');
+    await page.waitForSelector('#trashSheet.open .ts-row');
+    await settle(page, 500);
+    await shot(page, 'trash-sheet');
+    expect(/あと 30 日/.test(await page.locator('.ts-left').first().textContent()), 'days left');
+    expect(await page.evaluate(() => document.activeElement?.dataset.col) === 'restore', 'focus on 元に戻す');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.ts-none');
+    expect((await rowIds()).includes('wifi'), 'restored from the sheet');
+    await shot(page, 'trash-empty');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#trashSheet:not(.open)');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'menuBtn', 'Esc closes and returns to ≡');
+
+    await del('wifi');
+    await quiet(page);
+    await page.click('#menuBtn');
+    await page.click('#openTrash');
+    await page.waitForSelector('#trashSheet.open .ts-row');
+    await page.click('.ts-purge');
+    await page.waitForSelector('.ts-row.asking');
+    await settle(page, 300);
+    await shot(page, 'trash-ask');
+    await page.keyboard.press('Escape');
+    expect(!(await page.locator('.ts-row.asking').count()) && (await page.locator('#trashSheet.open').count()) === 1, 'Esc only cancels the question');
+    await page.click('#tsEmpty');
+    await page.waitForSelector('#tsAskAll:not([hidden])');
+    await page.click('#tsAskAll .btn-mini.danger');
+    await page.waitForSelector('.ts-none');
+    expect(await page.evaluate(() => window.__AKARI_DB__.trash.length) === 0, 'emptied');
+    expect(!(await rowIds()).includes('wifi'), 'and not back in the list');
     await ctx.close();
   },
   async settings() {
@@ -434,7 +516,17 @@ const scenarios = {
     await page.click('#openSettings');
     await settle(page, 900);
     await shot(page, 'settings');
-    expect(await page.locator('[data-setting="theme"]').count() === 0, 'no theme setting');
+    const themeChip = (v) => page.locator(`[data-setting="theme"] [data-value="${v}"]`);
+    expect(await themeChip('dark').getAttribute('aria-checked') === 'true', 'dark by default');
+    expect(await page.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'drawn dark');
+    await themeChip('light').click();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+    await settle(page, 400);
+    await shot(page, 'settings-light');
+    expect(await page.evaluate(() => window.__AKARI_DB__.settings.theme) === 'light', 'saved');
+    expect(await page.evaluate(() => localStorage.getItem('akari.theme')) === 'light', 'remembered for the next open');
+    await themeChip('dark').click();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
     await page.click('#pwToggle');
     await page.fill('#pwNext', 'kotatsu-mikan');
     await settle(page, 500);
@@ -829,7 +921,8 @@ const scenarios = {
     await page.click('.pick-confirm .btn-mini.danger');
     await page.waitForSelector('#toast.on');
     await page.waitForFunction(() => !document.getElementById('app').hasAttribute('data-picking'));
-    expect(/3 件を削除しました/.test(await page.locator('#toast').textContent()), 'toast');
+    expect(/3 件をゴミ箱に移しました/.test(await page.locator('#toast').textContent()), 'toast');
+    expect(await page.locator('#toastAct').isVisible() && (await page.locator('#toastAct').textContent()) === '元に戻す', 'the toast offers 元に戻す');
     const left = await page.$$eval('.row', (rows) => rows.map((r) => r.dataset.id));
     expect(left.length === total - 3 && ![ids[0], ids[2], ids[3]].some((id) => left.includes(id)) && left.includes(ids[1]), 'the three are gone');
     expect(await page.locator('.row[aria-selected="true"]').count() === 1 && !(await page.locator('.row-check').count()), 'back to the normal list');
@@ -1248,6 +1341,76 @@ const scenarios = {
     await page.click('.ed-foot .btn-primary');
     await settle(page, 300);
     expect(await page.locator('.ex-row:last-child .field-err').textContent() === '項目名を入力してください', 'new extra needs a name');
+    await ctx.close();
+  },
+  // the light theme across the main screens (テーマ: ライト)
+  async light() {
+    const { page, ctx } = await open({ name: 'light', theme: 'light', tabUrl: 'https://www.amazon.co.jp/ap/signin' });
+    await page.waitForSelector('.row');
+    expect(await page.evaluate(() => document.documentElement.dataset.theme) === 'light', 'light from the setting');
+    await settle(page, 900);
+    await shot(page, 'light-main');
+    await page.click('[data-id="amazon"]');
+    await settle(page, 700);
+    await shot(page, 'light-weak');
+    await page.click('#menuBtn');
+    await settle(page, 400);
+    await shot(page, 'light-menu');
+    await page.click('#openHealth');
+    await settle(page, 700);
+    await shot(page, 'light-health');
+    await page.keyboard.press('Escape');
+    await page.click('#plusBtn');
+    await settle(page, 500);
+    await page.keyboard.press('g');
+    await page.waitForSelector('#genSheet.open');
+    await settle(page, 800);
+    await shot(page, 'light-generator');
+    await page.keyboard.press('Escape');
+    await page.click('#lockBtn');
+    await page.waitForSelector('#gate.on');
+    await settle(page, 600);
+    await shot(page, 'light-lock');
+    await ctx.close();
+  },
+  // the lock screen's eye and Caps Lock warning; search operators and the loose match
+  async 'lock-search'() {
+    const { page, ctx } = await open({ name: 'lock-search', state: 'locked', tabUrl: NEW_TAB });
+    await page.waitForSelector('#gate.on');
+    await page.fill('#lockInput', 'akari-master');
+    await page.click('#lockReveal');
+    expect(await page.locator('#lockInput').getAttribute('type') === 'text', 'the eye shows the password');
+    expect(await page.locator('#lockReveal').getAttribute('aria-pressed') === 'true', 'and says it is pressed');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'lockInput', 'focus stays in the field');
+    // Caps Lock: headless Chrome has no real key state, so send the key event a real one would
+    const capsKey = (on) => page.evaluate((v) => document.getElementById('lockInput')
+      .dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true, modifierCapsLock: v })), on);
+    await capsKey(true);
+    await settle(page, 200);
+    await shot(page, 'lock-caps');
+    expect(/Caps Lock/.test(await page.locator('#lockCaps').textContent()), 'Caps Lock warning');
+    await capsKey(false);
+    expect(!(await page.locator('#lockCaps').textContent()), 'gone when Caps Lock is off');
+    await page.click('#lockReveal');
+    expect(await page.locator('#lockInput').getAttribute('type') === 'password', 'and hides it again');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.row');
+
+    const ids = () => page.$$eval('.row', (rows) => rows.map((r) => r.dataset.id));
+    await page.click('#search');
+    await page.keyboard.type('has:totp');
+    await settle(page, 300);
+    const totp = await ids();
+    expect(totp.length > 0 && (await page.evaluate((list) => list.every((id) => !!window.__AKARI_DB__.items.find((x) => x.id === id)?.totp?.secret), totp)), 'has:totp');
+    await page.fill('#search', '');
+    await page.keyboard.type('type:card');
+    await settle(page, 300);
+    expect((await page.evaluate((list) => list.every((id) => window.__AKARI_DB__.items.find((x) => x.id === id)?.type === 'card'), await ids())), 'type:card');
+    await page.fill('#search', '');
+    await page.keyboard.type('amzn');
+    await settle(page, 300);
+    expect((await ids()).includes('amazon') && /近いもの/.test(await page.locator('.group').first().textContent()), 'loose match, labelled');
+    await shot(page, 'search-loose');
     await ctx.close();
   },
   async reduced() {

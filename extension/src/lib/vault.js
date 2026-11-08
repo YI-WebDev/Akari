@@ -8,6 +8,7 @@
 //   backup.js        backup files: export, import, merge
 //   import-items.js  items from another manager's export
 //   vaults.js        vaults (保管庫): create / rename / recolor / delete
+//   trash.js         the ゴミ箱: deleted items wait TRASH_DAYS before they are gone
 
 export {
   VAULT_VERSION, checkRecord, createVault, createVaultRecord, openVaultRecord, readVaultData, sealData,
@@ -21,3 +22,4 @@ export { passkeyFromImport } from './vault/passkeys.js';
 export { BACKUP_FORMAT, BACKUP_VERSION, exportBackup, importBackup, normalizeData, mergeData } from './vault/backup.js';
 export { MAX_IMPORT_ITEMS, addImportedItems } from './vault/import-items.js';
 export { createVaultIn, updateVaultIn, deleteVaultIn } from './vault/vaults.js';
+export { TRASH_DAYS, TRASH_MS, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash } from './vault/trash.js';

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Akari</title>
+<script src="../shared/theme.js"></script>
 <link rel="stylesheet" href="../shared/tokens.css">
 <link rel="stylesheet" href="../assets/fonts/fonts.css">
 <link rel="stylesheet" href="popup.css">
@@ -22,7 +23,7 @@
     </button>
     <label id="searchBox" class="search">
       <span class="prompt" aria-hidden="true">&gt;</span>
-      <input id="search" class="search-input" type="text" placeholder="検索: サイト・ユーザー名" aria-label="検索 ( / )" autocomplete="off" spellcheck="false">
+      <input id="search" class="search-input" type="text" placeholder="検索: サイト・ユーザー名" aria-label="検索 ( / )" title="絞り込み: type:login · has:totp · is:weak · vault:名前" autocomplete="off" spellcheck="false">
       <button id="searchClear" class="kbd-btn search-clear" type="button" title="クリア (esc)" aria-label="検索をクリア" hidden><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <span id="searchKey" class="kbd" aria-hidden="true">/</span>
     </label>
@@ -70,6 +71,11 @@
       <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg>
       <span class="grow">パスワード診断</span>
       <span id="healthCount" class="v-count" title="対応が必要なログイン"></span>
+    </button>
+    <button id="openTrash" class="menu-item" type="button" role="menuitem">
+      <svg class="menu-ico" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+      <span class="grow">ゴミ箱</span>
+      <span id="trashCount" class="v-count" title="ゴミ箱のアイテム"></span>
     </button>
     <div class="menu-sep" role="separator"></div>
     <button id="manageVaults" class="menu-item" type="button" role="menuitem">
@@ -157,6 +163,17 @@
               <button type="button" role="radio" data-value="en" lang="en">English</button>
             </div>
             <p id="langHint" class="set-hint"></p>
+          </div>
+        </div>
+        <div class="set-row">
+          <div id="themeLabel" class="set-label">テーマ</div>
+          <div class="set-body">
+            <div class="chips" role="radiogroup" aria-labelledby="themeLabel" aria-describedby="themeHint" data-setting="theme">
+              <button type="button" role="radio" data-value="dark">ダーク</button>
+              <button type="button" role="radio" data-value="light">ライト</button>
+              <button type="button" role="radio" data-value="auto">自動</button>
+            </div>
+            <p id="themeHint" class="set-hint"></p>
           </div>
         </div>
         </div>
@@ -274,6 +291,19 @@
     </div>
   </section>
 
+  <!-- ゴミ箱: opened from the ≡ menu, built by views/trash.js -->
+  <section id="trashSheet" class="sheet trash" role="dialog" aria-modal="true" aria-labelledby="tsTitle" aria-hidden="true">
+    <div class="sheet-head">
+      <span id="tsTitle" class="sheet-title">ゴミ箱</span>
+      <span id="tsSub" class="sheet-sub"></span>
+      <span class="grow"></span>
+      <button id="tsEmpty" class="btn-text danger ts-empty" type="button" hidden>ゴミ箱を空にする</button>
+      <button class="icon-btn sheet-close" type="button" data-close title="閉じる (esc)" aria-label="閉じる"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="tsAskAll" class="ed-confirm ts-ask-all" role="alert" hidden></div>
+    <ul id="tsList" class="ts-list" aria-label="ゴミ箱のアイテム"></ul>
+  </section>
+
   <div id="toast" class="toast" role="status" aria-live="polite">
     <div class="toast-body">
       <span class="toast-ico" aria-hidden="true">
@@ -281,6 +311,7 @@
         <svg class="ico-err" width="11" height="11" viewBox="0 0 24 24"><path d="M12 6v7M12 17.5v.01"/></svg>
       </span>
       <div class="toast-text"><div id="toastMsg" class="toast-msg"></div><div id="toastSub" class="toast-sub"></div></div>
+      <button id="toastAct" class="toast-act" type="button" hidden></button>
     </div>
     <div id="toastBar" class="toast-bar"></div>
   </div>
@@ -301,10 +332,12 @@
         <label class="gate-label" for="lockInput">マスターパスワード</label>
         <div class="gate-row">
           <div id="lockField" class="gate-field">
-            <input id="lockInput" type="password" placeholder="••••••••" autocomplete="current-password" aria-describedby="lockStatus">
+            <input id="lockInput" type="password" placeholder="••••••••" autocomplete="current-password" aria-describedby="lockStatus lockCaps">
+            <button id="lockReveal" class="gate-eye" type="button" aria-pressed="false" aria-controls="lockInput" title="パスワードを表示" aria-label="パスワードを表示"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
           <button id="lockSubmit" class="gate-go" type="submit">解除<span aria-hidden="true">⏎</span></button>
         </div>
+        <p id="lockCaps" class="gate-caps" aria-live="polite"></p>
         <div id="lockStatus" class="gate-status" aria-live="polite"></div>
       </form>
 
@@ -317,6 +350,7 @@
           <button id="setupSubmit" class="gate-go" type="submit" disabled>作成<span aria-hidden="true">⏎</span></button>
         </div>
         <div id="setupMeter" class="meter" data-lv="0"><div id="setupSegs" class="segs"></div><span id="setupLv" class="lv-label">—</span></div>
+        <p id="setupCaps" class="gate-caps" aria-live="polite"></p>
         <ul class="setup-checks" aria-label="条件">
           <li id="chkLen">10 文字以上</li><li id="chkLv">強度「普通」以上</li><li id="chkMatch">2 回とも同じ</li>
         </ul>

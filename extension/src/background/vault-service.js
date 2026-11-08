@@ -15,7 +15,7 @@ import {
   createVault, openVaultRecord, readVaultData, sealData, exportBackup, importBackup,
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
   addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
-  setLoginPassword, setPendingPassword,
+  setLoginPassword, setPendingPassword, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -35,12 +35,13 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 1024;
 const MAX_IMPORT_CHARS = 20 * 1024 * 1024;
 
-// Only these keys are read back or stored; anything else in an old settings object
-// (e.g. the retired `theme`) is dropped on the next read/write.
+// Only these keys are read back or stored; anything else in an old settings object is dropped on
+// the next read/write (an old `theme` value that is not one of today's choices reads as 'dark').
 const SETTING_RULES = {
   autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
   clipboardClearSeconds: (v) => [0, 10, 30, 60].includes(v),
   language: (v) => ['auto', 'ja', 'en'].includes(v),
+  theme: (v) => ['dark', 'light', 'auto'].includes(v),
 };
 
 const fail = (code, message) => new AkariError(code, message);
@@ -247,6 +248,7 @@ export function createVaultService({
       if (!record) throw fail(ERR.NOT_INITIALIZED, 'Vault not set up');
       const draft = structuredClone(c.data);
       const result = await fn(draft);
+      pruneTrash(draft, now()); // what has waited TRASH_DAYS in the ゴミ箱 goes with the next write
       draft.updatedAt = now();
       await local.set({ [VAULT_KEY]: await sealData(record, c.dek, draft) });
       if (cache) cache.data = draft; // same DEK even if re-unlocked meanwhile
@@ -370,8 +372,17 @@ export function createVaultService({
 
   async function getAll() {
     const c = await ensureUnlocked();
-    return { vaults: structuredClone(c.data.vaults), items: c.data.items.map(sanitizeItem) };
+    return {
+      vaults: structuredClone(c.data.vaults),
+      items: c.data.items.map(sanitizeItem),
+      trash: trashOut(c.data),
+    };
   }
+
+  /** The ゴミ箱 for the popup: only what its sheet shows (no secrets); 元に戻す returns the full items. */
+  const trashOut = (data) => liveTrash(data, now()).map((e) => ({
+    id: e.id, type: e.type ?? 'login', title: e.title ?? '', vault: e.vault, hue: e.hue, deletedAt: e.deletedAt,
+  }));
 
   /**
    * New item (no id) or update of a stored one, for every item type. An update only touches
@@ -406,32 +417,51 @@ export function createVaultService({
     return { item: saved };
   }
 
-  async function deleteItem(id) {
-    if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
-    await mutateData((draft) => {
-      const idx = draft.items.findIndex((i) => i.id === id);
-      if (idx < 0) throw fail(ERR.NOT_FOUND, 'Item not found');
-      draft.items.splice(idx, 1);
-    });
-    return {};
-  }
-
-  /**
-   * Several items in one write (the popup's selection). Ids that are already gone (deleted from
-   * another window meanwhile) are skipped; nothing at all to delete is NOT_FOUND.
-   */
-  async function deleteItems(ids) {
+  function checkIds(ids) {
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IMPORT_ITEMS) {
       throw fail(ERR.INVALID, `ids must be a non-empty array (max ${MAX_IMPORT_ITEMS})`);
     }
     if (!ids.every((id) => typeof id === 'string' && id)) throw fail(ERR.INVALID, 'ids must be non-empty strings');
-    const gone = new Set(ids);
+  }
+
+  /** One item to the ゴミ箱. */
+  async function deleteItem(id) {
+    if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
     return mutateData((draft) => {
-      const before = draft.items.length;
-      draft.items = draft.items.filter((i) => !gone.has(i.id));
-      const deleted = before - draft.items.length;
-      if (!deleted) throw fail(ERR.NOT_FOUND, 'Items not found');
-      return { deleted };
+      if (!trashItems(draft, [id], now()).length) throw fail(ERR.NOT_FOUND, 'Item not found');
+      return { ids: [id], trash: trashOut(draft) };
+    });
+  }
+
+  /**
+   * Several items to the ゴミ箱 in one write (the popup's selection). Ids that are already gone
+   * (deleted from another window meanwhile) are skipped; nothing at all to delete is NOT_FOUND.
+   */
+  async function deleteItems(ids) {
+    checkIds(ids);
+    return mutateData((draft) => {
+      const moved = trashItems(draft, ids, now());
+      if (!moved.length) throw fail(ERR.NOT_FOUND, 'Items not found');
+      return { deleted: moved.length, ids: moved, trash: trashOut(draft) };
+    });
+  }
+
+  /** Back from the ゴミ箱: the restored items, as getAll would send them. */
+  async function restoreFromTrash(ids) {
+    checkIds(ids);
+    return mutateData((draft) => {
+      const items = restoreItems(draft, ids, now());
+      return { items: items.map(sanitizeItem), trash: trashOut(draft) };
+    });
+  }
+
+  /** Out of the ゴミ箱 for good: `ids`, or everything when `all` is true. */
+  async function purgeFromTrash(ids, all) {
+    if (all !== true) checkIds(ids);
+    return mutateData((draft) => {
+      const purged = purgeTrash(draft, all === true ? null : ids, now());
+      if (!purged) throw fail(ERR.NOT_FOUND, 'Nothing to delete');
+      return { purged, trash: trashOut(draft) };
     });
   }
 
@@ -499,6 +529,7 @@ export function createVaultService({
     return mutateData((draft) => ({
       ...deleteVaultIn(draft, id, { moveTo, deleteItems }, now()),
       vaults: structuredClone(draft.vaults),
+      trash: trashOut(draft),
     }));
   }
 
@@ -560,6 +591,8 @@ export function createVaultService({
     [MSG.VAULT_SAVE_ITEM]: (m) => saveItem(m.item),
     [MSG.VAULT_DELETE_ITEM]: (m) => deleteItem(m.id),
     [MSG.VAULT_DELETE_ITEMS]: (m) => deleteItems(m.ids),
+    [MSG.VAULT_RESTORE_ITEMS]: (m) => restoreFromTrash(m.ids),
+    [MSG.VAULT_PURGE_ITEMS]: (m) => purgeFromTrash(m.ids, m.all),
     [MSG.VAULT_DELETE_PASSKEY]: (m) => deletePasskey(m.itemId, m.credentialId),
     [MSG.VAULT_PENDING_PASSWORD]: (m) => pendingPassword(m.id, m.action, m.password),
     [MSG.VAULT_CHANGE_PASSWORD]: (m) => changePassword(m.current, m.next),
@@ -576,7 +609,8 @@ export function createVaultService({
   };
   // A successful call of these counts as user activity (re-arms auto-lock).
   const ACTIVE = new Set([
-    MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
+    MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
+    MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
     MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
   ]);
@@ -615,7 +649,10 @@ if (live) {
   live.install();
   for (const [type, handler] of Object.entries(live.handlers)) register(type, handler, { from: 'extension' });
   // the in-page UI may learn the language, and nothing else of the settings
-  register(MSG.SETTINGS_LANGUAGE, async () => ({ language: (await live.getSettings()).language }), { from: 'content' });
+  register(MSG.SETTINGS_LANGUAGE, async () => {
+    const { language, theme } = await live.getSettings();
+    return { language, theme };
+  }, { from: 'content' });
 }
 
 function svc() {

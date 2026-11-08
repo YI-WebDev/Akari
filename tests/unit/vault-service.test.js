@@ -248,8 +248,10 @@ test('deletePasskey and deleteItem', async () => {
   await call(MSG.VAULT_DELETE_PASSKEY, { itemId: item.id, credentialId: 'a' });
   assert.deepEqual((await svc.readData()).items[0].passkeys.map((p) => p.credentialId), ['b']);
   await assert.rejects(call(MSG.VAULT_DELETE_PASSKEY, { itemId: item.id, credentialId: 'a' }), { code: 'NOT_FOUND' });
-  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  const del = await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  assert.deepEqual(del.ids, [item.id]);
   assert.deepEqual((await svc.readData()).items, []);
+  assert.deepEqual((await svc.readData()).trash.map((e) => e.id), [item.id], 'deleted items wait in the trash');
   await assert.rejects(call(MSG.VAULT_DELETE_ITEM, { id: item.id }), { code: 'NOT_FOUND' });
 });
 
@@ -262,7 +264,10 @@ test('deleteItems: the selection goes in one write; ids already gone are skipped
   chrome.storage.local.set = async (obj) => { writes.push(Object.keys(obj)); return set(obj); };
 
   // 'gone' was deleted from another window meanwhile: skipped, the rest is deleted.
-  assert.deepEqual(await call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[0], ids[2], 'gone'] }), { deleted: 2 });
+  const res = await call(MSG.VAULT_DELETE_ITEMS, { ids: [ids[0], ids[2], 'gone'] });
+  assert.equal(res.deleted, 2);
+  assert.deepEqual(res.ids.sort(), [ids[0], ids[2]].sort());
+  assert.deepEqual(res.trash.map((e) => e.title).sort(), ['A', 'C']);
   assert.deepEqual(writes, [['akari.vault']], 'one encrypted write for the whole selection');
   assert.deepEqual((await svc.readData()).items.map((i) => i.title), ['B', 'D']);
 
@@ -334,13 +339,14 @@ test('auto-lock: alarm armed on unlock, re-armed by activity (throttled), fires 
 
 test('settings: defaults, validation, autoLockMinutes re-arms (0 = no alarm)', async () => {
   const { call, chrome, clock } = await setupUnlocked();
-  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 15, clipboardClearSeconds: 30, language: 'auto' });
-  for (const patch of [{ autoLockMinutes: 7 }, { theme: 'terminal' }, { clipboardClearSeconds: 5 }, { language: 'fr' }, { language: 1 }, { bogus: 1 }, { constructor: 1 }, null]) {
+  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 15, clipboardClearSeconds: 30, language: 'auto', theme: 'dark' });
+  for (const patch of [{ autoLockMinutes: 7 }, { theme: 'terminal' }, { theme: 'soft' }, { clipboardClearSeconds: 5 }, { language: 'fr' }, { language: 1 }, { bogus: 1 }, { constructor: 1 }, null]) {
     await assert.rejects(call(MSG.SETTINGS_SET, { patch }), { code: 'INVALID' }, JSON.stringify(patch));
   }
   const s = await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: 5 } });
-  assert.deepEqual(s, { autoLockMinutes: 5, clipboardClearSeconds: 30, language: 'auto' });
+  assert.deepEqual(s, { autoLockMinutes: 5, clipboardClearSeconds: 30, language: 'auto', theme: 'dark' });
   assert.equal((await call(MSG.SETTINGS_SET, { patch: { language: 'en' } })).language, 'en');
+  for (const theme of ['light', 'auto', 'dark']) assert.equal((await call(MSG.SETTINGS_SET, { patch: { theme } })).theme, theme);
   await call(MSG.SETTINGS_SET, { patch: { language: 'auto' } });
   assert.deepEqual(chrome.storage.local.map.get(SETTINGS_KEY), s);
   assert.deepEqual(chrome.alarms.map.get(AUTOLOCK_ALARM), { delayInMinutes: 5 });
@@ -352,14 +358,60 @@ test('settings: defaults, validation, autoLockMinutes re-arms (0 = no alarm)', a
   assert.equal(chrome.alarms.map.has(AUTOLOCK_ALARM), false, '0 = only when the browser closes');
 });
 
-test('settings: the retired theme key in old stored settings is dropped silently', async () => {
+test('settings: a retired theme value in old stored settings reads as the dark default', async () => {
   const chrome = fakeChrome();
   await chrome.storage.local.set({ [SETTINGS_KEY]: { autoLockMinutes: 30, theme: 'soft', clipboardClearSeconds: 10 } });
   const { call } = await setupUnlocked({ chrome });
-  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 30, clipboardClearSeconds: 10, language: 'auto' });
+  assert.deepEqual(await call(MSG.SETTINGS_GET), { autoLockMinutes: 30, clipboardClearSeconds: 10, language: 'auto', theme: 'dark' });
   const s = await call(MSG.SETTINGS_SET, { patch: { clipboardClearSeconds: 60 } });
-  assert.deepEqual(s, { autoLockMinutes: 30, clipboardClearSeconds: 60, language: 'auto' });
-  assert.deepEqual(chrome.storage.local.map.get(SETTINGS_KEY), s, 'theme is not written back');
+  assert.deepEqual(s, { autoLockMinutes: 30, clipboardClearSeconds: 60, language: 'auto', theme: 'dark' });
+  assert.deepEqual(chrome.storage.local.map.get(SETTINGS_KEY), s, 'the old value is not written back');
+});
+
+test('ゴミ箱: restore puts items back (into the first vault when theirs is gone), purge and expiry delete for good', async () => {
+  const { call, svc, clock } = await setupUnlocked();
+  const a = (await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'A', vault: 'work' } })).item;
+  const b = (await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'B' } })).item;
+  const c = (await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'C' } })).item;
+  await call(MSG.VAULT_DELETE_ITEMS, { ids: [a.id, b.id, c.id] });
+  const all = await call(MSG.VAULT_GET_ALL);
+  assert.deepEqual(all.trash.map((e) => e.title).sort(), ['A', 'B', 'C']);
+  assert.ok(all.trash.every((e) => typeof e.deletedAt === 'number'));
+
+  // the vault of A is deleted meanwhile: A comes back into the first vault
+  await call(MSG.VAULT_DELETE_VAULT, { id: 'work' });
+  const back = await call(MSG.VAULT_RESTORE_ITEMS, { ids: [a.id] });
+  assert.deepEqual(back.items.map((i) => [i.title, i.vault]), [['A', 'personal']]);
+  assert.equal('deletedAt' in back.items[0], false);
+  assert.deepEqual((await svc.readData()).items.map((i) => i.title), ['A']);
+  await assert.rejects(call(MSG.VAULT_RESTORE_ITEMS, { ids: [a.id] }), { code: 'NOT_FOUND' });
+
+  const purged = await call(MSG.VAULT_PURGE_ITEMS, { ids: [b.id] });
+  assert.equal(purged.purged, 1);
+  assert.deepEqual(purged.trash.map((e) => e.title), ['C']);
+  await assert.rejects(call(MSG.VAULT_PURGE_ITEMS, {}), { code: 'INVALID' });
+
+  // 30 days later C is gone on its own: not listed, and dropped with the next write
+  clock.t += 30 * 24 * 3600 * 1000;
+  assert.deepEqual((await call(MSG.VAULT_GET_ALL)).trash, []);
+  await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'D' } });
+  assert.deepEqual((await svc.readData()).trash, []);
+  await assert.rejects(call(MSG.VAULT_PURGE_ITEMS, { all: true }), { code: 'NOT_FOUND' });
+
+  // the trash holds what its sheet shows, no secrets
+  await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'S', password: 'secret-pw', note: 'n' } });
+  const s = (await svc.readData()).items.find((i) => i.title === 'S');
+  const shown = (await call(MSG.VAULT_DELETE_ITEM, { id: s.id })).trash[0];
+  assert.deepEqual(Object.keys(shown).sort(), ['deletedAt', 'hue', 'id', 'title', 'type', 'vault']);
+  await call(MSG.VAULT_PURGE_ITEMS, { all: true });
+
+  // a vault deleted with its items sends them to the trash too
+  await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'E', vault: 'family' } });
+  const gone = await call(MSG.VAULT_DELETE_VAULT, { id: 'family', deleteItems: true });
+  assert.equal(gone.deleted, 1);
+  assert.deepEqual(gone.trash.map((e) => e.title), ['E']);
+  assert.equal((await call(MSG.VAULT_PURGE_ITEMS, { all: true })).purged, 1);
+  assert.deepEqual((await svc.readData()).trash, []);
 });
 
 test('unlock throttling: increasing delay after 5 consecutive failures, reset on success', async () => {

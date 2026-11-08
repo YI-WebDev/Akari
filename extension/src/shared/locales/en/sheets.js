@@ -40,7 +40,6 @@ export default {
   'vaults.label': 'Vault',
   'vaults.add': 'New vault',
   'vaults.full': 'You can have up to {n} vaults.',
-  'vaults.note': 'You can create up to {n} vaults. When you delete one, you can move its items to another vault or delete them with it.',
   'vaults.count': '{n} items',
   'vaults.edit': 'Change name and color',
   'vaults.editOf': 'Change name and color of {name}',
@@ -68,7 +67,6 @@ export default {
   'vaults.purgeGo': 'Delete with {n} items',
   'vaults.itemsTo': 'Its items',
   'vaults.moveTo': 'Move to {name}',
-  'vaults.withItems': 'Delete them',
   'vaults.errName': 'Enter a name',
   'vaults.errLong': 'Names can be up to {n} characters',
   'vaults.errDup': 'A vault with this name already exists',
@@ -76,7 +74,6 @@ export default {
   'vaults.updated': 'Vault "{name}" updated',
   'vaults.deleted': 'Vault "{name}" deleted',
   'vaults.movedN': 'Moved {n} items to "{name}"',
-  'vaults.deletedN': 'Deleted {n} items',
 
   /* ── インポート page (views/import.js) ── */
   '別のパスワードマネージャーから移行するには、そのアプリでデータを書き出してから、ここで読み込みます。読み込んだら、書き出したファイルは削除してください。':
@@ -283,8 +280,6 @@ export default {
   '削除する': 'Delete',
   'キャンセル': 'Cancel',
   'やめる': 'Cancel',
-  'パスキー {n} 件も消えます。元に戻せません': "Its passkeys ({n}) go too. This cannot be undone",
-  '削除しますか？元に戻せません': "Delete it? This cannot be undone",
   '削除できませんでした': "Could not delete",
   '変更を破棄しますか？': 'Discard changes?',
   '破棄する': 'Discard',

@@ -1,4 +1,4 @@
-// Settings bottom sheet: auto-lock, clipboard clearing, master password, and the
+// Settings bottom sheet: language, theme, auto-lock, clipboard clearing, master password, and the
 // 保管庫 / インポート / エクスポート pages (views/vaults.js, import.js, export.js) shown inside the same sheet.
 
 import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
@@ -84,6 +84,7 @@ export function escapeSettings() {
 
 const CMD_VALUES = {
   language: (v) => `language ${v}`,
+  theme: (v) => `theme ${v}`,
   autoLockMinutes: (v) => `auto-lock ${v === NEVER_LOCK ? 'never' : v === 0 ? 'on-browser-close' : `${v}m`}`,
   clipboardClearSeconds: (v) => `clipboard-clear ${v === 0 ? 'off' : `${v}s`}`,
 };
@@ -102,6 +103,14 @@ function hintFor(key, v) {
     if (v !== 'auto') return v === 'en' ? t('画面を英語で表示します') : t('画面を日本語で表示します');
     return t('ブラウザの言語に合わせます（いまは{lang}）', { lang: browserLocale() === 'ja' ? '日本語' : 'English' });
   }
+  if (key === 'theme') {
+    if (v === 'light') return t('settings.themeLight', null, '明るい紙の上に灯をともします。ページ上の入力メニューも同じです');
+    if (v === 'auto') {
+      const now = globalThis.__akariTheme?.current() === 'light' ? t('ライト') : t('ダーク');
+      return t('settings.themeAuto', { mode: now }, 'OS の設定に合わせます（いまは{mode}）');
+    }
+    return t('settings.themeDark', null, 'Akari の暗い画面です');
+  }
   if (key === 'autoLockMinutes') {
     if (v === NEVER_LOCK) return t('settings.hintNever', null, '自動ではロックしません。鍵のボタンでロックします');
     return v > 0 ? t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
@@ -109,7 +118,7 @@ function hintFor(key, v) {
   return v > 0 ? t('settings.hintClip', { n: v }, 'コピーした値は {n} 秒後にクリップボードから消えます') : t('settings.hintClipOff', null, 'コピーした値はクリップボードに残ります');
 }
 
-const valueOf = (key, raw) => (key === 'language' ? String(raw) : Number(raw));
+const valueOf = (key, raw) => (key === 'language' || key === 'theme' ? String(raw) : Number(raw));
 
 function syncChips() {
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {
@@ -126,6 +135,7 @@ async function setSetting(key, raw) {
   const value = valueOf(key, raw);
   if (S.settings[key] === value) return;
   const prev = putSetting(key, value);
+  if (key === 'theme') globalThis.__akariTheme?.apply(value); // at once; undone below if it cannot be saved
   syncChips();
   try {
     const next = await call(MSG.SETTINGS_SET, { patch: { [key]: value } });
@@ -140,6 +150,7 @@ async function setSetting(key, raw) {
     }
   } catch (e) {
     putSetting(key, prev);
+    if (key === 'theme') globalThis.__akariTheme?.apply(prev);
     syncChips();
     toastError(t('設定を保存できませんでした'), errText(e));
   }
