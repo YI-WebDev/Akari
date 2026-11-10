@@ -61,3 +61,10 @@ npm run e2e                         # インストール済みの Chrome で E2E
 node tests/ui/extension-smoke.mjs   # ポップアップを実際のサービスワーカーにつないで操作
 node tests/ui/screenshot.mjs        # 画面のスクリーンショット（tests/ui/screenshots/）
 ```
+
+## ライセンス
+
+- Akari は MIT ライセンス（[`LICENSE`](LICENSE)）
+- 同梱している第三者のコンポーネントは、それぞれのライセンスに従う（[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）
+- プライバシー — Akari はどこにもデータを送らない（[`PRIVACY.md`](PRIVACY.md)）
+- 脆弱性の報告は [`SECURITY.md`](SECURITY.md) へ
