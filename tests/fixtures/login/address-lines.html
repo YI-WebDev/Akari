@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: address lines</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 32px auto; max-width: 360px; color: #2e2520; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, select { box-sizing: border-box; width: 100%; padding: 8px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Shipping address</h1>
+  <form id="lines-form" action="welcome.html" method="post">
+    <label for="postcode">Zip/Postal Code</label>
+    <input id="postcode" name="postcode" type="text">
+    <label for="region">State/Province</label>
+    <select id="region" name="region_id">
+      <option value="">Please select</option>
+      <option value="13">東京都</option>
+      <option value="26">京都府</option>
+    </select>
+    <label for="city">City</label>
+    <input id="city" name="city" type="text">
+    <label for="street0">Street Address</label>
+    <input id="street0" name="street[0]" type="text">
+    <label for="street1">Street Address: Line 2</label>
+    <input id="street1" name="street[1]" type="text">
+    <label for="extra">建物名・部屋番号</label>
+    <input id="extra" name="address_extra" type="text">
+  </form>
+  <script>
+    document.getElementById('lines-form').addEventListener('submit', (e) => e.preventDefault());
+  </script>
+</body>
+</html>

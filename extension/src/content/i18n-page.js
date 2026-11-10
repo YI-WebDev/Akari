@@ -21,6 +21,7 @@
     'ユーザー名': 'Username',
     'パスワード': 'Password',
     '（なし）': '(none)',
+    'アイデンティティの情報なし': 'No identity saved',
     '保存しました': 'Saved',
     '保存できませんでした': 'Could not save',
     '閉じて他の方法 (esc)': 'Close and use another method (esc)',

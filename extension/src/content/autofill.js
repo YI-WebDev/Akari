@@ -27,6 +27,8 @@
     CONFIRM_SAVE: 'autofill/confirmSave',
     NOTE_USERNAME: 'autofill/noteUsername',
     SUGGEST_PASSWORD: 'autofill/suggestPassword',
+    IDENTITIES: 'autofill/identities',
+    REQUEST_IDENTITY: 'autofill/requestIdentity',
     DO_FILL: 'autofill/doFill',
   };
   const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
@@ -46,6 +48,12 @@
   const MAX_INPUTS_IN_LOGIN_SCOPE = 24;
   const MAX_FIELDS_IN_LOGIN_SCOPE = 8;
   const MAX_NEW_PASSWORD_FIELDS = 2;
+  const MAX_IDENTITY_SCAN = 80;
+  const MIN_IDENTITY_FIELDS_IN_SCOPE = 3;
+  const POSTAL_DIGITS = 7;
+  const MAX_HINT_TEXT = 200;
+  const MIN_READABLE_FONT_PX = 6;
+  const MIN_READABLE_ALPHA = 0.5;
   const QUIET_AFTER_NO_MATCH_MS = 10000;
   const OFFER_COOLDOWN_MS = 1500;
   const SAVED_BAR_LINGER_MS = 1500;
@@ -144,6 +152,141 @@
     const looksLikeSignUpWithConfirmation = pws.length === 2 && plain.length === 2;
     if (looksLikeSignUpWithConfirmation) return null;
     return plain[0];
+  }
+
+  const AUTOCOMPLETE_KIND = {
+    'postal-code': 'postalCode', 'address-level1': 'state', 'address-level2': 'city',
+    'address-line1': 'address1', 'street-address': 'address1', 'address-line2': 'address2',
+    country: 'country', 'country-name': 'country',
+  };
+  const OTHER_AUTOCOMPLETE = /^(email|tel|url|sex|bday|organization|one-time-code|cc-|.*name$|.*password$)/;
+  const KIND_HINTS = [
+    ['postalCode', /zip|postal|post[-_ ]?code|郵便/i],
+    ['state', /prefecture|(^|[-_.\s/[\]])(pref|state|province|region)($|[-_.\s/[\]\d])|都道府県/i],
+    ['city', /(^|[-_.\s/[\]])(city|town|locality)|市区町村|市町村|市区郡/i],
+    ['address2', /(address|addr|street)[-_.\s]*(line)?[-_.\s]*0?[23](?!\d)|line[-_.\s]?0?[23](?!\d)|(address|addr|street)\[[12]\]|(^|[-_.\s/[\]])(building|apartment|apt|suite)|住所\s*[2２]|建物|マンション|アパート|部屋|号室/i],
+    ['address1', /address|addr|street|住所|番地|町名|丁目/i],
+    ['country', /country|国名|国・地域/i],
+  ];
+  const NOT_ADDRESS_NAME = /(^|[^a-z])(e?-?mail(?!ing)|ip[-_ ]?addr|mac[-_ ]?addr|web[-_ ]?addr)|search|query|captcha|coupon|card|password|url|wallet|fax|kana(?!gawa|zawa)|furi|yomi|phonetic|ruby/i;
+  const NOT_ADDRESS_LABEL = /e-?mail|メール|フリガナ|ふりがな|ひらがな|カタカナ|カナ(?!ダ)|かな|よみ|読み|カード|パスワード|IP\s?アドレス/i;
+  const ADDRESS_KINDS = ['postalCode', 'state', 'city', 'address1', 'address2', 'country'];
+  const SELECT_KINDS = ['state', 'country'];
+  const JOINED_KINDS = ['state', 'city', 'address1', 'address2'];
+  const WESTERN_ORDER = ['address1', 'address2', 'city', 'state'];
+  const JOINS_INTO = {
+    state: ['city', 'address1', 'address2'],
+    city: ['address1', 'address2', 'state'],
+    address1: ['city', 'address2', 'state'],
+    address2: ['address1', 'city', 'state'],
+  };
+  const NON_ASCII = /[^\x00-\x7f]/;
+  const CAMEL_EDGE = /([a-z\d])([A-Z])/g;
+
+  const ownText = (label, el) => (label.contains(el)
+    ? Array.from(label.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join(' ')
+    : label.textContent);
+  const labelText = (el) => Array.from(el.labels || []).map((l) => ownText(l, el)).join(' ');
+
+  function hintedKind(text, isName) {
+    const hits = [];
+    for (const [kind, re] of KIND_HINTS) {
+      const m = re.exec(text);
+      if (m) hits.push({ kind, at: m.index });
+    }
+    if (!hits.length) return null;
+    const specific = isName ? hits.filter((h) => h.kind !== 'address1') : [];
+    if (specific.length) return specific.reduce((a, b) => (b.at > a.at ? b : a)).kind;
+    return hits.reduce((a, b) => (b.at < a.at ? b : a)).kind;
+  }
+
+  function identityKind(el) {
+    if (!el || hosts.has(el)) return null;
+    const select = el.tagName === 'SELECT';
+    if (!select && (el.tagName !== 'INPUT' || !TEXT_TYPES.has(el.type) || el.type === 'email' || isPasswordish(el))) return null;
+    const name = [el.name, el.id].filter(Boolean).join(' ').replace(CAMEL_EDGE, '$1_$2').slice(0, MAX_HINT_TEXT);
+    const label = [el.getAttribute('aria-label'), labelText(el)].filter(Boolean).join(' ').slice(0, MAX_HINT_TEXT);
+    if (NOT_ADDRESS_NAME.test(name) || NOT_ADDRESS_LABEL.test(label)) return null;
+    const tokens = acTokens(el);
+    const marked = tokens.map((token) => AUTOCOMPLETE_KIND[token]).find(Boolean);
+    if (!marked && tokens.some((token) => OTHER_AUTOCOMPLETE.test(token))) return null;
+    const fits = (kind) => !!kind && (select ? SELECT_KINDS.includes(kind) : el.type !== 'tel' || kind === 'postalCode');
+    const placeholder = (el.placeholder || '').slice(0, MAX_HINT_TEXT);
+    const byName = hintedKind(name, true);
+    const byLabel = hintedKind(label, false);
+    const named = byName === 'address1' && byLabel === 'address2' ? byLabel : byName;
+    return [marked, named, byLabel, hintedKind(placeholder, false)].find(fits) || null;
+  }
+
+  function identityFieldsIn(scope) {
+    const all = scope.tagName === 'FORM' ? Array.from(scope.elements) : Array.from(scope.querySelectorAll('input, select'));
+    const out = [];
+    for (const el of all.slice(0, MAX_IDENTITY_SCAN)) {
+      const kind = identityKind(el);
+      if (kind && usable(el)) out.push({ el, kind });
+    }
+    return out;
+  }
+
+  function identityScope(el) {
+    if (el.form) return el.form;
+    let node = el.parentElement;
+    for (let i = 0; node && node !== document.body && node !== document.documentElement && i < MAX_SCOPE_ANCESTORS; i++) {
+      if (identityFieldsIn(node).length >= MIN_IDENTITY_FIELDS_IN_SCOPE) return node;
+      node = node.parentElement;
+    }
+    return el.parentElement || el.getRootNode();
+  }
+
+  const untouched = (el) => (el.tagName === 'SELECT' ? el.selectedIndex <= 0 || !el.value : !el.value);
+
+  function alphaOf(color) {
+    const m = /^rgba?\(([^)]*)\)$/.exec(color);
+    const parts = m ? m[1].split(/[\s,/]+/).filter(Boolean) : [];
+    return parts.length > 3 ? parseFloat(parts[3]) : 1;
+  }
+
+  function readable(el) {
+    const style = getComputedStyle(el);
+    if (parseFloat(style.fontSize) < MIN_READABLE_FONT_PX) return false;
+    if (Math.min(alphaOf(style.color), alphaOf(style.webkitTextFillColor)) < MIN_READABLE_ALPHA) return false;
+    for (let n = el; n; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.clipPath !== 'none' || s.maskImage !== 'none') return false;
+    }
+    return true;
+  }
+
+  function joinedInto(kind, fields, values) {
+    const has = (k) => fields.some((f) => f.kind === k);
+    const holds = (k) => fields.some((f) => f.kind === k && f.el.tagName === 'INPUT');
+    const mine = JOINED_KINDS.filter((k) => values[k] && (k === kind || (!has(k) && JOINS_INTO[k].find(holds) === kind)));
+    if (!mine.some((k) => NON_ASCII.test(values[k]))) return WESTERN_ORDER.filter((k) => mine.includes(k)).map((k) => values[k]).join(', ');
+    return mine.map((k) => (k === 'address2' && mine.length > 1 ? ' ' : '') + values[k]).join('');
+  }
+
+  function identityValue(target, fields, values) {
+    if (target.kind === 'country') return values.country || '';
+    if (target.kind !== 'postalCode') return joinedInto(target.kind, fields, values);
+    const value = values.postalCode || '';
+    const digits = value.replace(/\D/g, '');
+    const group = fields.filter((f) => f.kind === 'postalCode');
+    const split = group.length === 2 && group[0].el.maxLength === 3 && group[1].el.maxLength === 4 && digits.length === POSTAL_DIGITS;
+    if (split) return group[0] === target ? digits.slice(0, 3) : digits.slice(3);
+    return target.el.maxLength > 0 && target.el.maxLength < value.length ? digits : value;
+  }
+
+  function fillSelect(el, value) {
+    const want = value.trim().toLowerCase();
+    const text = (o) => o.textContent.trim().toLowerCase();
+    const options = Array.from(el.options).filter((o) => o.value && text(o).length > 1);
+    const hit = options.find((o) => o.value.toLowerCase() === want || text(o) === want)
+      || options.find((o) => text(o).startsWith(want) || want.startsWith(text(o)));
+    if (!hit) return false;
+    el.value = hit.value;
+    el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return true;
   }
 
   function newPasswordFields(scope) {
@@ -254,7 +397,7 @@
   chrome.runtime.onMessage.addListener(onMessage);
 
   const ui = globalThis.__akariShadowUi;
-  const { el, orb, themed, visibilityGuard } = ui;
+  const { el, orb, themed, visibilityGuard, sightWatch } = ui;
 
   function makeHost() {
     const made = ui.makeHost();
@@ -263,16 +406,17 @@
   }
 
   const quietUntil = new WeakMap();
-  const field = { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, token: 0, guard: null };
+  const field = { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, token: 0, guard: null, sight: null };
 
   function removeFieldUi() {
     field.token++;
     if (field.guard) field.guard.stop();
+    if (field.sight) field.sight.stop();
     if (field.host) {
       hosts.delete(field.host);
       field.host.remove();
     }
-    Object.assign(field, { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, guard: null });
+    Object.assign(field, { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, guard: null, sight: null });
   }
 
   function closeMenu() {
@@ -339,6 +483,14 @@
     choose: () => chooseItem(it.id),
   }));
 
+  const identityRows = (items) => (items || []).map((it) => ({
+    glyph: (Array.from(it.title || it.name || '?')[0] || '?').toUpperCase(),
+    hue: it.hue,
+    title: it.title || it.name || '',
+    sub: it.title ? it.name : '',
+    choose: () => chooseIdentity(it.id),
+  }));
+
   const suggestionRow = (password) => ({
     glyph: '*', hue: 40, title: t('強いパスワードを使う'), sub: password, choose: chooseSuggestion,
   });
@@ -392,12 +544,55 @@
     if (field.menu === menu) field.guard = visibilityGuard(menu, () => field.host);
   }
 
-  function openMenu() {
+  function openMenu(byItself = false) {
     const s = field.state;
     if (!s) return;
+    const sight = field.sight;
+    if (field.role === 'identity' && sight && !sight.ready()) {
+      const token = field.token;
+      sight.settled.then(() => {
+        if (token === field.token && !field.open && (!byItself || opensByItself(field.el))) openMenu(byItself);
+      });
+      return;
+    }
     if (s.locked) renderMenu([], lockedText());
     else if (field.role === 'new-password') renderMenu([suggestionRow(s.password)]);
+    else if (field.role === 'identity') renderMenu(identityRows(s.items), s.items.length ? '' : t('アイデンティティの情報なし'));
     else renderMenu(loginRows(s.items));
+  }
+
+  async function chooseIdentity(itemId) {
+    const input = field.el;
+    const sight = field.sight;
+    closeMenu();
+    const fields = input && input.isConnected ? identityFieldsIn(identityScope(input)) : [];
+    if (!fields.some((f) => f.el === input)) return;
+    const wasSeen = (el) => !!sight && sight.seen(el) && readable(el);
+    const targets = fields.filter((f) => f.el === input || (untouched(f.el) && wasSeen(f.el)));
+    const joins = targets.some((f) => JOINED_KINDS.includes(f.kind));
+    const kinds = Array.from(new Set(targets.map((f) => f.kind).concat(joins ? JOINED_KINDS : [])));
+    const res = await send(M.REQUEST_IDENTITY, { itemId, kinds });
+    if (!res.ok) {
+      if (field.root) renderMenu([], res.code === 'LOCKED' ? lockedText() : t('このサイトでは使えません'));
+      return;
+    }
+    removeFieldUi();
+    if (!input.isConnected) return;
+    filling = true;
+    try {
+      for (const f of targets) {
+        if (!f.el.isConnected) continue;
+        const value = identityValue(f, fields, res.data.values);
+        if (!value) continue;
+        if (f.el.tagName === 'SELECT') fillSelect(f.el, value);
+        else fillField(f.el, value);
+      }
+      input.focus({ preventScroll: true });
+    } catch {
+    } finally {
+      filling = false;
+    }
+    considerFocus(deepActive());
   }
 
   async function chooseItem(itemId) {
@@ -488,8 +683,13 @@
     maxLength: input.maxLength > 0 ? input.maxLength : undefined,
   });
 
-  const suggestsNow = (input) => !!field.state && !field.state.locked && !field.open && !input.value
-    && newPasswordFields(scopeOf(input)).every((p) => replaceable(p, input));
+  const followsFocus = () => field.role === 'new-password' || field.role === 'identity';
+
+  function opensByItself(input) {
+    if (!field.state || field.state.locked || field.open || input.value) return false;
+    if (field.role === 'identity') return true;
+    return field.role === 'new-password' && newPasswordFields(scopeOf(input)).every((p) => replaceable(p, input));
+  }
 
   async function onNewPasswordFocus(input) {
     removeFieldUi();
@@ -507,15 +707,37 @@
     field.state = res.data;
     showOrb();
     place();
-    if (suggestsNow(input)) openMenu();
+    if (opensByItself(input)) openMenu(true);
   }
 
-  const closesWhenFocusLeaves = () => !field.open || field.role === 'new-password';
+  async function onIdentityFocus(input) {
+    removeFieldUi();
+    field.el = input;
+    field.role = 'identity';
+    const token = ++field.token;
+    const sight = sightWatch(identityFieldsIn(identityScope(input)).map((f) => f.el));
+    field.sight = sight;
+    const res = await send(M.IDENTITIES);
+    if (token !== field.token || field.el !== input) return;
+    if (!res.ok) {
+      quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
+      return removeFieldUi();
+    }
+    field.state = res.data;
+    showOrb();
+    place();
+    if (opensByItself(input)) openMenu(true);
+  }
+
+  const isAddressField = (el) => el.tagName === 'INPUT' && usable(el) && ADDRESS_KINDS.includes(identityKind(el));
+
+  const closesWhenFocusLeaves = () => !field.open || followsFocus();
 
   function considerFocus(target) {
     const role = target && fieldRole(target);
     if (role === 'username' || role === 'password') onFieldFocus(target, role);
     else if (role === 'new-password' && isTop) onNewPasswordFocus(target);
+    else if (!role && isTop && target && isAddressField(target)) onIdentityFocus(target);
     else if (field.el && closesWhenFocusLeaves()) removeFieldUi();
   }
 
@@ -697,9 +919,9 @@
   }, LISTEN_PASSIVE);
 
   document.addEventListener('input', (e) => {
-    if (filling || field.role !== 'new-password' || e.composedPath()[0] !== field.el) return;
+    if (filling || !followsFocus() || e.composedPath()[0] !== field.el) return;
     if (field.el.value) closeMenu();
-    else if (suggestsNow(field.el)) openMenu();
+    else if (opensByItself(field.el)) openMenu(true);
   }, LISTEN_PASSIVE);
 
   document.addEventListener('pointerdown', (e) => {
@@ -745,7 +967,7 @@
   document.addEventListener('click', (e) => {
     if (!e.isTrusted) return;
     const clicked = e.composedPath()[0];
-    if (field.role === 'new-password' && clicked === field.el && suggestsNow(clicked)) openMenu();
+    if (followsFocus() && clicked === field.el && opensByItself(clicked)) openMenu(true);
     const btn = e.composedPath().find((n) => isSubmitLike(n));
     if (!btn) return;
     const creds = credentialsFromButton(btn);

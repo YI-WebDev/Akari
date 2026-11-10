@@ -55,7 +55,7 @@
 - `http://*/*` と `https://*/*` のすべてのページ（iframe を含む）: 入力欄のボタンと、自動入力・保存の提案（`autofill.js`、`shadow-ui.js`、`i18n-page.js`）。
 - `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*` の最上位のページ: パスキーの作成・サインインを受け取る（`webauthn-page.js`、`webauthn-bridge.js`）。
 
-Akari がページから読むのは、そのページの URL、ログイン・登録の入力欄の様子、そして保存の提案のために入力された ID とパスワードです。サイトの照合も保存の提案も端末の中で行い、外へは出しません。キーボードショートカット `Ctrl+Shift+L`（Mac は `Command+Shift+L`）でも自動入力できます。
+Akari がページから読むのは、そのページの URL、ログイン・登録・住所の入力欄の様子、そして保存の提案のために入力された ID とパスワードです。サイトの照合も保存の提案も端末の中で行い、外へは出しません。キーボードショートカット `Ctrl+Shift+L`（Mac は `Command+Shift+L`）でも自動入力できます。
 
 ## クリップボード
 
@@ -67,7 +67,7 @@ Akari がページから読むのは、そのページの URL、ログイン・�
 - マスターパスワードは、ウェブページ上では入力させません。ポップアップなど拡張機能自身の画面でだけ入力します。
 - ロック解除中の鍵は `chrome.storage.session` にあり、ページ側からは読めません。
 - 自動入力すると、入力欄に値が入ります。入力欄の値はそのページが読めます。自動入力は、あなたが操作したとき（または、パスキーのカードで選んだとき）だけ行います。
-- 登録フォームで提案する強いパスワードも同じです。ページ上のメニューであなたが選ぶまで、ページの入力欄には入りません。
+- 登録フォームで提案する強いパスワードと、住所の欄で選ぶアイデンティティ（種類「ID」のアイテム）の住所も同じです。ページ上のメニューであなたが選ぶまで、ページの入力欄には入りません。選ぶ前に Akari のメニューへ渡るのは、そのアイテムのタイトルと氏名だけです。選んだときにページへ入るのは住所（郵便番号・都道府県・市区町村・番地・建物・国）だけで、氏名・メールアドレス・電話番号・生年月日は入れません。入る先は、いま入力している欄と、同じフォームの中でしばらく画面にはっきり見えていた住所の欄です。画面の外にある欄、ほかの要素に隠れた欄、半透明の欄には入れません。ただし、文字を背景と同じ色にするような細工までは見分けられません。
 
 ## バックアップとエクスポート
 
@@ -143,7 +143,7 @@ It also declares these content scripts:
 - All `http://*/*` and `https://*/*` pages, including iframes: the field button, autofill, and save prompts (`autofill.js`, `shadow-ui.js`, `i18n-page.js`).
 - Top-level pages on `https://*/*`, `http://localhost/*`, and `http://127.0.0.1/*`: receive passkey create and sign-in requests (`webauthn-page.js`, `webauthn-bridge.js`).
 
-From a page, Akari reads its URL, the layout of its login and sign-up fields, and the username and password you enter so it can offer to save them. Matching and save prompts happen on your device, and nothing leaves it. You can also autofill with the shortcut `Ctrl+Shift+L` (`Command+Shift+L` on Mac).
+From a page, Akari reads its URL, the layout of its login, sign-up, and address fields, and the username and password you enter so it can offer to save them. Matching and save prompts happen on your device, and nothing leaves it. You can also autofill with the shortcut `Ctrl+Shift+L` (`Command+Shift+L` on Mac).
 
 ## Clipboard
 
@@ -155,7 +155,7 @@ Copied passwords and similar values are cleared after the number of seconds you 
 - Akari never asks you to type the master password on a web page. You enter it only on the extension's own screens, such as the popup.
 - The unlocked key lives in `chrome.storage.session`, which pages cannot read.
 - When Akari autofills, the values appear in the page's fields, and the page can read the contents of its own fields. Akari fills only when you ask it to, or when you pick an entry on the passkey card.
-- The same holds for the strong password suggested on sign-up forms. Nothing enters the page's fields until you choose it in Akari's menu on the page.
+- The same holds for the strong password suggested on sign-up forms and for the address of an identity (an item of the type "Identity") offered on address fields. Nothing enters the page's fields until you choose it in Akari's menu on the page. Before you choose, only the item's title and name reach that menu. When you choose, only the address (postal code, state or prefecture, city, street, building, country) goes to the page; the name, email address, phone number, and date of birth do not. It goes into the field you are in and into address fields of the same form that have been plainly visible on screen for a moment. Fields outside the screen, covered by other elements, or translucent get nothing. Akari cannot tell, however, when a page uses tricks such as giving a field's text the same colour as its background.
 
 ## Backups and exports
 

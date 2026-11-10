@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AkariError } from '../../extension/src/shared/errors.js';
-import { createAutofillService, urlMatches, suggestedLength } from '../../extension/src/background/autofill-service.js';
+import { createAutofillService, urlMatches, suggestedLength, IDENTITY_KINDS } from '../../extension/src/background/autofill-service.js';
 
 const T0 = 1_700_000_000_000;
 
@@ -560,4 +560,64 @@ test('a suggested password that the page reports back is offered as a new login 
   const saved = vault.state.data.items.at(-1);
   assert.deepEqual([saved.username, saved.password, saved.url], ['new@example.org', password, 'https://example.org']);
   assert.equal((await svc.offerSave({ username: 'new@example.org', password }, page)).action, 'none', 'submitting the form afterwards does not ask again');
+});
+
+function identity(over = {}) {
+  return {
+    id: 'id1', type: 'identity', vault: 'personal', title: '自宅', hue: 200, lastUsedAt: null, updatedAt: T0,
+    fields: {
+      lastName: '熊野', firstName: 'めろ', email: 'kumamero@example.jp', phone: '090-1234-5678', birthDate: '1990-01-02',
+      postalCode: '150-0001', state: '東京都', city: '渋谷区', address1: '神宮前1-2-3', address2: 'あかりビル 401',
+    },
+    ...over,
+  };
+}
+
+test('autofill/identities: titles and names only, most recently used first, for the top frame of a web page', async () => {
+  const { svc, vault } = setup({ items: [login(), identity(), identity({ id: 'id2', title: '実家', lastUsedAt: T0 + 5, fields: { fullName: 'Kumano Mero' } })] });
+  const res = await svc.identities({}, sender('https://shop.example/checkout'));
+  assert.deepEqual(res, {
+    locked: false,
+    items: [
+      { id: 'id2', title: '実家', name: 'Kumano Mero', hue: 200 },
+      { id: 'id1', title: '自宅', name: '熊野 めろ', hue: 200 },
+    ],
+  });
+  assert.ok(!JSON.stringify(res).includes('神宮前'), 'the address stays in the vault until an identity is chosen');
+  assert.equal(vault.state.touches, 0, 'a page showing an address field is not user activity');
+});
+
+test('autofill/identities: none saved, locked, framed and non-web senders', async () => {
+  assert.deepEqual(await setup().svc.identities({}, sender('https://shop.example/')), { locked: false, items: [] });
+  assert.deepEqual(await setup({ locked: true, items: [identity()] }).svc.identities({}, sender('https://shop.example/')), { locked: true, items: [] });
+
+  const { svc } = setup({ items: [identity()] });
+  const framed = sender('https://shop.example/f', 'https://shop.example/', { frameId: 3 });
+  assert.deepEqual(await svc.identities({}, framed), { locked: false, items: [] });
+  await rejectsWith(svc.identities({}, { id: 'ext', url: 'about:blank', frameId: 0, tab: { id: 1, url: 'https://shop.example/' } }), 'FORBIDDEN');
+});
+
+test('autofill/requestIdentity: only the address kinds the form asked for, and it counts as activity', async () => {
+  const { svc, vault, clock } = setup({ items: [login(), identity()] });
+  clock.t += 1000;
+  const res = await svc.requestIdentity(
+    { itemId: 'id1', kinds: ['postalCode', 'state', 'country', 'fullName', 'email', 'phone', 'birthDate', 'password', 'constructor'] },
+    sender('https://shop.example/checkout'),
+  );
+  assert.deepEqual(res, { values: { postalCode: '150-0001', state: '東京都' } });
+  assert.equal(vault.state.touches, 1);
+  assert.equal(vault.state.data.items.find((i) => i.id === 'id1').lastUsedAt, clock.t);
+  assert.deepEqual([...IDENTITY_KINDS].sort(), ['address1', 'address2', 'city', 'country', 'postalCode', 'state'],
+    'a page form gets the address and nothing else of an identity');
+});
+
+test('autofill/requestIdentity: unknown or non-identity items, locked, framed and non-web senders', async () => {
+  const { svc } = setup({ items: [login(), identity()] });
+  const page = sender('https://shop.example/checkout');
+  await rejectsWith(svc.requestIdentity({ itemId: 'nope', kinds: ['city'] }, page), 'NOT_FOUND');
+  await rejectsWith(svc.requestIdentity({ itemId: 'i1', kinds: ['city'] }, page), 'NOT_FOUND');
+  assert.deepEqual(await svc.requestIdentity({ itemId: 'id1' }, page), { values: {} });
+  await rejectsWith(svc.requestIdentity({ itemId: 'id1', kinds: ['city'] }, sender('https://shop.example/f', 'https://shop.example/', { frameId: 3 })), 'FORBIDDEN');
+  await rejectsWith(svc.requestIdentity({ itemId: 'id1', kinds: ['city'] }, { id: 'ext', url: 'https://shop.example/' }), 'FORBIDDEN');
+  await rejectsWith(setup({ locked: true, items: [identity()] }).svc.requestIdentity({ itemId: 'id1', kinds: ['city'] }, page), 'LOCKED');
 });

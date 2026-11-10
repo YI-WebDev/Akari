@@ -39,6 +39,8 @@ export const MSG = Object.freeze({
   AUTOFILL_CONFIRM_SAVE: 'autofill/confirmSave',
   AUTOFILL_NOTE_USERNAME: 'autofill/noteUsername',
   AUTOFILL_SUGGEST_PASSWORD: 'autofill/suggestPassword',
+  AUTOFILL_IDENTITIES: 'autofill/identities',
+  AUTOFILL_REQUEST_IDENTITY: 'autofill/requestIdentity',
   AUTOFILL_DO_FILL: 'autofill/doFill',
 
   PASSKEY_CREATE: 'passkey/create',
