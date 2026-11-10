@@ -2,7 +2,7 @@
   "name": "akari-extension",
   "private": true,
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Akari（灯）— Chrome 拡張のパスワードマネージャー。拡張本体は extension/ をそのまま読み込む（ビルド不要）。このファイルはテスト用の開発依存だけを管理する。",
   "type": "module",
   "scripts": {
