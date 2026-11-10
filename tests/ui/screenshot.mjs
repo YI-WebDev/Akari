@@ -1351,6 +1351,91 @@ const scenarios = {
     await shot(page, 'search-loose');
     await ctx.close();
   },
+  async backup() {
+    const DAY = 86400000;
+    const note = (page) => page.locator('#backupNote .bk');
+    const frame = (page) => page.evaluate(() => {
+      const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map(Math.round).join(','); };
+      return { card: r('#card'), list: r('.col-list'), app: r('#app') };
+    });
+    const quietPage = await open({ name: 'backup-quiet' });
+    await quietPage.page.waitForSelector('.row');
+    await settle(quietPage.page, 500);
+    const quietFrame = await frame(quietPage.page);
+    expect(await note(quietPage.page).count() === 0, 'nothing shows when a backup is not due');
+    expect(await quietPage.page.locator('#backupNote').getAttribute('role') === 'status', 'the slot is a polite status region');
+    await quietPage.ctx.close();
+
+    const { page, ctx } = await open({ name: 'backup', backup: { lastAt: Date.now() - 45 * DAY } });
+    await page.waitForSelector('#backupNote .bk');
+    await settle(page, 700);
+    await shot(page, 'backup');
+    expect(/最後のバックアップは 45 日前です/.test(await note(page).locator('.bk-title').textContent()), 'days since the last backup');
+    expect(/このブラウザの中だけ/.test(await note(page).locator('.bk-why').textContent()), 'says why');
+    expect(JSON.stringify(await frame(page)) === JSON.stringify(quietFrame), 'the 680x480 frame and the detail pane do not move');
+    const fits = await page.evaluate(() => {
+      const b = document.querySelector('#backupNote .bk').getBoundingClientRect();
+      const l = document.querySelector('.col-list').getBoundingClientRect();
+      return b.left >= l.left && b.right <= l.right && b.bottom <= l.bottom;
+    });
+    expect(fits, 'the notice stays inside the list column');
+    await page.focus('#list');
+    const focused = () => page.evaluate(() => document.activeElement?.textContent);
+    for (let n = 0; n < 6 && await focused() !== 'バックアップする'; n++) await page.keyboard.press('Tab');
+    expect(await focused() === 'バックアップする', 'keyboard reaches バックアップする');
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.textContent) === 'あとで', 'keyboard reaches あとで');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#backupNote:empty', { state: 'attached' });
+    expect(await page.evaluate(() => window.__AKARI_DB__.backup.snoozes) === 1, 'あとで calls backup/snooze');
+    expect(/7 日後/.test(await page.locator('#toastMsg').textContent()), 'says when it comes back');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'list', 'focus returns to the list');
+    expect(await page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'backup/status' })).data.due) === false, 'not due while snoozed');
+    await ctx.close();
+
+    const first = await open({ name: 'backup-never', backup: { lastAt: null, since: Date.now() - 40 * DAY } });
+    await first.page.waitForSelector('#backupNote .bk');
+    await settle(first.page, 600);
+    await shot(first.page, 'backup-never');
+    expect(/まだバックアップを書き出していません/.test(await note(first.page).locator('.bk-title').textContent()), 'no backup yet');
+    await first.page.click('#backupNote .btn-primary');
+    await first.page.waitForSelector('#setSheet.open .fmt');
+    await settle(first.page, 600);
+    expect(await first.page.locator('.fmt[aria-checked="true"]').getAttribute('data-fmt') === 'akari', 'opens the export page on the Akari backup');
+    await shot(first.page, 'backup-export');
+    await first.page.click('.fmt[data-fmt="csv"]');
+    await first.page.fill('#expMaster', 'akari-master');
+    await Promise.all([first.page.waitForEvent('download'), first.page.click('#exportPage .btn-primary')]);
+    await settle(first.page, 500);
+    expect(await note(first.page).count() === 1, 'a plain export is not a backup');
+    await first.page.click('.fmt[data-fmt="pgp"]');
+    await first.page.fill('#expMaster', 'akari-master');
+    await first.page.fill('#expPass', 'kotatsu-mikan-2026');
+    await first.page.fill('#expPass2', 'kotatsu-mikan-2026');
+    await Promise.all([first.page.waitForEvent('download'), first.page.click('#exportPage .btn-primary')]);
+    await first.page.waitForSelector('#backupNote:empty', { state: 'attached' });
+    expect(await first.page.evaluate(() => window.__AKARI_DB__.backup.lastAt) != null, 'a PGP export restarts the clock');
+    await first.ctx.close();
+
+    const done = await open({ name: 'backup-done', backup: { lastAt: Date.now() - 31 * DAY } });
+    await done.page.waitForSelector('#backupNote .bk');
+    await openSheetPage(done.page, '#exportOpen');
+    await done.page.waitForSelector('.fmt');
+    await Promise.all([done.page.waitForEvent('download'), done.page.click('#exportPage .btn-primary')]);
+    await done.page.waitForSelector('#backupNote:empty', { state: 'attached' });
+    await done.page.keyboard.press('Escape');
+    await settle(done.page, 600);
+    await shot(done.page, 'backup-cleared');
+    expect(await note(done.page).count() === 0, 'a finished Akari backup clears it');
+    await done.ctx.close();
+
+    const light = await open({ name: 'backup-light', theme: 'light', backup: { lastAt: Date.now() - 45 * DAY } });
+    await light.page.waitForSelector('#backupNote .bk');
+    expect(await light.page.evaluate(() => document.documentElement.dataset.theme) === 'light', 'light theme');
+    await settle(light.page, 700);
+    await shot(light.page, 'backup-light');
+    await light.ctx.close();
+  },
   async reduced() {
     const { page, ctx } = await open({ name: 'reduced' }, { reducedMotion: 'reduce' });
     await page.waitForSelector('.row');

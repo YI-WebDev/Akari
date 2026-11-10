@@ -1,4 +1,12 @@
 export default {
+  'backup.since': 'Your last backup was {n} days ago',
+  'backup.never': 'You have not exported a backup yet',
+  'backup.why': 'Your vault lives only in this browser. Export an encrypted copy in case it breaks or is lost.',
+  'backup.now': 'Back up now',
+  'backup.later': 'Later',
+  'backup.snoozed': 'We will remind you again in {days} days',
+  'backup.snoozeFailed': 'Could not postpone the reminder',
+
   'ゴミ箱': 'Trash',
   'ゴミ箱のアイテム': 'Items in the trash',
   'ゴミ箱を空にする': 'Empty trash',

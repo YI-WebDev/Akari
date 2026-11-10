@@ -20,6 +20,7 @@ import { initGenerator, openGenerator, closeGenerator, resetGenerator } from './
 import { initGate, showGate, setGateStatus } from './views/lock.js';
 import { initSettings, openSettings, closeSettings } from './views/settings.js';
 import { initHealth, openHealth, closeHealth } from './views/health.js';
+import { initBackup, refreshBackup, resetBackup, backupDone } from './views/backup.js';
 import { initTrash, openTrash, closeTrash, refreshTrash } from './views/trash.js';
 import { TRASH_DAYS } from '../lib/vault/trash.js';
 import {
@@ -94,6 +95,7 @@ function enterMain({ animate = true } = {}) {
   renderDetail({ animate });
   ping(true);
   startStatusPoll();
+  refreshBackup();
 }
 
 let statusTimer = 0;
@@ -131,6 +133,7 @@ function wipeView() {
   resetPicker();
   renderPickMode();
   renderCounts();
+  resetBackup();
 }
 
 async function lockService() {
@@ -386,6 +389,7 @@ function wire() {
       isNew ? null : t('変更は暗号化して保存されました'));
     refreshAutofill();
   });
+  on('backupDone', backupDone);
   on('trashed', onTrashed);
   on('restored', onRestored);
   on('editorClosed', () => { if (S.phase === 'main') renderDetail({ animate: true }); });
@@ -400,6 +404,7 @@ function wire() {
       renderList({ animate: true });
       renderDetail({ animate: true });
       refreshTrash();
+      refreshBackup();
       emit('reloaded');
     } catch (e) {
       if (live(token)) toastError(t('保管庫を読み込めませんでした'), errText(e));
@@ -421,6 +426,7 @@ function wire() {
   initSettings();
   initHealth();
   initTrash();
+  initBackup({ open: () => { closeMenus(); openSettings({ page: 'export' }); } });
   initGate({ load: loadAll, enter: () => enterMain({ animate: true }) });
 }
 
