@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: 会員登録（ニックネームあり）</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 48px auto; max-width: 360px; color: #2e2520; }
+    label { display: block; margin: 14px 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    button { margin-top: 18px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+    pre { margin-top: 24px; padding: 12px; background: #f4f4f4; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>会員登録</h1>
+  <form id="signup-form" action="welcome.html" method="post">
+    <label for="nickname">ニックネーム</label>
+    <input id="nickname" name="nickname" type="text">
+    <label for="mail">メールアドレス</label>
+    <input id="mail" name="mail_address" type="text">
+    <label for="mail-confirm">確認のため、もう一度入力して下さい</label>
+    <input id="mail-confirm" name="mail_address_confirm" type="text">
+    <label for="pass">パスワード</label>
+    <input id="pass" name="pass" type="password" placeholder="※8文字以上 32文字以内" maxlength="32">
+    <label for="pass-confirm">確認のため、もう一度入力して下さい</label>
+    <input id="pass-confirm" name="pass_confirm" type="password" maxlength="32">
+    <button id="submit" type="submit">登録</button>
+  </form>
+  <pre id="status" data-state="idle"></pre>
+  <script>
+    const form = document.getElementById('signup-form');
+    const status = document.getElementById('status');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      status.textContent = JSON.stringify({ mail: form.elements.mail_address.value, pass: form.elements.pass.value });
+      status.dataset.state = 'submitted';
+    });
+  </script>
+</body>
+</html>

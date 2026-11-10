@@ -19,7 +19,7 @@ after(async () => {
 
 const tabIdOf = (url) => ext2.page.evaluate(async (u) => (await chrome.tabs.query({ url: u + '*' }))[0]?.id, url);
 
-const SAVE_BAR_BUTTON_AT = [1000 - 62, 116];
+const SAVE_BAR_BUTTON_AT = [1000 - 62, 160];
 
 test('popup-style fill only on the matching site', async () => {
   const saved = await send('vault/saveItem', {
@@ -161,5 +161,227 @@ test('inline menu: invisible or covered menu never fills (clickjacking)', async 
   await page.mouse.click(...row);
   await page.waitForTimeout(500);
   assert.equal(await filled(page), 'Brand-New-Pass-77');
+  await page.close();
+});
+
+const rectOf = (page, selector) => page.locator(selector).evaluate((e) => {
+  const b = e.getBoundingClientRect();
+  return { x: b.x, right: b.right, y: b.y, h: b.height, bottom: b.bottom };
+});
+const menuRowUnder = (r) => [r.x + 80, r.bottom + 32];
+
+async function openSignUp(email) {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/signup.html');
+  await page.fill('#email', email);
+  await page.locator('#new-password').click();
+  await page.waitForTimeout(1300);
+  return page;
+}
+
+test('sign-up: focusing the new password suggests a strong one, fills both fields and saves on request', async () => {
+  const email = 'suggest-save@example.jp';
+  const page = await openSignUp(email);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#new-password')));
+  await page.waitForTimeout(300);
+  const password = await page.inputValue('#new-password');
+  assert.equal(password.length, 20, 'the suggestion was filled without clicking the 灯 button first');
+  assert.equal(await page.inputValue('#confirm-password'), password);
+  assert.equal((await send('vault/getAll')).data.items.some((i) => i.username === email), false, 'nothing is saved before the user agrees');
+
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const item = (await send('vault/getAll')).data.items.find((i) => i.username === email);
+  assert.equal(item.password, password);
+  assert.equal(item.url, site.origin);
+
+  const count = (await send('vault/getAll')).data.items.length;
+  await page.click('#submit');
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  assert.equal((await send('vault/getAll')).data.items.length, count, 'submitting the form does not offer the saved login again');
+  await page.close();
+});
+
+test('sign-up: what is saved is what the form holds when the user agrees, not the first suggestion', async () => {
+  const email = 'suggest-edit@example.jp';
+  const page = await openSignUp(email);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#new-password')));
+  await page.waitForTimeout(300);
+  const suggested = await page.inputValue('#new-password');
+  assert.equal(suggested.length, 20);
+  const edited = suggested.replace(/[^a-zA-Z0-9]/g, '') + 'Zz9';
+  await page.fill('#new-password', edited);
+  await page.fill('#confirm-password', edited);
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const item = (await send('vault/getAll')).data.items.find((i) => i.username === email);
+  assert.equal(item.password, edited);
+  await page.close();
+});
+
+test('sign-up: typing your own password dismisses the suggestion', async () => {
+  const page = await openSignUp('suggest-own@example.jp');
+  const row = menuRowUnder(await rectOf(page, '#new-password'));
+  await page.keyboard.type('my-own-pass-1');
+  await page.waitForTimeout(300);
+  await page.mouse.click(...row);
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue('#new-password'), 'my-own-pass-1');
+  assert.equal(await page.inputValue('#confirm-password'), '');
+  await page.close();
+});
+
+test('sign-up: the suggestion is not offered on a sign-in form', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/login.html');
+  await page.locator('#password').click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#password')));
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue('#password'), '', 'a current-password field gets no generated password');
+  await page.close();
+});
+
+test('sign-up: with a nickname and plainly named mail fields, the mail address is saved as the username', async () => {
+  const email = 'kumamero@example.jp';
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/signup-nickname.html');
+  await page.fill('#nickname', 'くまめろ');
+  await page.fill('#mail', email);
+  await page.fill('#mail-confirm', email);
+  await page.locator('#pass').click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#pass')));
+  await page.waitForTimeout(300);
+  const password = await page.inputValue('#pass');
+  assert.equal(password.length, 20);
+  assert.equal(await page.inputValue('#pass-confirm'), password, 'two unmarked password fields are a new password and its confirmation');
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const items = (await send('vault/getAll')).data.items;
+  assert.equal(items.find((i) => i.password === password)?.username, email);
+  assert.equal(items.some((i) => i.username === 'くまめろ'), false);
+  await page.close();
+});
+
+test('sign-up: an address typed after the password still ends up in the saved login', async () => {
+  const email = 'suggest-late@example.jp';
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/signup.html');
+  await page.locator('#new-password').click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#new-password')));
+  await page.waitForTimeout(300);
+  const password = await page.inputValue('#new-password');
+  assert.equal(password.length, 20);
+  await page.locator('#email').pressSequentially(email);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(1500);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const item = (await send('vault/getAll')).data.items.find((i) => i.password === password);
+  assert.equal(item?.username, email);
+  await page.close();
+});
+
+test('sign-up: the 灯 button stays after filling and offers another password that replaces both fields', async () => {
+  const page = await openSignUp('suggest-again@example.jp');
+  const r = await rectOf(page, '#new-password');
+  await page.mouse.click(...menuRowUnder(r));
+  await page.waitForTimeout(1000);
+  const first = await page.inputValue('#new-password');
+  assert.equal(first.length, 20);
+
+  await page.mouse.click(...menuRowUnder(r));
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue('#new-password'), first, 'with a password in the field the suggestion does not open by itself');
+
+  await page.locator('#new-password').focus();
+  await page.waitForTimeout(600);
+  await page.mouse.click(r.right - 18, r.y + r.h / 2);
+  await page.waitForTimeout(1000);
+  await page.mouse.click(...menuRowUnder(r));
+  await page.waitForTimeout(300);
+  const second = await page.inputValue('#new-password');
+  assert.equal(second.length, 20);
+  assert.notEqual(second, first);
+  assert.equal(await page.inputValue('#confirm-password'), second);
+  await page.close();
+});
+
+test('sign-up: emptying the field brings the suggestion back, every time', async () => {
+  const page = await openSignUp('suggest-empty@example.jp');
+  const r = await rectOf(page, '#new-password');
+  await page.mouse.click(...menuRowUnder(r));
+  await page.waitForTimeout(1000);
+  let last = await page.inputValue('#new-password');
+  assert.equal(last.length, 20);
+
+  for (let round = 0; round < 2; round++) {
+    await page.locator('#new-password').focus();
+    await page.waitForTimeout(600);
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.waitForTimeout(1000);
+    await page.mouse.click(...menuRowUnder(r));
+    await page.waitForTimeout(1000);
+    const next = await page.inputValue('#new-password');
+    assert.equal(next.length, 20, 'round ' + round);
+    assert.notEqual(next, last);
+    assert.equal(await page.inputValue('#confirm-password'), next);
+    last = next;
+  }
+
+  await page.locator('#email').focus();
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { for (const id of ['new-password', 'confirm-password']) document.getElementById(id).value = ''; });
+  await page.locator('#new-password').click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(r));
+  await page.waitForTimeout(300);
+  assert.equal((await page.inputValue('#new-password')).length, 20, 'focusing the emptied field opens the suggestion again');
+  await page.close();
+});
+
+test('a password the user typed in the other field is never replaced by a suggestion', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 760 });
+  await page.goto(site.origin + '/signup-nickname.html');
+  await page.locator('#pass').click();
+  await page.keyboard.type('Current-Pass-1');
+  await page.locator('#pass-confirm').click();
+  await page.waitForTimeout(1300);
+  const r = await rectOf(page, '#pass-confirm');
+  const row = [r.x + 200, r.bottom + 32];
+  await page.mouse.click(...row);
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue('#pass-confirm'), '', 'the suggestion does not open by itself next to a typed password');
+  assert.equal(await page.inputValue('#pass'), 'Current-Pass-1');
+
+  await page.locator('#pass-confirm').focus();
+  await page.waitForTimeout(600);
+  await page.mouse.click(r.right - 18, r.y + r.h / 2);
+  await page.waitForTimeout(1000);
+  await page.mouse.click(...row);
+  await page.waitForTimeout(300);
+  assert.equal((await page.inputValue('#pass-confirm')).length, 20, 'asked for through the 灯 button, it fills the field it was asked on');
+  assert.equal(await page.inputValue('#pass'), 'Current-Pass-1', 'and leaves the typed password alone');
+
+  const taken = await page.inputValue('#pass-confirm');
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const passwords = (await send('vault/getAll')).data.items.map((i) => i.password);
+  assert.ok(passwords.includes(taken), 'what Akari offers to save is the suggestion the user took');
+  assert.ok(!passwords.includes('Current-Pass-1'), 'not the password typed in the other field');
   await page.close();
 });
