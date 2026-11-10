@@ -11,13 +11,13 @@ import { askDelete, pickerConfirming, resetPicker, renderPicker } from '../views
 import { MENUS, closeMenus, menuOpen, openMenuKey } from './menus.js';
 import { setPicking, pick, pickAll } from './picking.js';
 import { select, setQuery, flushTyping } from './view.js';
+import { isComposing } from '../views/dom.js';
 
 const $ = (id) => document.getElementById(id);
 
-const IME_PROCESSING_KEYCODE = 229;
 
 export function onKey(e) {
-  if (e.isComposing || e.keyCode === IME_PROCESSING_KEYCODE) return;
+  if (isComposing(e)) return;
   if (S.phase !== 'main' || gateOpen()) return;
   const ae = document.activeElement;
   const typing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);

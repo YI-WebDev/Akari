@@ -1,13 +1,12 @@
 import { checkRecord, openVaultRecord } from './record.js';
 import { checkData } from './schema.js';
-import { invalid, isObject, isHue, clampTs } from './common.js';
+import { invalid, isObject, isHue, clampTs, MAX_VAULT_ID_LENGTH } from './common.js';
 import { makeItem, validateItem } from './items.js';
 import { normalizePasskeys } from './passkeys.js';
 import { passwordKeys, mergedHistory } from './passwords.js';
 
 export const BACKUP_FORMAT = 'akari-backup';
 export const BACKUP_VERSION = 1;
-const MAX_VAULT_ID_LENGTH = 64;
 const MAX_VAULT_NAME_LENGTH = 100;
 const DEFAULT_VAULT_HUE = 55;
 

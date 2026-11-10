@@ -14,11 +14,9 @@ import {
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
 
-export const VAULT_KEY = 'akari.vault';
-export const SETTINGS_KEY = 'akari.settings';
-export const SESSION_KEY = 'akari.session';
-export const KEEP_KEY = 'akari.keep';
-export const BACKUP_KEY = 'akari.backup';
+import { VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY } from '../shared/storage-keys.js';
+
+export { VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY };
 export const AUTOLOCK_ALARM = 'akari-autolock';
 
 const REARM_THROTTLE_MS = 30000;

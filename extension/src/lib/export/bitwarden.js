@@ -1,16 +1,13 @@
 import { fromB64url } from '../../shared/bytes.js';
 import { cardBrand } from '../../shared/item-types.js';
 import { totpUri, templateEntries } from './csv.js';
+import { TYPE_LOGIN, TYPE_SECURE_NOTE, FIELD_TEXT, FIELD_HIDDEN } from '../bitwarden-format.js';
 
 export const TYPE_FIELD = 'akari:type';
 
-const TYPE_LOGIN = 1;
-const TYPE_SECURE_NOTE = 2;
 const TYPE_CARD = 3;
 const TYPE_IDENTITY = 4;
 const TYPE_SSH_KEY = 5;
-const FIELD_TEXT = 0;
-const FIELD_HIDDEN = 1;
 const GUID_CREDENTIAL_ID_BYTES = 16;
 const UNTITLED_NAME = '--';
 

@@ -4,7 +4,7 @@ import { MSG } from '../shared/messages.js';
 import { t, getLocale } from '../shared/i18n.js';
 import { useLanguage } from '../shared/locale.js';
 
-const PORT_PREFIX = 'akari-passkey:';
+import { PASSKEY_PORT_PREFIX as PORT_PREFIX } from '../shared/ports.js';
 const ARM_MS = 600;
 const TOAST_MS = 2600;
 const PORT_PING_MS = 20_000;

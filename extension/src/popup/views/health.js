@@ -1,7 +1,7 @@
 import { t } from '../../shared/i18n.js';
 import { ISSUES, ACTION_ISSUES, passwordAgeDays, passwordSetAt } from '../../lib/health.js';
 import { S, emit, healthCounts, issuesOf, reuseOf, inVault, vaultById, strengthOf } from '../state.js';
-import { h, clear, icon, syncInert, keepFocus } from './dom.js';
+import { h, clear, icon, syncInert, keepFocus, isComposing } from './dom.js';
 import { tileEl } from './list.js';
 
 const $ = (id) => document.getElementById(id);
@@ -191,7 +191,7 @@ function act(kind, id) {
 }
 
 function onKeys(e) {
-  if (e.isComposing || e.keyCode === 229) return;
+  if (isComposing(e)) return;
   if (e.target.closest('#hsTabs')) {
     const i = TABS.indexOf(tab);
     const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: TABS.length - 1 }[e.key];

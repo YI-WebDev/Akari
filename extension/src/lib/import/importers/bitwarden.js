@@ -5,6 +5,7 @@ import { utf8, fromUtf8, fromB64, toB64url, fromB64url, concat } from '../../../
 import { TYPE_IDS, typeOf, fieldLabel, personName } from '../../../shared/item-types.js';
 import { L, typed } from './_fields.js';
 import { monthOf } from './_values.js';
+import { TYPE_LOGIN, TYPE_SECURE_NOTE, FIELD_HIDDEN } from '../../bitwarden-format.js';
 
 const MAP = {
   3: ['card', 'card', { cardholderName: 'cardholder', number: 'number', code: 'cvv' }],
@@ -28,9 +29,6 @@ const MAP = {
   }],
 };
 
-const CIPHER_LOGIN = 1;
-const CIPHER_SECURE_NOTE = 2;
-const FIELD_HIDDEN = 1;
 const FIELD_LINKED = 3;
 const KDF_PBKDF2 = 0;
 const KDF_ARGON2ID = 1;
@@ -239,7 +237,7 @@ export async function parse(file, ctx = {}) {
 
     const isAkariOnlyType = akari && akari !== 'login' && akari !== 'note' && MAP[c.type]?.[0] !== akari;
 
-    if (c.type === CIPHER_LOGIN) {
+    if (c.type === TYPE_LOGIN) {
       const l = c.login || {};
       const uris = (Array.isArray(l.uris) ? l.uris : []).map((u) => String(u?.uri ?? '').trim()).filter(Boolean);
       const extra = uris.slice(1).map((u) => ({ label: L('url', 'URL'), value: u, secret: false }));
@@ -263,7 +261,7 @@ export async function parse(file, ctx = {}) {
     } else if (MAP[c.type]) {
       items.push({ ...base, ...typedItem(c, custom, !!akari) });
     } else {
-      if (c.type !== CIPHER_SECURE_NOTE && !akari) unknown++;
+      if (c.type !== TYPE_SECURE_NOTE && !akari) unknown++;
       items.push({ ...base, type: 'note', note: c.notes, extra: custom });
     }
   }

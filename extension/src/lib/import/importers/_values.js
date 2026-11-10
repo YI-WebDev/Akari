@@ -1,4 +1,5 @@
 import { typeOf } from '../../../shared/item-types.js';
+import { EPOCH_SECONDS_BELOW } from '../model.js';
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const WEEKDAYS = /^(mon|tue|wed|thu|fri|sat|sun)[a-z]*$/;
@@ -6,7 +7,6 @@ const monthNumber = (tok) => {
   const t = tok.toLowerCase();
   return t.length >= 3 && /^[a-z]+$/.test(t) ? MONTHS.findIndex((m) => m.startsWith(t)) + 1 : 0;
 };
-const EPOCH_SECONDS_BELOW = 1e11;
 const TIME_OF_DAY = /\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*(?:[ap]\.?m\.?)?/g;
 const TIME_ZONE = /(?:\b(?:gmt|utc)\b|[+-]\d{2}:?\d{2}$)/g;
 const EPOCH_DIGITS = /^-?\d{9,13}(\.\d+)?$/;

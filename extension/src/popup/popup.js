@@ -18,7 +18,7 @@ import { renderPicker, resetPicker } from './views/picker.js';
 import { openEditor, closeEditor, editorOpen, requestClose } from './views/editor.js';
 import { initGenerator, openGenerator, closeGenerator, resetGenerator } from './views/generator.js';
 import { initGate, showGate, setGateStatus } from './views/lock.js';
-import { initSettings, openSettings, closeSettings } from './views/settings.js';
+import { initSettings, openSettings, closeSettings, REOPEN_KEY } from './views/settings.js';
 import { initHealth, openHealth, closeHealth } from './views/health.js';
 import { initBackup, refreshBackup, resetBackup, backupDone } from './views/backup.js';
 import { initTrash, openTrash, closeTrash, refreshTrash } from './views/trash.js';
@@ -30,13 +30,13 @@ import { closeMenus, openMenu, menuKeys } from './controllers/menus.js';
 import { renderPickMode, setPicking, pick, pickAll, deletePicked, resetPickAnchor } from './controllers/picking.js';
 import { activeTab, isWebTab, siteQueryOf, fetchAutofill, refreshAutofill, doAutofill } from './controllers/autofill.js';
 import { onKey } from './controllers/keyboard.js';
+import { SESSION_KEY } from '../shared/storage-keys.js';
 
 const $ = (id) => document.getElementById(id);
 const app = $('app');
 
 try { localStorage.removeItem('akari.themePref'); } catch { }
 
-const REOPEN_KEY = 'akari.reopen';
 const STATUS_POLL_MS = 10000;
 const PING_THROTTLE_MS = 30000;
 const AUTOFILL_WAIT_MS = 800;
@@ -113,7 +113,7 @@ function startStatusPoll() {
 function watchSession() {
   chrome.storage?.onChanged?.addListener((changes, area) => {
     if (area !== 'session' || S.phase !== 'main') return;
-    const c = changes['akari.session'];
+    const c = changes[SESSION_KEY];
     if (!c || c.newValue !== undefined) return;
     send(MSG.VAULT_STATUS).then((st) => { if (st?.locked) lockNow({ remote: true }); }, () => lockNow({ remote: true }));
   });

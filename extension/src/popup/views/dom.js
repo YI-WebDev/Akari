@@ -30,6 +30,9 @@ export function appendKids(el, kids) {
   return el;
 }
 
+/** The key belongs to an IME composition (confirming or cancelling it), not to a shortcut. */
+export const isComposing = (e) => e.isComposing || e.keyCode === 229;
+
 export function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
   return el;

@@ -6,7 +6,7 @@ import { toB64url, fromB64url, sha256 } from '../shared/bytes.js';
 import { isSecureOrigin, isValidRpId, hostnameOf, sameSite } from '../shared/domain.js';
 import { createCredential, getAssertion, buildClientDataJSON, COSE_ALG_ES256 } from '../lib/webauthn.js';
 
-export const PORT_PREFIX = 'akari-passkey:';
+import { PASSKEY_PORT_PREFIX as PORT_PREFIX } from '../shared/ports.js';
 const WINDOW_PATH = 'src/passkey/passkey.html';
 
 const MIN_TIMEOUT = 30_000;

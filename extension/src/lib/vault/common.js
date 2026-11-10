@@ -22,3 +22,4 @@ export const lengthIn = (v, min, max) => {
   const n = b64urlLength(v);
   return n >= min && n <= max;
 };
+export const MAX_VAULT_ID_LENGTH = 64;

@@ -1,7 +1,7 @@
+import { DAY_MS } from '../../shared/time.js';
 import { hostnameOf } from '../../shared/domain.js';
 import { t } from '../../shared/i18n.js';
 
-const DAY = 86400000;
 
 export const GROUPS = ['今日', '今週', '先週', '先月', 'それ以前', '未使用'];
 export const groupName = (g) => t(GROUPS[g]);
@@ -17,9 +17,9 @@ export function groupIndex(ts, now = Date.now()) {
   if (!ts) return NEVER_USED;
   if (ts >= startOfDay(now)) return TODAY;
   const age = now - ts;
-  if (age < 7 * DAY) return THIS_WEEK;
-  if (age < 14 * DAY) return LAST_WEEK;
-  if (age < 61 * DAY) return LAST_MONTH;
+  if (age < 7 * DAY_MS) return THIS_WEEK;
+  if (age < 14 * DAY_MS) return LAST_WEEK;
+  if (age < 61 * DAY_MS) return LAST_MONTH;
   return OLDER;
 }
 
@@ -30,7 +30,7 @@ export function relTime(ts, now = Date.now()) {
   if (s < 3600) return t('{n}分前', { n: Math.floor(s / 60) });
   const today = startOfDay(now);
   if (ts >= today) return t('{n}時間前', { n: Math.floor(s / 3600) });
-  const days = Math.round((today - startOfDay(ts)) / DAY);
+  const days = Math.round((today - startOfDay(ts)) / DAY_MS);
   if (days <= 1) return t('昨日');
   if (days < 14) return t('{n}日前', { n: days });
   if (days < 30) return t('{n}週間前', { n: Math.floor(days / 7) });
@@ -180,7 +180,7 @@ export function daysUntil(value, now = Date.now()) {
   if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v))) end = new Date(+m[1], +m[2] - 1, +m[3]);
   else if ((m = /^(\d{4})-(\d{2})$/.exec(v))) end = new Date(+m[1], +m[2], 0);
   else return null;
-  return Math.round((end.getTime() - startOfDay(now)) / DAY);
+  return Math.round((end.getTime() - startOfDay(now)) / DAY_MS);
 }
 
 export const digitsOnly = (s) => nfkc(s).replace(/\D/g, '');

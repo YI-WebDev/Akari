@@ -1,4 +1,4 @@
-import { h, clear } from './dom.js';
+import { h, clear, isComposing } from './dom.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,7 +47,7 @@ export function setRoving(items, idx) {
 
 export function arrowNav(root, selector, { cols = 1, onMove } = {}) {
   root.addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229 || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isComposing(e) || e.altKey || e.ctrlKey || e.metaKey) return;
     const items = [...root.querySelectorAll(selector)].filter((b) => !b.disabled);
     const i = items.indexOf(document.activeElement);
     if (i < 0) return;

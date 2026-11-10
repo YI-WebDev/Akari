@@ -1,6 +1,6 @@
 import { GROUPS, ITEM_TYPES, typeLabel, groupLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
-import { h, clear, icon } from './dom.js';
+import { h, clear, icon, isComposing } from './dom.js';
 
 const KEYS = { login: 'l', note: 'n', card: 'c', identity: 'i' };
 
@@ -91,7 +91,7 @@ export function buildPlusMenu(menu, { onNew, onGen }) {
     (focus || (panel === 'more' ? more : main).querySelector('.pm-item')).focus({ preventScroll: true });
   };
   menu.addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (isComposing(e)) return;
     const at = document.activeElement;
     if (menu.dataset.panel !== 'more') {
       if (e.key === 'ArrowRight' && at === otherBtn) { e.preventDefault(); show('more'); }
