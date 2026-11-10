@@ -1,9 +1,9 @@
+import { DAY_MS } from '../../shared/time.js';
 import { AkariError } from '../../shared/errors.js';
 import { ERR } from '../../shared/messages.js';
 import { isObject } from './common.js';
 
 export const TRASH_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 export const TRASH_MS = TRASH_DAYS * DAY_MS;
 
 const isLive = (entry, nowMs) => isObject(entry) && Number.isFinite(entry.deletedAt) && nowMs - entry.deletedAt < TRASH_MS;

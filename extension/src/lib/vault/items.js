@@ -1,6 +1,6 @@
 import { randomInt } from '../../shared/bytes.js';
 import { TYPE_IDS, typeOf, hasTemplate, isSecretKind, LIMITS } from '../../shared/item-types.js';
-import { invalid, isObject, isHue } from './common.js';
+import { invalid, isObject, isHue, MAX_VAULT_ID_LENGTH } from './common.js';
 
 export const FIELD_CAPS = Object.freeze({ title: 200, url: 2048, username: 512, password: 1024, note: 10000 });
 const LOGIN_ONLY = Object.freeze(['url', 'username', 'password', 'totp']);
@@ -10,7 +10,6 @@ const TOTP_MAX_TEXT_LENGTH = 200;
 const CARD_NUMBER_MIN_DIGITS = 8;
 const CARD_NUMBER_MAX_DIGITS = 19;
 const MAX_ID_LENGTH = 100;
-const MAX_VAULT_ID_LENGTH = 64;
 
 export function makeItem(partial = {}, nowMs = Date.now()) {
   const given = Object.fromEntries(Object.entries(partial || {}).filter(([, v]) => v !== undefined));
@@ -77,7 +76,7 @@ function normalizeTotp(t) {
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH_RE = /^(\d{4})-(\d{2})$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;
-const TEL_RE = /^\+?[\p{Nd}\s()\-./#*,;‐–—－ー（）＋]+(?:\s*(?:ext\.?|x|内線)\s*\p{Nd}+)?$/iu;
+export const TEL_RE = /^\+?[\p{Nd}\s()\-./#*,;‐–—－ー（）＋]+(?:\s*(?:ext\.?|x|内線)\s*\p{Nd}+)?$/iu;
 const isMultilineKind = (kind) => kind === 'multiline' || kind === 'secret-multiline';
 
 function isCalendarDate(y, m, d) {

@@ -6,7 +6,7 @@ import { t } from '../../shared/i18n.js';
 import { parseOtpauthUri, normalizeSecret, isValidSecret } from '../../lib/totp.js';
 import { decodeQrFromDataUrl } from '../../lib/qr.js';
 import { S, emit, call, itemById, strengthOf, forSave, mergeSaved, errText } from '../state.js';
-import { h, clear, icon } from './dom.js';
+import { h, clear, icon, isComposing } from './dom.js';
 import {
   letterOf, hueOf, vaultColor, safeHttpUrl, siteOf, withScheme, formatIsoDate, parseDateInput, parseMonthInput,
   digitsOnly, groupDigits,
@@ -15,6 +15,7 @@ import { rise, shake } from './fx.js';
 import { meterEl, setMeter } from './meter.js';
 import { totpView } from './totp-view.js';
 import { toast, toastError } from './toast.js';
+import { TEL_RE } from '../../lib/vault/items.js';
 
 let E = null;
 const $ = (id) => document.getElementById(id);
@@ -175,7 +176,7 @@ function renderTotp() {
     }
   };
   input.addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (isComposing(e)) return;
     if (e.key === 'Enter') { e.preventDefault(); tryParse(false); }
   });
   input.addEventListener('paste', () => setTimeout(() => tryParse(false), 0));
@@ -233,7 +234,6 @@ const FORMAT_ERR = {
   card: () => t('editor.err.card', null, 'カード番号は 8〜19 桁の数字で入力してください'),
 };
 const PLACEHOLDER = { date: 'YYYY-MM-DD', month: 'MM/YYYY', url: 'https://', email: 'name@example.com' };
-const TEL_RE = /^\+?[\p{Nd}\s()\-./#*,;‐–—－ー（）＋]+(?:\s*(?:ext\.?|x|内線)\s*\p{Nd}+)?$/iu;
 
 function selectField(fd, raw) {
   const label = fieldLabel(E.type, fd.key);

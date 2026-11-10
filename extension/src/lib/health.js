@@ -1,9 +1,9 @@
 import { estimateStrength } from './strength.js';
+import { DAY_MS } from '../shared/time.js';
 
 export const ISSUES = Object.freeze(['weak', 'reused', 'old', 'no2fa']);
 export const ACTION_ISSUES = Object.freeze(['weak', 'reused', 'old']);
 export const OLD_AFTER_DAYS = 365;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const WEAK_MAX_LEVEL = 1;
 
 const judged = (it) => it && it.type === 'login' && typeof it.password === 'string' && it.password !== '';

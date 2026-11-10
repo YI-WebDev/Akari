@@ -1,14 +1,14 @@
+import { DAY_MS } from '../../shared/time.js';
 import { MSG } from '../../shared/messages.js';
 import { typeLabel } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { TRASH_DAYS, TRASH_MS } from '../../lib/vault/trash.js';
 import { S, emit, call, errText, liveToken, live, setTrash, vaultById } from '../state.js';
-import { h, clear, icon, syncInert, keepFocus } from './dom.js';
+import { h, clear, icon, syncInert, keepFocus, isComposing } from './dom.js';
 import { toast, toastError } from './toast.js';
 import { tileEl } from './list.js';
 
 const $ = (id) => document.getElementById(id);
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 let restoreFocus = null;
 let asking = null;
@@ -165,7 +165,7 @@ async function purge(ids) {
 }
 
 function onKeys(e) {
-  if (e.isComposing || e.keyCode === 229) return;
+  if (isComposing(e)) return;
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   const btn = e.target.closest?.('.ts-row [data-col]');
   if (!btn) return;

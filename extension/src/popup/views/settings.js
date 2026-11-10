@@ -1,6 +1,6 @@
 import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
 import { S, emit, call, strengthOf, errText, liveToken, live, setSettings, putSetting } from '../state.js';
-import { syncInert, keepFocus } from './dom.js';
+import { syncInert, keepFocus, isComposing } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
 import { toast, toastError } from './toast.js';
@@ -9,6 +9,8 @@ import { initImport, openImport, resetImport, importBack, importDone } from './i
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
+
+export const REOPEN_KEY = 'akari.reopen';
 
 const $ = (id) => document.getElementById(id);
 const RELOAD_DELAY_MS = 120;
@@ -133,7 +135,7 @@ async function setSetting(key, raw) {
     setCmd(`akari config set ${CMD_VALUES[key](value)}`);
     emit('settingsChanged', key);
     if (key === 'language') {
-      try { sessionStorage.setItem('akari.reopen', 'settings'); } catch { }
+      try { sessionStorage.setItem(REOPEN_KEY, 'settings'); } catch { }
       setTimeout(() => location.reload(), RELOAD_DELAY_MS);
     }
   } catch (e) {
@@ -320,7 +322,7 @@ export function initSettings() {
   $('importOpen').addEventListener('click', () => showPage('import'));
   $('exportOpen').addEventListener('click', () => showPage('export'));
   $('setSheet').addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (isComposing(e)) return;
     if (e.altKey && e.key === 'ArrowLeft' && page !== 'main') { e.preventDefault(); back(); }
   });
   initImport({ close: closeSettings });

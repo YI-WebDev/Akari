@@ -10,7 +10,7 @@ export class ImportError extends Error {
   }
 }
 
-const EPOCH_SECONDS_BELOW = 1e11;
+export const EPOCH_SECONDS_BELOW = 1e11;
 const PGP_ARMOR_HEADER = '-----BEGIN PGP MESSAGE-----';
 const PGP_PUBLIC_KEY_ENCRYPTED_SESSION_KEY = 1;
 const PGP_SYMMETRIC_KEY_ENCRYPTED_SESSION_KEY = 3;

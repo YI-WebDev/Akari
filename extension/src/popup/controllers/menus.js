@@ -1,7 +1,7 @@
 import { typeOf } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import { S, setVaultFilter, setListView, healthCounts } from '../state.js';
-import { h, clear } from '../views/dom.js';
+import { h, clear, isComposing } from '../views/dom.js';
 import { vaultColor } from '../views/format.js';
 import { resetPlusMenu, renderViewMenu, moveMenuFocus } from '../views/type-menu.js';
 import { viewCounts, currentView } from '../views/list.js';
@@ -9,7 +9,6 @@ import { renderVaultLabel, renderFilters, refreshList } from './view.js';
 
 const $ = (id) => document.getElementById(id);
 
-const IME_PROCESSING_KEYCODE = 229;
 
 export const MENUS = {
   main: ['menuBtn', 'mainMenu'], vault: ['vaultBtn', 'vaultMenu'], plus: ['plusBtn', 'plusMenu'], type: ['typeBtn', 'typeMenu'],
@@ -106,7 +105,7 @@ function chooseView(id) {
 }
 
 export function menuKeys(e) {
-  if (e.isComposing || e.keyCode === IME_PROCESSING_KEYCODE) return;
+  if (isComposing(e)) return;
   const menu = e.currentTarget;
   if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
     if (moveMenuFocus(menu, e.key)) e.preventDefault();
