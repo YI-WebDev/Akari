@@ -20,6 +20,10 @@ export const MSG = Object.freeze({
   VAULT_UPDATE_VAULT: 'vault/updateVault',
   VAULT_DELETE_VAULT: 'vault/deleteVault',
 
+  BACKUP_STATUS: 'backup/status',
+  BACKUP_SNOOZE: 'backup/snooze',
+  BACKUP_RECORD: 'backup/record',
+
   SETTINGS_GET: 'settings/get',
   SETTINGS_SET: 'settings/set',
   SETTINGS_LANGUAGE: 'settings/language',
@@ -67,6 +71,9 @@ export const ERR = Object.freeze({
 });
 
 export const NEVER_LOCK = -1;
+
+export const BACKUP_REMIND_DAYS = 30;
+export const BACKUP_SNOOZE_DAYS = 7;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLockMinutes: 15,

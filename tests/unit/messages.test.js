@@ -8,7 +8,7 @@ import { MSG, ERR } from '../../extension/src/shared/messages.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(HERE, '../../extension/src');
 const TESTS = path.resolve(HERE, '..');
-const NAMESPACES = ['vault', 'settings', 'clipboard', 'activity', 'autofill', 'passkey', 'offscreen'];
+const NAMESPACES = ['vault', 'backup', 'settings', 'clipboard', 'activity', 'autofill', 'passkey', 'offscreen'];
 const TYPE_LITERAL = new RegExp(`['"\`]((?:${NAMESPACES.join('|')})/[A-Za-z]+)['"\`]`, 'g');
 
 const SENT_BY_SW = {

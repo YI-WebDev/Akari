@@ -150,7 +150,12 @@
     items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
     trash: [],
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
+    backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
   };
+  if (cfg.backup) {
+    db.backup.lastAt = cfg.backup.lastAt == null ? null : cfg.backup.lastAt;
+    db.backup.since = cfg.backup.since == null ? now : cfg.backup.since;
+  }
   Object.keys(cfg.seedPatch || {}).forEach(function (id) {
     var it = db.items.find(function (x) { return x.id === id; });
     if (!it) return;
@@ -158,6 +163,17 @@
     Object.assign(it, p, p.fields ? { fields: Object.assign({}, it.fields, p.fields) } : {});
   });
   window.__AKARI_DB__ = db;
+
+  function backupStatus() {
+    var b = db.backup;
+    var t = Date.now();
+    var days = Math.max(0, Math.floor((t - (b.lastAt == null ? b.since : b.lastAt)) / DAY));
+    return { lastAt: b.lastAt, days: days, due: days >= 30 && t >= b.snoozedUntil };
+  }
+  function resetBackupClock() {
+    db.backup.lastAt = Date.now();
+    db.backup.snoozedUntil = 0;
+  }
 
   function AkErr(code, message) { var e = new Error(message || code); e.code = code; return e; }
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
@@ -299,6 +315,14 @@
       if (m.current === 'wrong') throw AkErr('BAD_PASSWORD');
       db.master = m.next;
       return {};
+    },
+    'backup/status': async function () { needUnlocked(); return backupStatus(); },
+    'backup/record': async function () { needUnlocked(); resetBackupClock(); return backupStatus(); },
+    'backup/snooze': async function () {
+      needUnlocked();
+      db.backup.snoozedUntil = Date.now() + 7 * DAY;
+      db.backup.snoozes++;
+      return backupStatus();
     },
     'vault/export': async function () {
       needUnlocked(); await sleep(150);

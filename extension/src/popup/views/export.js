@@ -1,5 +1,5 @@
 import { MSG, ERR } from '../../shared/messages.js';
-import { call, errText, liveToken, live } from '../state.js';
+import { call, errText, liveToken, live, emit } from '../state.js';
 import { h, clear } from './dom.js';
 import { yyyymmdd } from './format.js';
 import { shake, rise } from './fx.js';
@@ -223,6 +223,7 @@ async function doExport(e) {
     data = null;
     wipeInputs();
     done(name, res?.count, { plain: !encrypt });
+    if (encrypt) await noteBackup();
   } finally {
     text = null;
     passphrase = '';
@@ -231,6 +232,14 @@ async function doExport(e) {
       setBusy(els.go, false);
     }
   }
+}
+
+/** An encrypted file was handed to the browser to save: the backup reminder starts again. */
+async function noteBackup() {
+  try {
+    await call(MSG.BACKUP_RECORD);
+  } catch { }
+  emit('backupDone');
 }
 
 async function exportBackup() {
@@ -246,6 +255,7 @@ async function exportBackup() {
     const name = `akari-backup-${yyyymmdd()}.json`;
     downloadFile(json, name, 'application/json');
     done(name, null, { plain: false });
+    await noteBackup();
   } catch (e) {
     if (my !== run || !live(token)) return;
     els.log.replaceChildren();

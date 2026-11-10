@@ -1,6 +1,7 @@
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
-import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK } from '../shared/messages.js';
+import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK, BACKUP_REMIND_DAYS, BACKUP_SNOOZE_DAYS } from '../shared/messages.js';
+import { DAY_MS } from '../shared/time.js';
 import { applyLanguage } from './locale.js';
 import { toB64, fromB64 } from '../shared/bytes.js';
 import { PBKDF2_ITERATIONS, importDek, exportDek } from '../lib/crypto.js';
@@ -17,6 +18,7 @@ export const VAULT_KEY = 'akari.vault';
 export const SETTINGS_KEY = 'akari.settings';
 export const SESSION_KEY = 'akari.session';
 export const KEEP_KEY = 'akari.keep';
+export const BACKUP_KEY = 'akari.backup';
 export const AUTOLOCK_ALARM = 'akari-autolock';
 
 const REARM_THROTTLE_MS = 30000;
@@ -70,6 +72,7 @@ export function createVaultService({
   const runWrite = serialQueue();
   const runAuth = serialQueue();
   const runSettings = serialQueue();
+  const runBackup = serialQueue();
 
   const loadRecord = async () => (await local.get(VAULT_KEY))[VAULT_KEY] ?? null;
 
@@ -274,9 +277,55 @@ export function createVaultService({
       const data = defaultData(now());
       const { record, dek } = await createVault(password, data, { iterations });
       await local.set({ [VAULT_KEY]: record });
+      await local.set({ [BACKUP_KEY]: { lastAt: null, since: now(), snoozeUntil: null } });
       await startSession(dek, data);
       return {};
     });
+  }
+
+  const isTime = (v) => typeof v === 'number' && Number.isFinite(v);
+
+  async function loadBackup() {
+    const stored = (await local.get(BACKUP_KEY))[BACKUP_KEY];
+    if (isObject(stored) && isTime(stored.since)) {
+      return {
+        lastAt: isTime(stored.lastAt) ? stored.lastAt : null,
+        since: stored.since,
+        snoozeUntil: isTime(stored.snoozeUntil) ? stored.snoozeUntil : null,
+      };
+    }
+    const fresh = { lastAt: null, since: now(), snoozeUntil: null };
+    await local.set({ [BACKUP_KEY]: fresh });
+    return fresh;
+  }
+
+  const updateBackup = (patch) => runBackup(async () => {
+    const next = { ...(await loadBackup()), ...patch };
+    await local.set({ [BACKUP_KEY]: next });
+    return next;
+  });
+
+  const recordBackup = () => updateBackup({ lastAt: now(), snoozeUntil: null });
+
+  async function backupStatus() {
+    const c = await ensureUnlocked();
+    const b = await runBackup(loadBackup);
+    const t = now();
+    const days = Math.max(0, Math.floor((t - (b.lastAt ?? b.since)) / DAY_MS));
+    const snoozed = b.snoozeUntil !== null && b.snoozeUntil > t;
+    return { lastAt: b.lastAt, days, due: c.data.items.length > 0 && days >= BACKUP_REMIND_DAYS && !snoozed };
+  }
+
+  async function snoozeBackup() {
+    await ensureUnlocked();
+    await updateBackup({ snoozeUntil: now() + BACKUP_SNOOZE_DAYS * DAY_MS });
+    return backupStatus();
+  }
+
+  async function noteBackup() {
+    await ensureUnlocked();
+    await recordBackup();
+    return backupStatus();
   }
 
   function unlock(password) {
@@ -475,7 +524,8 @@ export function createVaultService({
   async function exportVault() {
     await ensureUnlocked();
     const record = await runWrite(loadRecord);
-    return { json: exportBackup(record, now()) };
+    const json = exportBackup(record, now());
+    return { json };
   }
 
   async function importVault(json, password) {
@@ -535,6 +585,9 @@ export function createVaultService({
     [MSG.VAULT_IMPORT]: (m) => importVault(m.json, m.masterPassword),
     [MSG.VAULT_IMPORT_ITEMS]: (m) => importItems(m.items, m.vault),
     [MSG.VAULT_EXPORT_PLAIN]: (m) => exportPlain(m.format, m.masterPassword),
+    [MSG.BACKUP_STATUS]: () => backupStatus(),
+    [MSG.BACKUP_SNOOZE]: () => snoozeBackup(),
+    [MSG.BACKUP_RECORD]: () => noteBackup(),
     [MSG.VAULT_CREATE_VAULT]: (m) => addVault(m.name, m.hue),
     [MSG.VAULT_UPDATE_VAULT]: (m) => updateVault(m.id, m.name, m.hue),
     [MSG.VAULT_DELETE_VAULT]: (m) => deleteVault(m.id, m.moveTo ?? null, m.deleteItems ?? false),
@@ -547,6 +600,7 @@ export function createVaultService({
     MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
     MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
+    MSG.BACKUP_SNOOZE, MSG.BACKUP_RECORD,
   ]);
   const handlers = {};
   for (const [type, fn] of Object.entries(table)) {
