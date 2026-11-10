@@ -32,7 +32,7 @@ Akari は個人で保守しています。返信や修正の時期を約束す�
 
 | バージョン | 対象 |
 | --- | --- |
-| `main` ブランチの最新（現在 `0.1.0`） | 対象 |
+| `main` ブランチの最新（現在 `1.0.0`） | 対象 |
 | それ以前のコミットやバージョン | 対象外 |
 
 修正は `main` にだけ入れます。古いバージョンへの修正の取り込みはしません。
@@ -96,7 +96,7 @@ Akari is maintained by one person. I cannot promise a reply time or a fix date. 
 
 | Version | Supported |
 | --- | --- |
-| Latest `main` (currently `0.1.0`) | Yes |
+| Latest `main` (currently `1.0.0`) | Yes |
 | Earlier commits and versions | No |
 
 Fixes go into `main` only. They are not backported.

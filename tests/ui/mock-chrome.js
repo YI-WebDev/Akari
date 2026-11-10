@@ -480,7 +480,7 @@
     runtime: {
       id: 'akari-mock',
       sendMessage: sendMessage,
-      getManifest: function () { return { name: 'Akari', version: '0.1.0', manifest_version: 3 }; },
+      getManifest: function () { return { name: 'Akari', version: '1.0.0', manifest_version: 3 }; },
       getURL: function (p) { return location.origin + '/extension/' + String(p || '').replace(/^\//, ''); },
       onMessage: { addListener: function () {}, removeListener: function () {} },
       lastError: undefined,

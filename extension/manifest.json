@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_name__",
   "short_name": "Akari",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "__MSG_description__",
   "default_locale": "ja",
   "minimum_chrome_version": "116",

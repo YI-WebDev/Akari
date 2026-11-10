@@ -11,6 +11,8 @@ playwright-report/
 *.zip
 
 .omc/
+**/.claude/settings.local.json
+CLAUDE.local.md
 
 /PRODUCT.md
 /DESIGN.md
