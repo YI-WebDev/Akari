@@ -3,11 +3,15 @@ import { AkariError } from '../shared/errors.js';
 import { ERR, MSG } from '../shared/messages.js';
 import { sameSite, hostnameOf } from '../shared/domain.js';
 import { setLoginPassword } from '../lib/vault.js';
+import { generatePassword } from '../lib/generator.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
 const MEMORY_TTL_MS = 10 * 60 * 1000;
 const MAX_FIELD_LEN = 4096;
+const SUGGESTED_LENGTH = 20;
+const SUGGESTED_MIN_LENGTH = 8;
+const SUGGESTED_MAX_LENGTH = 48;
 
 const isWebUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
 const isLoopback = (host) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
@@ -24,6 +28,15 @@ const summarize = (it) => ({
   username: it.username || '',
   hue: Number.isFinite(it.hue) ? it.hue : 0,
 });
+
+const fieldLimit = (v) => (Number.isInteger(v) && v > 0 ? v : null);
+
+export function suggestedLength({ minLength, maxLength } = {}) {
+  const shortest = Math.max(SUGGESTED_MIN_LENGTH, fieldLimit(minLength) ?? SUGGESTED_MIN_LENGTH);
+  const longest = Math.min(SUGGESTED_MAX_LENGTH, fieldLimit(maxLength) ?? SUGGESTED_MAX_LENGTH);
+  if (shortest > longest) return 0;
+  return Math.min(longest, Math.max(shortest, SUGGESTED_LENGTH));
+}
 
 const byRecent = (a, b) =>
   (b.lastUsedAt || 0) - (a.lastUsedAt || 0) || (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -200,6 +213,14 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return {};
   }
 
+  async function suggestPassword(msg, sender) {
+    senderPage(sender);
+    if (sender.frameId !== 0) return { locked: false, password: '' };
+    if (await vault.isLocked()) return { locked: true, password: '' };
+    const length = suggestedLength(msg);
+    return { locked: false, password: length ? generatePassword({ length }).password : '' };
+  }
+
   async function offerSave(msg, sender) {
     const { tabId, tabUrl, frameUrl } = senderPage(sender);
     const username = typeof msg.username === 'string' ? msg.username.trim() : '';
@@ -308,7 +329,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     steppedUser.delete(tabId);
   };
 
-  return { matches, fill, pageMatches, requestFill, noteUsername, offerSave, confirmSave, onCommand, forgetTab };
+  return { matches, fill, pageMatches, requestFill, noteUsername, suggestPassword, offerSave, confirmSave, onCommand, forgetTab };
 }
 
 if (globalThis.chrome?.runtime?.id) {
@@ -319,6 +340,7 @@ if (globalThis.chrome?.runtime?.id) {
   register(MSG.AUTOFILL_PAGE_MATCHES, svc.pageMatches, { from: 'content' });
   register(MSG.AUTOFILL_REQUEST_FILL, svc.requestFill, { from: 'content' });
   register(MSG.AUTOFILL_NOTE_USERNAME, svc.noteUsername, { from: 'content' });
+  register(MSG.AUTOFILL_SUGGEST_PASSWORD, svc.suggestPassword, { from: 'content' });
   register(MSG.AUTOFILL_OFFER_SAVE, svc.offerSave, { from: 'content' });
   register(MSG.AUTOFILL_CONFIRM_SAVE, svc.confirmSave, { from: 'content' });
 

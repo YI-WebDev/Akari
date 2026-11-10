@@ -78,6 +78,10 @@
   background: rgb(var(--ak-accent-rgb) / .08); color: var(--ak-accent-strong); font-size: 11px; line-height: 18px; }
 .body { padding: 12px; }
 .who { color: var(--ak-text-2); font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.kv dt { color: var(--ak-text-faint); font-size: 11px; line-height: 18px; }
+.kv dd { margin: 0; color: var(--ak-text-2); font-size: 12px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kv .none { color: var(--ak-text-faint); }
 .msg { margin-top: 6px; color: var(--ak-danger); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
 .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .btn { height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 5px; font-size: 12px; cursor: pointer; white-space: nowrap;

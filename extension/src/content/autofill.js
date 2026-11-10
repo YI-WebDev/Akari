@@ -26,6 +26,7 @@
     OFFER_SAVE: 'autofill/offerSave',
     CONFIRM_SAVE: 'autofill/confirmSave',
     NOTE_USERNAME: 'autofill/noteUsername',
+    SUGGEST_PASSWORD: 'autofill/suggestPassword',
     DO_FILL: 'autofill/doFill',
   };
   const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
@@ -37,12 +38,14 @@
   const LISTEN_PASSIVE = { capture: true, passive: true, signal: ac.signal };
   const hosts = new Set();
   const knownPassword = new WeakSet();
+  const suggested = new WeakMap();
   let filling = false;
   let lastUsername = '';
   let offerCooldownUntil = 0;
   const MAX_SCOPE_ANCESTORS = 8;
   const MAX_INPUTS_IN_LOGIN_SCOPE = 24;
   const MAX_FIELDS_IN_LOGIN_SCOPE = 8;
+  const MAX_NEW_PASSWORD_FIELDS = 2;
   const QUIET_AFTER_NO_MATCH_MS = 10000;
   const OFFER_COOLDOWN_MS = 1500;
   const SAVED_BAR_LINGER_MS = 1500;
@@ -62,14 +65,16 @@
   }
 
   const TEXT_TYPES = new Set(['text', 'email', 'tel']);
-  const USER_HINT = /user|login|log-?in|e-?mail|account|member|identifier|(^|[-_.\s])id($|[-_.\s])|ユーザー?|アカウント|ログイン|メール|会員/i;
+  const USER_HINT = /user|login|log-?in|mail|account|member|identifier|(^|[-_.\s])id($|[-_.\s])|ユーザー?|アカウント|ログイン|メール|会員/i;
   const USER_HINT_STRONG = /user|login|log-?in|identifier|account|ユーザー?|アカウント|ログイン/i;
   const NOT_USER = /search|検索|query|captcha|otp|totp|verif|coupon|zip|postal|address|city|first|last|family/i;
+  const MAIL_ADDRESS = /mail[-_.\s]?address/gi;
 
   const acTokens = (el) => (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/).filter(Boolean);
   const isPasswordish = (el) => el.tagName === 'INPUT' && (el.type === 'password' || knownPassword.has(el));
   const describe = (el) =>
     [el.name, el.id, el.placeholder, el.getAttribute('aria-label')].filter(Boolean).join(' ');
+  const notUser = (el) => NOT_USER.test(describe(el).replace(MAIL_ADDRESS, 'mail'));
 
   function isVisible(el) {
     if (!el.isConnected) return false;
@@ -141,6 +146,14 @@
     return plain[0];
   }
 
+  function newPasswordFields(scope) {
+    const pws = passwordsIn(scope);
+    const cur = currentPassword(pws);
+    return pws.filter((p) => p !== cur);
+  }
+
+  const replaceable = (p, input) => p === input || !p.value || p.value === input.value || p.value === suggested.get(p);
+
   function findUsername(scope, anchor, loose) {
     const cands = inputsIn(scope).filter((i) => TEXT_TYPES.has(i.type) && !isPasswordish(i) && usable(i));
     const before = anchor ? cands.filter((c) => c.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
@@ -150,8 +163,8 @@
     };
     return (
       last((c) => acTokens(c).some((t) => t === 'username' || t === 'email')) ||
-      last((c) => (c.type === 'email' || USER_HINT.test(describe(c))) && !NOT_USER.test(describe(c))) ||
-      (loose ? last((c) => !NOT_USER.test(describe(c))) : null)
+      last((c) => (c.type === 'email' || USER_HINT.test(describe(c))) && !notUser(c)) ||
+      (loose ? last((c) => !notUser(c)) : null)
     );
   }
 
@@ -318,6 +331,18 @@
     });
   }
 
+  const loginRows = (items) => (items || []).map((it) => ({
+    glyph: (Array.from(it.title || '?')[0] || '?').toUpperCase(),
+    hue: it.hue,
+    title: it.title || '',
+    sub: it.username,
+    choose: () => chooseItem(it.id),
+  }));
+
+  const suggestionRow = (password) => ({
+    glyph: '*', hue: 40, title: t('強いパスワードを使う'), sub: password, choose: chooseSuggestion,
+  });
+
   function renderMenu(rowsData, noteText) {
     if (!field.root || !field.el) return;
     if (field.guard) field.guard.stop();
@@ -331,17 +356,17 @@
     for (const it of rowsData || []) {
       const row = el('div', 'row');
       row.setAttribute('role', 'option');
-      const tile = el('span', 'tile', (Array.from(it.title || '?')[0] || '?').toUpperCase());
+      const tile = el('span', 'tile', it.glyph);
       tile.style.setProperty('--h', String(Number(it.hue) || 0));
       const txt = el('span', 'txt');
-      txt.appendChild(el('span', 't', it.title || ''));
-      if (it.username) txt.appendChild(el('span', 'u', it.username));
+      txt.appendChild(el('span', 't', it.title));
+      if (it.sub) txt.appendChild(el('span', 'u', it.sub));
       row.append(tile, txt);
       row.addEventListener('click', (e) => {
-        if (field.guard && field.guard.ok(e)) chooseItem(it.id);
+        if (field.guard && field.guard.ok(e)) it.choose();
       });
       menu.appendChild(row);
-      field.rows.push({ row, id: it.id });
+      field.rows.push({ row, choose: it.choose });
     }
     const foot = el('div', 'foot');
     foot.append(el('span', 'mark', '灯'), el('span', 'grow'));
@@ -371,7 +396,8 @@
     const s = field.state;
     if (!s) return;
     if (s.locked) renderMenu([], lockedText());
-    else renderMenu(s.items);
+    else if (field.role === 'new-password') renderMenu([suggestionRow(s.password)]);
+    else renderMenu(loginRows(s.items));
   }
 
   async function chooseItem(itemId) {
@@ -383,6 +409,31 @@
       return;
     }
     fillTarget(target, res.data.username, res.data.password);
+  }
+
+  function chooseSuggestion() {
+    const input = field.el;
+    const password = field.state && field.state.password;
+    const scope = input && input.isConnected ? scopeOf(input) : null;
+    const targets = scope ? newPasswordFields(scope) : [];
+    removeFieldUi();
+    if (!password || !targets.includes(input) || targets.length > MAX_NEW_PASSWORD_FIELDS) return;
+    let filled = 0;
+    filling = true;
+    try {
+      for (const p of targets.filter((x) => replaceable(x, input))) {
+        if (!fillField(p, password)) continue;
+        suggested.set(p, password);
+        filled++;
+      }
+      input.focus({ preventScroll: true });
+    } catch {
+    } finally {
+      filling = false;
+    }
+    const creds = filled ? credentialsFrom(scope) : null;
+    if (creds) offer(creds, scope);
+    considerFocus(deepActive());
   }
 
   function targetForField(el) {
@@ -413,33 +464,68 @@
       return removeFieldUi();
     }
     field.state = res.data;
-    if (!field.host) {
-      const { host, root } = makeHost();
-      field.host = host;
-      field.root = root;
-      field.btn = orb(24);
-      field.btn.addEventListener('click', (e) => {
-        if (!e.isTrusted) return;
-        e.stopPropagation();
-        if (field.menu) closeMenu();
-        else openMenu();
-      });
-      root.appendChild(field.btn);
-    }
+    showOrb();
     place();
   }
+
+  function showOrb() {
+    if (field.host) return;
+    const { host, root } = makeHost();
+    field.host = host;
+    field.root = root;
+    field.btn = orb(24);
+    field.btn.addEventListener('click', (e) => {
+      if (!e.isTrusted) return;
+      e.stopPropagation();
+      if (field.menu) closeMenu();
+      else openMenu();
+    });
+    root.appendChild(field.btn);
+  }
+
+  const lengthLimits = (input) => ({
+    minLength: input.minLength > 0 ? input.minLength : undefined,
+    maxLength: input.maxLength > 0 ? input.maxLength : undefined,
+  });
+
+  const suggestsNow = (input) => !!field.state && !field.state.locked && !field.open && !input.value
+    && newPasswordFields(scopeOf(input)).every((p) => replaceable(p, input));
+
+  async function onNewPasswordFocus(input) {
+    removeFieldUi();
+    const targets = newPasswordFields(scopeOf(input));
+    if (!targets.includes(input) || targets.length > MAX_NEW_PASSWORD_FIELDS) return;
+    field.el = input;
+    field.role = 'new-password';
+    const token = ++field.token;
+    const res = await send(M.SUGGEST_PASSWORD, lengthLimits(input));
+    if (token !== field.token || field.el !== input) return;
+    if (!res.ok || (!res.data.locked && !res.data.password)) {
+      quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
+      return removeFieldUi();
+    }
+    field.state = res.data;
+    showOrb();
+    place();
+    if (suggestsNow(input)) openMenu();
+  }
+
+  const closesWhenFocusLeaves = () => !field.open || field.role === 'new-password';
 
   function considerFocus(target) {
     const role = target && fieldRole(target);
     if (role === 'username' || role === 'password') onFieldFocus(target, role);
-    else if (field.el && !field.open) removeFieldUi();
+    else if (role === 'new-password' && isTop) onNewPasswordFocus(target);
+    else if (field.el && closesWhenFocusLeaves()) removeFieldUi();
   }
 
-  const bar = { host: null, guard: null };
+  const bar = { host: null, guard: null, sync: null };
+  const MASKED_PASSWORD = '•'.repeat(12);
 
   function hideSaveBar() {
     if (bar.guard) bar.guard.stop();
     bar.guard = null;
+    bar.sync = null;
     if (bar.host) {
       hosts.delete(bar.host);
       bar.host.remove();
@@ -447,7 +533,7 @@
     bar.host = null;
   }
 
-  function showSaveBar({ action, username, host: siteHost }) {
+  function showSaveBar({ action, username, host: siteHost }, scope) {
     if (!isTop) return;
     hideSaveBar();
     const { host, root } = makeHost();
@@ -463,7 +549,15 @@
       el('div', 'ttl', action === 'update' ? t('パスワードを更新しますか？') : t('Akari に保存しますか？')),
       el('span', 'tag', action === 'update' ? t('更新') : t('新規')),
     );
-    const who = el('div', 'who', [siteHost, username].filter(Boolean).join(' · '));
+    const saved = el('dl', 'kv');
+    const put = (label, value, cls) => {
+      const dd = el('dd', cls, value);
+      dd.title = value;
+      saved.append(el('dt', '', label), dd);
+    };
+    put(t('サイト'), siteHost || '');
+    put(t('ユーザー名'), username || t('（なし）'), username ? '' : 'none');
+    put(t('パスワード'), MASKED_PASSWORD);
     const msg = el('div', 'msg');
     msg.hidden = true;
     const btns = el('div', 'btns');
@@ -472,7 +566,7 @@
     save.type = skip.type = 'button';
     btns.append(skip, save);
     const body = el('div', 'body');
-    body.append(who, msg, btns);
+    body.append(saved, msg, btns);
     card.append(head, body);
     root.appendChild(card);
     const guard = visibilityGuard(card, () => host);
@@ -482,10 +576,33 @@
       msg.textContent = text;
       msg.hidden = false;
     };
+    const failed = (res) => {
+      save.disabled = skip.disabled = false;
+      note(res.code === 'LOCKED' ? lockedText() : t('保存できませんでした'));
+    };
+    const differs = (offered) => offered.action !== action || offered.username !== username;
+    if (scope) {
+      bar.sync = async (changed) => {
+        if (save.disabled || !scope.isConnected || !scope.contains(changed)) return;
+        const inForm = credentialsFrom(scope);
+        if (!inForm) return;
+        const again = await send(M.OFFER_SAVE, inForm);
+        if (bar.host !== host || save.disabled || !again.ok) return;
+        if (again.data.action === 'none') hideSaveBar();
+        else if (differs(again.data)) showSaveBar(again.data, scope);
+      };
+    }
     save.addEventListener('click', async (e) => {
       if (!guard.ok(e)) return;
       save.disabled = skip.disabled = true;
       msg.hidden = true;
+      const inForm = scope && scope.isConnected ? credentialsFrom(scope) : null;
+      if (inForm) {
+        const again = await send(M.OFFER_SAVE, inForm);
+        if (!again.ok) return failed(again);
+        if (again.data.action === 'none') return hideSaveBar();
+        if (differs(again.data)) return showSaveBar(again.data, scope);
+      }
       const res = await send(M.CONFIRM_SAVE, { decision: 'save' });
       if (res.ok && res.data.saved !== false) {
         const done = el('div', 'done');
@@ -495,8 +612,7 @@
         return;
       }
       if (res.ok) return hideSaveBar();
-      save.disabled = skip.disabled = false;
-      note(res.code === 'LOCKED' ? lockedText() : t('保存できませんでした'));
+      failed(res);
     });
     const dismiss = () => {
       send(M.CONFIRM_SAVE, { decision: 'dismiss' });
@@ -509,12 +625,12 @@
   function credentialsFrom(scope) {
     const filled = passwordsIn(scope).filter((p) => p.value);
     if (!filled.length) return null;
-    let pw = filled.find((p) => acTokens(p).includes('new-password'));
+    let pw = filled.find((p) => suggested.get(p) === p.value) || filled.find((p) => acTokens(p).includes('new-password'));
     if (!pw) {
       const n = filled.length;
       pw = n > 1 && filled[n - 1].value === filled[n - 2].value ? filled[n - 2] : filled[0];
     }
-    const user = findUsername(scope, pw, true);
+    const user = findUsername(scope, pw, false) || findUsername(scope, null, false) || findUsername(scope, pw, true);
     return { username: (user && user.value.trim()) || lastUsername, password: pw.value };
   }
 
@@ -554,13 +670,17 @@
     if (user) send(M.NOTE_USERNAME, { username: user.value.trim() });
   }
 
+  async function offer(creds, scope) {
+    const res = await send(M.OFFER_SAVE, { username: creds.username, password: creds.password });
+    if (res.ok && (res.data.action === 'new' || res.data.action === 'update')) {
+      showSaveBar({ action: res.data.action, username: res.data.username, host: res.data.host }, scope);
+    }
+  }
+
   async function offerSave(creds) {
     if (!isTop || !creds || !creds.password || Date.now() < offerCooldownUntil) return;
     offerCooldownUntil = Date.now() + OFFER_COOLDOWN_MS;
-    const res = await send(M.OFFER_SAVE, { username: creds.username, password: creds.password });
-    if (res.ok && (res.data.action === 'new' || res.data.action === 'update')) {
-      showSaveBar({ action: res.data.action, username: res.data.username, host: res.data.host });
-    }
+    await offer(creds);
   }
 
   document.addEventListener('focusin', (e) => {
@@ -572,8 +692,14 @@
 
   document.addEventListener('focusout', () => {
     setTimeout(() => {
-      if (field.el && !field.open && deepActive() !== field.el) removeFieldUi();
+      if (field.el && closesWhenFocusLeaves() && deepActive() !== field.el) removeFieldUi();
     }, FOCUSOUT_SETTLE_MS);
+  }, LISTEN_PASSIVE);
+
+  document.addEventListener('input', (e) => {
+    if (filling || field.role !== 'new-password' || e.composedPath()[0] !== field.el) return;
+    if (field.el.value) closeMenu();
+    else if (suggestsNow(field.el)) openMenu();
   }, LISTEN_PASSIVE);
 
   document.addEventListener('pointerdown', (e) => {
@@ -598,7 +724,7 @@
       if (e.key === 'Enter' && field.hi >= 0 && field.guard && field.guard.ok(e)) {
         e.preventDefault();
         e.stopPropagation();
-        chooseItem(field.rows[field.hi].id);
+        field.rows[field.hi].choose();
         return;
       }
     }
@@ -618,6 +744,8 @@
 
   document.addEventListener('click', (e) => {
     if (!e.isTrusted) return;
+    const clicked = e.composedPath()[0];
+    if (field.role === 'new-password' && clicked === field.el && suggestsNow(clicked)) openMenu();
     const btn = e.composedPath().find((n) => isSubmitLike(n));
     if (!btn) return;
     const creds = credentialsFromButton(btn);
@@ -628,6 +756,7 @@
   document.addEventListener('change', (e) => {
     const input = e.composedPath()[0];
     if (input && input.tagName === 'INPUT' && input.value && looksLikeUsername(input)) lastUsername = input.value.trim();
+    if (input && bar.sync && !filling) bar.sync(input);
   }, LISTEN_PASSIVE);
 
   window.addEventListener('scroll', schedulePlace, LISTEN_PASSIVE);

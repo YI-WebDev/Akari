@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AkariError } from '../../extension/src/shared/errors.js';
-import { createAutofillService, urlMatches } from '../../extension/src/background/autofill-service.js';
+import { createAutofillService, urlMatches, suggestedLength } from '../../extension/src/background/autofill-service.js';
 
 const T0 = 1_700_000_000_000;
 
@@ -499,4 +499,65 @@ test('autofill/confirmSave: a new login goes to the first vault when 個人 is g
   await svc.offerSave({ username: 'mallory', password: 's3cret' }, sender('https://example.org/login'));
   assert.deepEqual(await svc.confirmSave({ decision: 'save' }, sender('https://example.org/')), { saved: true, action: 'new' });
   assert.equal(vault.state.data.items.at(-1).vault, 'v-hobby');
+});
+
+test('suggestedLength: 20 by default, bent to fit the field\'s own limits', () => {
+  assert.equal(suggestedLength(), 20);
+  assert.equal(suggestedLength({}), 20);
+  assert.equal(suggestedLength({ maxLength: 32 }), 20);
+  assert.equal(suggestedLength({ maxLength: 12 }), 12);
+  assert.equal(suggestedLength({ minLength: 24 }), 24);
+  assert.equal(suggestedLength({ minLength: 8, maxLength: 16 }), 16);
+  assert.equal(suggestedLength({ maxLength: 200 }), 20);
+  assert.equal(suggestedLength({ minLength: 64 }), 0, 'longer than Akari generates');
+  assert.equal(suggestedLength({ maxLength: 6 }), 0, 'too short to be worth suggesting');
+  assert.equal(suggestedLength({ minLength: 30, maxLength: 20 }), 0);
+  assert.equal(suggestedLength({ minLength: -1, maxLength: 0 }), 20, 'unset limits arrive as -1 or 0');
+  assert.equal(suggestedLength({ minLength: '12', maxLength: 9.5 }), 20, 'only whole numbers count');
+});
+
+test('autofill/suggestPassword: a fresh strong password for the top frame of a web page', async () => {
+  const { svc, vault } = setup();
+  const a = await svc.suggestPassword({}, sender('https://example.org/signup'));
+  const b = await svc.suggestPassword({}, sender('https://example.org/signup'));
+  assert.equal(a.locked, false);
+  assert.equal(a.password.length, 20);
+  assert.match(a.password, /[a-z]/);
+  assert.match(a.password, /[A-Z]/);
+  assert.match(a.password, /[0-9]/);
+  assert.match(a.password, /[^a-zA-Z0-9]/);
+  assert.notEqual(a.password, b.password);
+  assert.equal(vault.state.touches, 0, 'a page asking for a suggestion is not user activity');
+  assert.equal(vault.state.data.items.length, 1, 'nothing is saved by suggesting');
+});
+
+test('autofill/suggestPassword: follows the field\'s length limits, or suggests nothing', async () => {
+  const { svc } = setup();
+  const at = (msg) => svc.suggestPassword(msg, sender('https://example.org/signup'));
+  assert.equal((await at({ maxLength: 12 })).password.length, 12);
+  assert.equal((await at({ minLength: 30 })).password.length, 30);
+  assert.deepEqual(await at({ maxLength: 4 }), { locked: false, password: '' });
+});
+
+test('autofill/suggestPassword: locked, framed and non-web senders get no password', async () => {
+  const locked = setup({ locked: true });
+  assert.deepEqual(await locked.svc.suggestPassword({}, sender('https://example.org/')), { locked: true, password: '' });
+
+  const { svc } = setup();
+  const framed = sender('https://example.org/f', 'https://example.org/', { frameId: 3 });
+  assert.deepEqual(await svc.suggestPassword({}, framed), { locked: false, password: '' });
+  await rejectsWith(svc.suggestPassword({}, { id: 'ext', url: 'about:blank', frameId: 0, tab: { id: 1, url: 'https://example.org/' } }), 'FORBIDDEN');
+  await rejectsWith(svc.suggestPassword({}, { id: 'ext', url: 'https://example.org/' }), 'FORBIDDEN');
+});
+
+test('a suggested password that the page reports back is offered as a new login and saved', async () => {
+  const { svc, vault } = setup();
+  const page = sender('https://example.org/signup');
+  const { password } = await svc.suggestPassword({}, page);
+  const offer = await svc.offerSave({ username: 'new@example.org', password }, page);
+  assert.deepEqual([offer.action, offer.username, offer.host], ['new', 'new@example.org', 'example.org']);
+  assert.deepEqual(await svc.confirmSave({ decision: 'save' }, page), { saved: true, action: 'new' });
+  const saved = vault.state.data.items.at(-1);
+  assert.deepEqual([saved.username, saved.password, saved.url], ['new@example.org', password, 'https://example.org']);
+  assert.equal((await svc.offerSave({ username: 'new@example.org', password }, page)).action, 'none', 'submitting the form afterwards does not ask again');
 });
