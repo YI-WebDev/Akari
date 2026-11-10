@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: お届け先の入力</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 32px auto; max-width: 360px; color: #2e2520; }
+    label, .caption { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, select { box-sizing: border-box; width: 100%; padding: 8px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    .zip { display: flex; align-items: center; gap: 8px; }
+    .zip input { width: 96px; }
+    button { margin-top: 16px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>お届け先</h1>
+  <form id="address-form" action="welcome.html" method="post">
+    <label for="name">お名前</label>
+    <input id="name" name="name1" type="text">
+    <label for="kana">フリガナ</label>
+    <input id="kana" name="kana" type="text">
+    <span class="caption">郵便番号</span>
+    <div class="zip"><input id="zip1" name="zip1" type="tel" maxlength="3"> - <input id="zip2" name="zip2" type="tel" maxlength="4"></div>
+    <label for="pref">都道府県</label>
+    <select id="pref" name="pref">
+      <option value="">選択してください</option>
+      <option value="13">東京都</option>
+      <option value="26">京都府</option>
+      <option value="27">大阪府</option>
+    </select>
+    <label for="addr1">市区町村・番地</label>
+    <input id="addr1" name="addr1" type="text">
+    <label for="addr2">建物名・部屋番号</label>
+    <input id="addr2" name="addr2" type="text">
+    <label for="tel">電話番号</label>
+    <input id="tel" name="tel" type="tel">
+    <label for="mail">メールアドレス</label>
+    <input id="mail" name="mail_address" type="text">
+    <button id="submit" type="submit">次へ</button>
+  </form>
+  <script>
+    document.getElementById('address-form').addEventListener('submit', (e) => e.preventDefault());
+  </script>
+</body>
+</html>

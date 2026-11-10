@@ -205,5 +205,55 @@
     };
   }
 
-  globalThis.__akariShadowUi = Object.freeze({ makeHost, el, orb, themed, visibilityGuard });
+  const SIGHT_SETTLE_CAP_MS = 2000;
+
+  function sightWatch(targets) {
+    const seen = new WeakSet();
+    const pending = new Map();
+    let ready = false;
+    let settle = null;
+    const settled = new Promise((resolve) => {
+      settle = () => {
+        ready = true;
+        resolve();
+      };
+    });
+    const cap = setTimeout(settle, SIGHT_SETTLE_CAP_MS);
+    let afterFirstLook = 0;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!afterFirstLook) afterFirstLook = setTimeout(settle, VISIBLE_MS + OCCLUSION_CHECK_DELAY_MS);
+        for (const e of entries) {
+          const visible = e.isIntersecting && e.isVisible && e.intersectionRatio >= MIN_VISIBLE_RATIO;
+          if (!visible) {
+            clearTimeout(pending.get(e.target));
+            pending.delete(e.target);
+          } else if (!seen.has(e.target) && !pending.has(e.target)) {
+            pending.set(e.target, setTimeout(() => {
+              pending.delete(e.target);
+              seen.add(e.target);
+            }, VISIBLE_MS));
+          }
+        }
+      },
+      { threshold: [0, MIN_VISIBLE_RATIO, 1], trackVisibility: true, delay: OCCLUSION_CHECK_DELAY_MS },
+    );
+    for (const target of targets) io.observe(target);
+    if (!targets.length) settle();
+    return {
+      seen: (target) => seen.has(target),
+      ready: () => ready,
+      settled,
+      stop() {
+        io.disconnect();
+        clearTimeout(cap);
+        clearTimeout(afterFirstLook);
+        for (const timer of pending.values()) clearTimeout(timer);
+        pending.clear();
+        settle();
+      },
+    };
+  }
+
+  globalThis.__akariShadowUi = Object.freeze({ makeHost, el, orb, themed, visibilityGuard, sightWatch });
 })();

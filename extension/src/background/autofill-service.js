@@ -4,6 +4,7 @@ import { ERR, MSG } from '../shared/messages.js';
 import { sameSite, hostnameOf } from '../shared/domain.js';
 import { setLoginPassword } from '../lib/vault.js';
 import { generatePassword } from '../lib/generator.js';
+import { personName } from '../shared/item-types.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
@@ -28,6 +29,10 @@ const summarize = (it) => ({
   username: it.username || '',
   hue: Number.isFinite(it.hue) ? it.hue : 0,
 });
+
+export const IDENTITY_KINDS = Object.freeze(['postalCode', 'country', 'state', 'city', 'address1', 'address2']);
+
+const identityName = (x) => x.fullName || personName(x.firstName, x.middleName, x.lastName);
 
 const fieldLimit = (v) => (Number.isInteger(v) && v > 0 ? v : null);
 
@@ -221,6 +226,38 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return { locked: false, password: length ? generatePassword({ length }).password : '' };
   }
 
+  async function identities(msg, sender) {
+    senderPage(sender);
+    if (sender.frameId !== 0) return { locked: false, items: [] };
+    if (await vault.isLocked()) return { locked: true, items: [] };
+    const data = await vault.readData();
+    const items = data.items.filter((it) => it.type === 'identity').sort(byRecent).map((it) => ({
+      id: it.id,
+      title: it.title || '',
+      name: identityName(it.fields || {}),
+      hue: Number.isFinite(it.hue) ? it.hue : 0,
+    }));
+    return { locked: false, items };
+  }
+
+  async function requestIdentity(msg, sender) {
+    senderPage(sender);
+    if (sender.frameId !== 0) throw new AkariError(ERR.FORBIDDEN, 'Only the top frame can ask for an identity');
+    await requireUnlocked();
+    const data = await vault.readData();
+    const item = data.items.find((it) => it.type === 'identity' && it.id === msg.itemId);
+    if (!item) throw new AkariError(ERR.NOT_FOUND, 'Item not found');
+    const fields = item.fields || {};
+    const values = {};
+    for (const kind of Array.isArray(msg.kinds) ? msg.kinds : []) {
+      if (!IDENTITY_KINDS.includes(kind)) continue;
+      if (typeof fields[kind] === 'string' && fields[kind]) values[kind] = fields[kind];
+    }
+    await vault.touchActivity();
+    await markUsed(item.id);
+    return { values };
+  }
+
   async function offerSave(msg, sender) {
     const { tabId, tabUrl, frameUrl } = senderPage(sender);
     const username = typeof msg.username === 'string' ? msg.username.trim() : '';
@@ -329,7 +366,10 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     steppedUser.delete(tabId);
   };
 
-  return { matches, fill, pageMatches, requestFill, noteUsername, suggestPassword, offerSave, confirmSave, onCommand, forgetTab };
+  return {
+    matches, fill, pageMatches, requestFill, noteUsername, suggestPassword, identities, requestIdentity,
+    offerSave, confirmSave, onCommand, forgetTab,
+  };
 }
 
 if (globalThis.chrome?.runtime?.id) {
@@ -341,6 +381,8 @@ if (globalThis.chrome?.runtime?.id) {
   register(MSG.AUTOFILL_REQUEST_FILL, svc.requestFill, { from: 'content' });
   register(MSG.AUTOFILL_NOTE_USERNAME, svc.noteUsername, { from: 'content' });
   register(MSG.AUTOFILL_SUGGEST_PASSWORD, svc.suggestPassword, { from: 'content' });
+  register(MSG.AUTOFILL_IDENTITIES, svc.identities, { from: 'content' });
+  register(MSG.AUTOFILL_REQUEST_IDENTITY, svc.requestIdentity, { from: 'content' });
   register(MSG.AUTOFILL_OFFER_SAVE, svc.offerSave, { from: 'content' });
   register(MSG.AUTOFILL_CONFIRM_SAVE, svc.confirmSave, { from: 'content' });
 

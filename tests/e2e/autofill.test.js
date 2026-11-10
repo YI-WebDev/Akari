@@ -385,3 +385,123 @@ test('a password the user typed in the other field is never replaced by a sugges
   assert.ok(!passwords.includes('Current-Pass-1'), 'not the password typed in the other field');
   await page.close();
 });
+
+const ADDRESS_FIELDS = ['name', 'kana', 'zip1', 'zip2', 'pref', 'addr1', 'addr2', 'tel', 'mail'];
+const valuesOf = (page, ids) => page.evaluate((list) => Object.fromEntries(list.map((id) => [id, document.getElementById(id).value])), ids);
+const HOME = {
+  type: 'identity', title: '自宅', vault: 'personal',
+  fields: {
+    lastName: '熊野', firstName: 'めろ', email: 'kumamero@example.jp', phone: '090-1234-5678',
+    postalCode: '150-0001', state: '東京都', city: '渋谷区', address1: '神宮前1-2-3', address2: 'あかりビル 401',
+  },
+};
+
+async function chooseOnAddressField(file, selector, prepare) {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.goto(site.origin + '/' + file);
+  if (prepare) await prepare(page);
+  await page.locator(selector).click();
+  await page.waitForTimeout(2000);
+  const r = await rectOf(page, selector);
+  await page.mouse.click(r.x + 200, r.bottom + 32);
+  await page.waitForTimeout(600);
+  return page;
+}
+
+test('address form: with no identity saved there is nothing to choose', async () => {
+  const page = await chooseOnAddressField('address.html', '#addr1');
+  assert.deepEqual(await valuesOf(page, ADDRESS_FIELDS), { name: '', kana: '', zip1: '', zip2: '', pref: '', addr1: '', addr2: '', tel: '', mail: '' });
+  await page.close();
+});
+
+test('address form: choosing a saved identity fills the address fields only, and leaves typed ones alone', async () => {
+  const saved = await send('vault/saveItem', { item: HOME });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  const page = await chooseOnAddressField('address.html', '#addr1', (p) => p.fill('#zip1', '999'));
+  assert.deepEqual(await valuesOf(page, ADDRESS_FIELDS), {
+    name: '',
+    kana: '',
+    zip1: '999',
+    zip2: '0001',
+    pref: '13',
+    addr1: '渋谷区神宮前1-2-3',
+    addr2: 'あかりビル 401',
+    tel: '',
+    mail: '',
+  });
+  await page.close();
+});
+
+test('address form: fields the user cannot see get nothing', async () => {
+  const page = await chooseOnAddressField('address.html', '#addr1', (p) => p.evaluate(() => {
+    const zip1 = document.getElementById('zip1').getBoundingClientRect();
+    const cover = document.createElement('div');
+    cover.style.cssText = `position:absolute;pointer-events:none;left:${zip1.left + scrollX}px;top:${zip1.top + scrollY}px;width:${zip1.width}px;height:${zip1.height}px;background:#fff`;
+    document.body.append(cover);
+    document.getElementById('zip2').style.clipPath = 'inset(calc(50% - 1px))';
+    document.getElementById('addr2').style.filter = 'opacity(0)';
+    const late = document.createElement('input');
+    late.id = 'late';
+    late.name = 'city';
+    document.getElementById('address-form').append(late);
+    late.style.marginTop = '3000px';
+  }));
+  assert.deepEqual(await valuesOf(page, [...ADDRESS_FIELDS, 'late']), {
+    name: '',
+    kana: '',
+    zip1: '',
+    zip2: '',
+    pref: '13',
+    addr1: '神宮前1-2-3',
+    addr2: '',
+    tel: '',
+    mail: '',
+    late: '',
+  }, 'covered (even by something clicks pass through), clipped, filtered and off-screen fields stay empty');
+  await page.close();
+});
+
+test('address form: nested field names, a name that beats its label and placeholder, and fields that are not addresses', async () => {
+  const page = await chooseOnAddressField('address-tricky.html', '#addr01');
+  assert.deepEqual(await valuesOf(page, ['zip', 'pref', 'addr01', 'addr02', 'kana', 'mail', 'ship']), {
+    zip: '150-0001',
+    pref: '13',
+    addr01: '渋谷区神宮前1-2-3',
+    addr02: 'あかりビル 401',
+    kana: '',
+    mail: '',
+    ship: '渋谷区神宮前1-2-3',
+  });
+  await page.close();
+});
+
+test('address form: a real click (press, hold, release) still fills the fields the menu will cover', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.goto(site.origin + '/address.html');
+  const r = await rectOf(page, '#zip1');
+  await page.mouse.move(r.x + 20, r.y + r.h / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  await page.waitForTimeout(2000);
+  await page.mouse.click(r.x + 100, r.bottom + 32);
+  await page.waitForTimeout(600);
+  const got = await valuesOf(page, ['zip1', 'zip2', 'pref', 'addr1', 'addr2']);
+  assert.deepEqual(got, { zip1: '150', zip2: '0001', pref: '13', addr1: '渋谷区神宮前1-2-3', addr2: 'あかりビル 401' });
+  await page.close();
+});
+
+test('address form: second address lines named street[1] or told apart only by their label get the building, not the street again', async () => {
+  const page = await chooseOnAddressField('address-lines.html', '#street0');
+  assert.deepEqual(await valuesOf(page, ['postcode', 'region', 'city', 'street0', 'street1', 'extra']), {
+    postcode: '150-0001',
+    region: '13',
+    city: '渋谷区',
+    street0: '神宮前1-2-3',
+    street1: 'あかりビル 401',
+    extra: 'あかりビル 401',
+  });
+  await page.close();
+});

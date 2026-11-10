@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: 紛らわしい住所フォーム</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 32px auto; max-width: 360px; color: #2e2520; }
+    label, .caption { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, select { box-sizing: border-box; width: 100%; padding: 8px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>お届け先</h1>
+  <form id="tricky-form" action="welcome.html" method="post">
+    <span class="caption">郵便番号（住所検索）</span>
+    <input id="zip" name="shipping_address_zip" type="text" maxlength="8">
+    <label for="pref">都道府県</label>
+    <select id="pref" name="entry[address][pref]">
+      <option value="">選択してください</option>
+      <option value="13">東京都</option>
+      <option value="26">京都府</option>
+    </select>
+    <label for="addr01">住所（都道府県から）</label>
+    <input id="addr01" name="entry[address][addr01]" type="text" placeholder="都道府県からご記入ください">
+    <label for="addr02">建物名</label>
+    <input id="addr02" name="entry[address][addr02]" type="text" placeholder="例：メイプルハイツ101">
+    <label for="kana">住所（フリガナ）</label>
+    <input id="kana" name="address_kana" type="text">
+    <label for="mail">メールアドレス</label>
+    <input id="mail" name="mail_address" type="text">
+    <label for="ship">Ship address</label>
+    <input id="ship" name="ship_address" type="text">
+  </form>
+  <script>
+    document.getElementById('tricky-form').addEventListener('submit', (e) => e.preventDefault());
+  </script>
+</body>
+</html>
