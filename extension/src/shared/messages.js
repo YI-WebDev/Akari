@@ -19,6 +19,8 @@ export const MSG = Object.freeze({
   VAULT_CREATE_VAULT: 'vault/createVault',
   VAULT_UPDATE_VAULT: 'vault/updateVault',
   VAULT_DELETE_VAULT: 'vault/deleteVault',
+  VAULT_ADD_ATTACHMENT: 'vault/addAttachment',
+  VAULT_GET_ATTACHMENT: 'vault/getAttachment',
 
   BACKUP_STATUS: 'backup/status',
   BACKUP_SNOOZE: 'backup/snooze',
@@ -73,6 +75,14 @@ export const ERR = Object.freeze({
   INVALID_STATE: 'INVALID_STATE',
   SECURITY: 'SECURITY',
   UV_REQUIRED: 'UV_REQUIRED',
+  QUOTA: 'QUOTA',
+});
+
+export const ATTACHMENT_LIMITS = Object.freeze({
+  fileBytes: 5 * 1024 * 1024,
+  perItem: 10,
+  totalBytes: 32 * 1024 * 1024,
+  name: 255,
 });
 
 export const NEVER_LOCK = -1;

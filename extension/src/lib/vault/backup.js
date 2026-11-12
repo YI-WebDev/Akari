@@ -2,6 +2,8 @@ import { checkRecord, openVaultRecord } from './record.js';
 import { checkData } from './schema.js';
 import { invalid, isObject, isHue, clampTs, MAX_VAULT_ID_LENGTH } from './common.js';
 import { makeItem, validateItem } from './items.js';
+import { normalizeAttachments } from './attachments.js';
+import { ATTACHMENT_LIMITS } from '../../shared/messages.js';
 import { normalizePasskeys } from './passkeys.js';
 import { passwordKeys, mergedHistory } from './passwords.js';
 
@@ -10,13 +12,14 @@ export const BACKUP_VERSION = 1;
 const MAX_VAULT_NAME_LENGTH = 100;
 const DEFAULT_VAULT_HUE = 55;
 
-export function exportBackup(record, nowMs = Date.now()) {
+export function exportBackup(record, nowMs = Date.now(), attachments = null) {
   checkRecord(record);
   return JSON.stringify({
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: new Date(nowMs).toISOString(),
     vault: record,
+    ...(attachments && Object.keys(attachments).length && { attachments }),
   }, null, 2);
 }
 
@@ -27,11 +30,12 @@ export async function importBackup(json, password) {
   } catch {
     throw invalid('Not an Akari backup file');
   }
-  if (!isObject(obj) || obj.format !== BACKUP_FORMAT || obj.version !== BACKUP_VERSION) {
+  if (!isObject(obj) || obj.format !== BACKUP_FORMAT || obj.version !== BACKUP_VERSION
+    || (obj.attachments !== undefined && !isObject(obj.attachments))) {
     throw invalid('Not an Akari backup file');
   }
   const { data } = await openVaultRecord(obj.vault, password, { newer: 'keep' });
-  return normalizeData(data);
+  return { ...normalizeData(data), attachments: obj.attachments ?? {} };
 }
 
 function normalizeVault(v) {
@@ -41,12 +45,16 @@ function normalizeVault(v) {
 }
 
 function normalizeImportedItem(raw, nowMs) {
-  const fields = validateItem(raw, raw);
+  if (!isObject(raw)) throw invalid('Item must be an object');
+  const { attachments, ...rest } = raw;
+  const fields = validateItem(rest, rest);
   if (!fields.id) throw invalid('Item without id');
+  const { list, skipped } = normalizeAttachments(attachments, nowMs);
   const createdAt = clampTs(raw.createdAt, nowMs, nowMs);
   const login = (fields.type ?? 'login') === 'login';
-  return makeItem({
+  const item = makeItem({
     ...fields,
+    ...(list.length && { attachments: list }),
     ...(login && {
       passkeys: normalizePasskeys(raw.passkeys, nowMs),
       passwordUpdatedAt: clampTs(raw.passwordUpdatedAt, null, nowMs),
@@ -56,6 +64,7 @@ function normalizeImportedItem(raw, nowMs) {
     updatedAt: clampTs(raw.updatedAt, createdAt, nowMs),
     lastUsedAt: clampTs(raw.lastUsedAt, null, nowMs),
   }, nowMs);
+  return { item, skipped };
 }
 
 export function normalizeData(data, nowMs = Date.now()) {
@@ -63,13 +72,17 @@ export function normalizeData(data, nowMs = Date.now()) {
   const vaults = new Map();
   for (const v of data.vaults.map(normalizeVault)) if (v && !vaults.has(v.id)) vaults.set(v.id, v);
   const items = new Map();
+  const skippedAttachments = new Map();
   for (const raw of data.items) {
     try {
-      const item = normalizeImportedItem(raw, nowMs);
+      const { item, skipped } = normalizeImportedItem(raw, nowMs);
       items.set(item.id, item);
+      skippedAttachments.set(item.id, skipped);
     } catch { }
   }
-  return { vaults: [...vaults.values()], items: [...items.values()], updatedAt: clampTs(data.updatedAt, nowMs, nowMs) };
+  return {
+    vaults: [...vaults.values()], items: [...items.values()], updatedAt: clampTs(data.updatedAt, nowMs, nowMs), skippedAttachments,
+  };
 }
 
 function isSameTypeAndNewer(incoming, stored) {
@@ -93,7 +106,9 @@ export function mergeData(current, incoming) {
       takenAccountKeys.add(accountKey(pk));
     }
   }
-  let count = 0;
+  const trashed = new Map((Array.isArray(data.trash) ? data.trash : []).filter(isObject).map((e) => [e.id, e]));
+  const ids = [];
+  let skippedAttachments = 0;
   for (const inc of incoming.items) {
     const item = structuredClone(inc);
     if (!vaultIds.has(item.vault)) item.vault = fallbackVault;
@@ -110,9 +125,10 @@ export function mergeData(current, incoming) {
       } else {
         delete item.passkeys;
       }
+      if (trashed.has(item.id)) skippedAttachments += keepStoredAttachments(item, trashed.get(item.id));
       index.set(item.id, data.items.length);
       data.items.push(item);
-      count++;
+      ids.push(item.id);
     } else if (isSameTypeAndNewer(item, data.items[i])) {
       if (login) {
         item.passkeys = data.items[i].passkeys || [];
@@ -122,9 +138,23 @@ export function mergeData(current, incoming) {
       } else {
         delete item.passkeys;
       }
+      skippedAttachments += keepStoredAttachments(item, data.items[i]);
       data.items[i] = item;
-      count++;
+      ids.push(item.id);
     }
   }
-  return { data, count };
+  return { data, count: ids.length, ids, skippedAttachments };
+}
+
+function keepStoredAttachments(item, stored) {
+  const list = Array.isArray(stored.attachments) ? [...stored.attachments] : [];
+  let skipped = 0;
+  for (const a of Array.isArray(item.attachments) ? item.attachments : []) {
+    const same = list.find((x) => x.id === a.id);
+    if (same ? same.key !== a.key : list.length >= ATTACHMENT_LIMITS.perItem) skipped++;
+    else if (!same) list.push(a);
+  }
+  if (list.length) item.attachments = list;
+  else delete item.attachments;
+  return skipped;
 }

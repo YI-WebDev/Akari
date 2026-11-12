@@ -1,5 +1,5 @@
 import { send } from '../shared/api.js';
-import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS } from '../shared/messages.js';
+import { MSG, ERR, DEFAULT_SETTINGS, DEFAULT_VAULTS, ATTACHMENT_LIMITS } from '../shared/messages.js';
 import { estimateStrength } from '../lib/strength.js';
 import { passwordHealth, ISSUES, ACTION_ISSUES } from '../lib/health.js';
 import { typeOf, searchTextOf } from '../shared/item-types.js';
@@ -140,7 +140,7 @@ export const live = (token) => S.phase === 'main' && S.epoch === token;
 
 const WRITES = new Set([
   MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
-  MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
+  MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_ADD_ATTACHMENT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
   MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
 ]);
 let writesInFlight = 0;
@@ -166,6 +166,7 @@ export function errText(e) {
     case ERR.INVALID: return t('入力内容を確認してください');
     case ERR.DOMAIN_MISMATCH: return t('このサイトのアイテムではありません');
     case ERR.NOT_EMPTY: return t('保管庫の中身が変わりました。もう一度選んでください');
+    case ERR.QUOTA: return t('err.quota', null, '添付の上限を超えます（1 ファイル 5 MB · 10 ファイル · 全体 32 MB）');
     default: return t('エラーが発生しました');
   }
 }
@@ -227,6 +228,13 @@ export const reuseOf = (it) => (it?.type === 'login' && it.password ? Math.max(0
 export function isWeak(it) {
   if (!it || it.type !== 'login' || !it.password) return false;
   return strengthOf(it.password).level <= 1 || reuseOf(it) > 0;
+}
+
+export function attachmentUsage() {
+  let used = 0;
+  for (const it of S.items) for (const a of it.attachments || []) used += Number(a.size) || 0;
+  for (const it of S.trash) used += Number(it.attachmentBytes) || 0;
+  return { used, limit: ATTACHMENT_LIMITS.totalBytes };
 }
 
 export const itemById = (id) => S.items.find((i) => i.id === id) || null;

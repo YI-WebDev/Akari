@@ -23,6 +23,7 @@
 | --- | --- | --- |
 | 保管庫 | `chrome.storage.local` | ログイン、メモ、カードなどのアイテムとパスキー。マスターパスワードから作った鍵で暗号化（PBKDF2-SHA256 600,000 回 → AES-256-GCM） |
 | ゴミ箱 | 保管庫の中（暗号化済み） | 削除したアイテム。30 日間残り、その後は消える |
+| 添付ファイル | `chrome.storage.local`（`akari.att.<id>`） | 添付したファイルの中身。ファイルごとの鍵で暗号化（AES-256-GCM）。鍵・ファイル名・種類・サイズは保管庫の中（暗号化済み）。アイテムから外すか、ゴミ箱から消えると削除 |
 | ロック解除中の鍵 | `chrome.storage.session` | メモリ上だけ。ロックするか、ブラウザを閉じると消える。自動ロックを「しない」にしたときだけ、`chrome.storage.local` にも置く（手動でロックすると消える） |
 | 設定 | `chrome.storage.local` | 自動ロックの時間、クリップボードを消すまでの秒数、表示言語、テーマ |
 | バックアップの日付 | `chrome.storage.local`（`akari.backup`） | 最後に暗号化バックアップを書き出した日時（`lastAt`）、記録を始めた日時（`since`）、通知を止めている期限（`snoozeUntil`）。バックアップの中身は含まない |
@@ -42,7 +43,8 @@
 
 | 権限 | 使い道 |
 | --- | --- |
-| `storage` | 保管庫・設定・バックアップの日付・ロック解除中の鍵を保存する |
+| `storage` | 保管庫・添付ファイル・設定・バックアップの日付・ロック解除中の鍵を保存する |
+| `unlimitedStorage` | 添付ファイルを保存できるように、`chrome.storage.local` の既定の容量の上限を外す（Akari 側の上限は全体で 32 MiB） |
 | `alarms` | 自動ロックと、クリップボードを消す時刻を管理する |
 | `offscreen` | クリップボードを空にするための非表示ページを一時的に開く（理由は CLIPBOARD） |
 | `clipboardWrite` | パスワードや認証コードなどをコピーする |
@@ -72,7 +74,7 @@ Akari がページから読むのは、そのページの URL、ログイン・�
 ## バックアップとエクスポート
 
 - エクスポートしたファイルは、あなたが保存先を選んで保存します。Akari はそのファイルを送信も保管もしません。
-- 暗号化バックアップは、保管庫を暗号化したまま書き出します。
+- 暗号化バックアップは、保管庫を暗号化したまま書き出します。添付ファイルも暗号化したまま含みます（ゴミ箱の中のアイテムのものは除く）。CSV・JSON・PGP の書き出しには、添付ファイルは含まれません。
 - CSV と JSON（Bitwarden 形式）は暗号化されない平文です。書き出すときにマスターパスワードをもう一度入力します。PGP 暗号化の書き出しも、マスターパスワードの入力とパスフレーズが必要です。
 - 保存したファイルの扱い（置き場所、共有、削除）は、あなたの責任です。
 
@@ -111,6 +113,7 @@ Everything is stored in your Chrome (or Brave) profile on your device.
 | --- | --- | --- |
 | Vault | `chrome.storage.local` | Logins, notes, cards, other items, and passkeys. Encrypted with a key derived from your master password (PBKDF2-SHA256, 600,000 iterations, then AES-256-GCM) |
 | Trash | Inside the vault (encrypted) | Deleted items. Kept for 30 days, then removed |
+| Attachments | `chrome.storage.local` (`akari.att.<id>`) | The contents of attached files. Each file is encrypted with its own key (AES-256-GCM). The keys, file names, types, and sizes are inside the vault (encrypted). Deleted when you remove the file from its item or when the item leaves the trash |
 | Unlocked key | `chrome.storage.session` | In memory only. Removed when you lock or close the browser. Also written to `chrome.storage.local` only if you set auto-lock to "Never" (removed when you lock manually) |
 | Settings | `chrome.storage.local` | Auto-lock time, seconds until the clipboard is cleared, display language, theme |
 | Backup dates | `chrome.storage.local` (`akari.backup`) | When you last exported an encrypted backup (`lastAt`), when tracking began (`since`), and until when the reminder is snoozed (`snoozeUntil`). It does not contain the backup itself |
@@ -130,7 +133,8 @@ Permissions declared in `extension/manifest.json`:
 
 | Permission | Use |
 | --- | --- |
-| `storage` | Store the vault, settings, backup dates, and the unlocked key |
+| `storage` | Store the vault, attachments, settings, backup dates, and the unlocked key |
+| `unlimitedStorage` | Lift the default size limit of `chrome.storage.local` so attachments fit (Akari's own limit is 32 MiB in total) |
 | `alarms` | Schedule auto-lock and the time to clear the clipboard |
 | `offscreen` | Briefly open a hidden page that empties the clipboard (reason: CLIPBOARD) |
 | `clipboardWrite` | Copy passwords, one-time codes, and other values |
@@ -160,7 +164,7 @@ Copied passwords and similar values are cleared after the number of seconds you 
 ## Backups and exports
 
 - Exported files are saved where you choose. Akari neither uploads nor keeps them.
-- An encrypted backup keeps the vault encrypted.
+- An encrypted backup keeps the vault encrypted. It also carries the attachments, still encrypted (except those of items in the trash). CSV, JSON, and PGP exports do not include attachments.
 - CSV and JSON (Bitwarden format) exports are plaintext. Akari asks for your master password again before it writes them. A PGP-encrypted export also needs your master password, plus a passphrase.
 - You are responsible for where you keep, share, and delete exported files.
 

@@ -1,6 +1,8 @@
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
-import { ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK, BACKUP_REMIND_DAYS, BACKUP_SNOOZE_DAYS } from '../shared/messages.js';
+import {
+  ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK, BACKUP_REMIND_DAYS, BACKUP_SNOOZE_DAYS, ATTACHMENT_LIMITS,
+} from '../shared/messages.js';
 import { DAY_MS } from '../shared/time.js';
 import { applyLanguage } from './locale.js';
 import { toB64, fromB64 } from '../shared/bytes.js';
@@ -10,6 +12,8 @@ import {
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
   addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
   setLoginPassword, setPendingPassword, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash,
+  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, cleanMime, newAttachmentKey,
+  encryptAttachment, decryptAttachment, attachmentsIn, attachmentIdsIn, attachmentBytesIn,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -24,7 +28,8 @@ const FREE_UNLOCK_ATTEMPTS = 5;
 const MAX_UNLOCK_DELAY_MS = 30000;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 1024;
-const MAX_IMPORT_CHARS = 20 * 1024 * 1024;
+const MAX_IMPORT_CHARS = 60 * 1024 * 1024;
+const MAX_ITEM_ID_LENGTH = 100;
 
 const SETTING_RULES = {
   autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
@@ -219,14 +224,28 @@ export function createVaultService({
       const c = await ensureUnlocked();
       const record = await loadRecord();
       if (!record) throw fail(ERR.NOT_INITIALIZED, 'Vault not set up');
+      const before = attachmentIdsIn(c.data);
       const draft = structuredClone(c.data);
       const result = await fn(draft);
       pruneTrash(draft, now());
       draft.updatedAt = now();
       await local.set({ [VAULT_KEY]: await sealData(record, c.dek, draft) });
       if (cache) cache.data = draft;
+      await dropUnreferenced(before, draft);
       return result;
     });
+  }
+
+  function dropUnreferenced(before, data) {
+    const after = attachmentIdsIn(data);
+    return removeQuietly([...before].filter((id) => !after.has(id) && isAttachmentId(id)).map(attachmentStorageKey));
+  }
+
+  async function removeQuietly(keys) {
+    if (!keys.length) return;
+    try {
+      await local.remove(keys);
+    } catch { }
   }
 
   function onUnlocked(cb) {
@@ -389,6 +408,7 @@ export function createVaultService({
 
   const trashOut = (data) => liveTrash(data, now()).map((e) => ({
     id: e.id, type: e.type ?? 'login', title: e.title ?? '', vault: e.vault, hue: e.hue, deletedAt: e.deletedAt,
+    attachmentBytes: attachmentBytesIn({ items: [e] }),
   }));
 
   async function saveItem(item) {
@@ -406,6 +426,7 @@ export function createVaultService({
           if (target.type === 'login' || target.type === undefined) setLoginPassword(target, password, t);
           else target.password = password;
         }
+        if (Array.isArray(target.attachments) && !target.attachments.length) delete target.attachments;
         stripLegacyLoginKeys(target);
       } else {
         target = makeItemAt(fields, t);
@@ -519,11 +540,117 @@ export function createVaultService({
     }));
   }
 
+  const checkItemId = (id) => {
+    if (typeof id !== 'string' || !id || id.length > MAX_ITEM_ID_LENGTH) throw fail(ERR.INVALID, 'itemId required');
+  };
+
+  function decodeAttachmentData(data) {
+    if (typeof data !== 'string') throw fail(ERR.INVALID, 'data must be base64');
+    if (data.length > maxAttachmentB64Length()) throw fail(ERR.QUOTA, 'File is too large');
+    let bytes;
+    try {
+      bytes = fromB64(data);
+    } catch {
+      throw fail(ERR.INVALID, 'data must be base64');
+    }
+    if (!bytes.length) throw fail(ERR.INVALID, 'File is empty');
+    if (bytes.length > ATTACHMENT_LIMITS.fileBytes) throw fail(ERR.QUOTA, 'File is too large');
+    return bytes;
+  }
+
+  async function addAttachment(itemId, name, mime, data) {
+    checkItemId(itemId);
+    const cleanName = cleanAttachmentName(name);
+    if (!cleanName) throw fail(ERR.INVALID, 'Invalid file name');
+    const bytes = decodeAttachmentData(data);
+    const id = crypto.randomUUID();
+    const storageKey = attachmentStorageKey(id);
+    let written = false;
+    try {
+      return await mutateData(async (draft) => {
+        const item = draft.items.find((i) => i.id === itemId);
+        if (!item) throw fail(ERR.NOT_FOUND, 'Item not found');
+        const list = Array.isArray(item.attachments) ? item.attachments : [];
+        if (list.length >= ATTACHMENT_LIMITS.perItem) throw fail(ERR.QUOTA, 'Too many attachments on this item');
+        if (attachmentBytesIn(draft) + bytes.length > ATTACHMENT_LIMITS.totalBytes) throw fail(ERR.QUOTA, 'Attachment storage is full');
+        const meta = { id, name: cleanName, mime: cleanMime(mime), size: bytes.length, addedAt: now(), key: newAttachmentKey() };
+        const box = await encryptAttachment(meta.key, id, bytes);
+        written = true;
+        await local.set({ [storageKey]: box });
+        item.attachments = [...list, meta];
+        item.updatedAt = now();
+        return { item: sanitizeItem(item) };
+      });
+    } catch (e) {
+      if (written) await removeQuietly([storageKey]);
+      throw e;
+    }
+  }
+
+  async function getAttachment(itemId, attachmentId) {
+    checkItemId(itemId);
+    if (!isAttachmentId(attachmentId)) throw fail(ERR.INVALID, 'Invalid attachmentId');
+    const c = await ensureUnlocked();
+    const meta = c.data.items.find((i) => i.id === itemId)?.attachments?.find((a) => a.id === attachmentId);
+    if (!meta) throw fail(ERR.NOT_FOUND, 'Attachment not found');
+    const storageKey = attachmentStorageKey(attachmentId);
+    const box = (await local.get(storageKey))[storageKey];
+    if (box === undefined) throw fail(ERR.NOT_FOUND, 'Attachment not found');
+    const bytes = await decryptAttachment(meta.key, meta.id, box);
+    return { name: meta.name, mime: meta.mime, size: bytes.length, data: toB64(bytes) };
+  }
+
   async function exportVault() {
     await ensureUnlocked();
-    const record = await runWrite(loadRecord);
-    const json = exportBackup(record, now());
+    const { record, boxes } = await runWrite(async () => {
+      const c = await ensureUnlocked();
+      const ids = attachmentsIn({ items: c.data.items }).map((a) => a.id).filter(isAttachmentId);
+      const keys = ids.map(attachmentStorageKey);
+      const stored = keys.length ? await local.get(keys) : {};
+      const out = {};
+      for (const id of ids) if (stored[attachmentStorageKey(id)] !== undefined) out[id] = stored[attachmentStorageKey(id)];
+      return { record: await loadRecord(), boxes: out };
+    });
+    const json = exportBackup(record, now(), boxes);
     return { json };
+  }
+
+  async function takeAttachments(draft, known, boxes, written) {
+    pruneTrash(draft, now());
+    const trashIds = attachmentIdsIn({ trash: draft.trash });
+    let total = attachmentBytesIn({ trash: draft.trash });
+    const accepted = new Map();
+    const pending = [];
+    for (const a of attachmentsIn({ items: draft.items })) {
+      if (trashIds.has(a.id) || accepted.has(a.id)) continue;
+      if (!known.has(a.id)) pending.push(a);
+      else if (known.get(a.id) === a.key) {
+        accepted.set(a.id, a);
+        total += a.size;
+      }
+    }
+    for (const a of pending) {
+      if (accepted.has(a.id) || total + a.size > ATTACHMENT_LIMITS.totalBytes || !Object.hasOwn(boxes, a.id)) continue;
+      try {
+        if ((await decryptAttachment(a.key, a.id, boxes[a.id])).length !== a.size) continue;
+      } catch {
+        continue;
+      }
+      const storageKey = attachmentStorageKey(a.id);
+      written.push(storageKey);
+      await local.set({ [storageKey]: boxes[a.id] });
+      accepted.set(a.id, a);
+      total += a.size;
+    }
+    let skipped = 0;
+    for (const it of draft.items) {
+      if (!Array.isArray(it.attachments)) continue;
+      const kept = it.attachments.filter((a) => accepted.get(a.id) === a);
+      skipped += it.attachments.length - kept.length;
+      if (kept.length) it.attachments = kept;
+      else delete it.attachments;
+    }
+    return skipped;
   }
 
   async function importVault(json, password) {
@@ -531,13 +658,21 @@ export function createVaultService({
     if (typeof json !== 'string' || !json || json.length > MAX_IMPORT_CHARS) throw fail(ERR.INVALID, 'Invalid backup');
     if (typeof password !== 'string') throw fail(ERR.INVALID, 'masterPassword must be a string');
     const incoming = await importBackup(json, password);
-    const count = await mutateData((draft) => {
-      const merged = mergeData(draft, incoming);
-      draft.vaults = merged.data.vaults;
-      draft.items = merged.data.items;
-      return merged.count;
-    });
-    return { count };
+    const written = [];
+    try {
+      return await mutateData(async (draft) => {
+        const known = new Map(attachmentsIn(draft).map((a) => [a.id, a.key]));
+        const merged = mergeData(draft, incoming);
+        draft.vaults = merged.data.vaults;
+        draft.items = merged.data.items;
+        const malformed = merged.ids.reduce((n, id) => n + (incoming.skippedAttachments?.get(id) ?? 0), merged.skippedAttachments);
+        const skippedAttachments = malformed + await takeAttachments(draft, known, incoming.attachments, written);
+        return { count: merged.count, skippedAttachments };
+      });
+    } catch (e) {
+      await removeQuietly(written);
+      throw e;
+    }
   }
 
   async function importItems(items, vaultId) {
@@ -577,6 +712,8 @@ export function createVaultService({
     [MSG.VAULT_RESTORE_ITEMS]: (m) => restoreFromTrash(m.ids),
     [MSG.VAULT_PURGE_ITEMS]: (m) => purgeFromTrash(m.ids, m.all),
     [MSG.VAULT_DELETE_PASSKEY]: (m) => deletePasskey(m.itemId, m.credentialId),
+    [MSG.VAULT_ADD_ATTACHMENT]: (m) => addAttachment(m.itemId, m.name, m.mime, m.data),
+    [MSG.VAULT_GET_ATTACHMENT]: (m) => getAttachment(m.itemId, m.attachmentId),
     [MSG.VAULT_PENDING_PASSWORD]: (m) => pendingPassword(m.id, m.action, m.password),
     [MSG.VAULT_CHANGE_PASSWORD]: (m) => changePassword(m.current, m.next),
     [MSG.VAULT_EXPORT]: () => exportVault(),
@@ -595,7 +732,7 @@ export function createVaultService({
   };
   const ACTIVE = new Set([
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
-    MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD,
+    MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD, MSG.VAULT_ADD_ATTACHMENT,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
     MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
     MSG.BACKUP_SNOOZE, MSG.BACKUP_RECORD,

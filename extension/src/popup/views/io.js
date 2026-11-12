@@ -14,7 +14,7 @@ export function logLine(state, k, v = '') {
   const line = h('div', { class: 'boot-line io-line' }, tag, key, h('span', { class: 'boot-dots', 'aria-hidden': 'true' }), val);
   line.set = (s, k2, v2 = '') => {
     line.dataset.state = s;
-    tag.textContent = { run: '[ .. ]', err: '[ !! ]', ask: '[ ?? ]' }[s] || '[ ok ]';
+    tag.textContent = { run: '[ .. ]', err: '[ !! ]', ask: '[ ?? ]', skip: '[ -- ]' }[s] || '[ ok ]';
     key.textContent = k2;
     val.textContent = v2;
     val.title = v2;

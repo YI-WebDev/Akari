@@ -11,7 +11,7 @@ const AES = { name: 'AES-GCM', length: 256 };
 
 const passwordBytes = (password) => utf8(String(password).normalize('NFC'));
 
-function decodeBox(box) {
+export function decodeBox(box) {
   try {
     if (!box || typeof box.iv !== 'string' || typeof box.ct !== 'string') throw new Error('shape');
     const iv = fromB64(box.iv);

@@ -10,4 +10,8 @@ export { passkeyFromImport } from './vault/passkeys.js';
 export { BACKUP_FORMAT, BACKUP_VERSION, exportBackup, importBackup, normalizeData, mergeData } from './vault/backup.js';
 export { MAX_IMPORT_ITEMS, addImportedItems } from './vault/import-items.js';
 export { createVaultIn, updateVaultIn, deleteVaultIn } from './vault/vaults.js';
+export {
+  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, cleanMime, newAttachmentKey,
+  encryptAttachment, decryptAttachment, normalizeAttachments, attachmentsIn, attachmentIdsIn, attachmentBytesIn,
+} from './vault/attachments.js';
 export { TRASH_DAYS, TRASH_MS, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash } from './vault/trash.js';

@@ -1,5 +1,5 @@
 import { MSG, ERR } from '../../shared/messages.js';
-import { call, errText, liveToken, live, emit } from '../state.js';
+import { S, call, errText, liveToken, live, emit } from '../state.js';
 import { h, clear } from './dom.js';
 import { yyyymmdd } from './format.js';
 import { shake, rise } from './fx.js';
@@ -74,6 +74,8 @@ export function openExport({ focus = true } = {}) {
   const warn = h('div', { class: 'io-alert', role: 'note' },
     h('span', { class: 'bang', 'aria-hidden': 'true' }, '!'), h('div', { class: 'io-alert-text' }));
   const note = h('p', { class: 'io-note' });
+  const attNote = h('p', { class: 'io-note io-att-note', hidden: true },
+    t('添付ファイルは含まれません。添付ファイルごと残すには Akari バックアップを選びます。'));
   const err = h('div', { class: 'field-err', role: 'alert' });
   const goBtn = goButton(t('書き出す'), { type: 'submit' });
   const log = h('div', { class: 'io-log', 'aria-live': 'polite' });
@@ -89,9 +91,9 @@ export function openExport({ focus = true } = {}) {
   form.addEventListener('input', () => { if (!busy) els.err.textContent = ''; });
   const cmd = cmdLine('');
 
-  els = { list, master, masterField, pass, passField, pass2, pass2Field, innerPick, warn, note, err, go: goBtn, log, masterRow, innerRow, pgpRow, cmd };
+  els = { list, master, masterField, pass, passField, pass2, pass2Field, innerPick, warn, note, attNote, err, go: goBtn, log, masterRow, innerRow, pgpRow, cmd };
   clear(page);
-  page.append(cmd, list, h('div', { 'data-f': '' }, warn, note), form, log);
+  page.append(cmd, list, h('div', { 'data-f': '' }, warn, note, attNote), form, log);
   page.scrollTop = 0;
   sync();
   rise(page, '[data-f]');
@@ -131,6 +133,7 @@ function sync() {
   els.pgpRow.hidden = !pgp;
   els.warn.hidden = !needsMaster;
   els.note.hidden = needsMaster;
+  els.attNote.hidden = fmt === 'akari' || !S.items.some((it) => it.attachments?.length);
   els.warn.classList.toggle('safe', pgp);
   els.warn.querySelector('.bang').textContent = pgp ? '✓' : '!';
   els.warn.querySelector('.io-alert-text').textContent = pgp

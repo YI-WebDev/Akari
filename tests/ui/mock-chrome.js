@@ -9,6 +9,11 @@
     lang: params.get('lang') || 'auto',
     uiLang: params.get('uiLang') || 'ja',
     qrDataUrl: null,
+    featureSeed: params.get('fa') === '1',
+    uploadDelay: params.has('uploadDelay') ? Number(params.get('uploadDelay')) : 300,
+    failUpload: params.get('failUpload') || null,
+    failCode: params.get('failCode') || 'QUOTA',
+    importSkipped: 0,
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
 
@@ -48,6 +53,69 @@
     '-----END OPENSSH PRIVATE KEY-----',
     '',
   ].join('\n');
+
+  var MIB = 1024 * 1024;
+  var ATT = { fileBytes: 5 * MIB, perItem: 10, totalBytes: 32 * MIB, name: 255 };
+  var files = {};
+  var attSeq = 0;
+  var b64 = function (text) { return btoa(String.fromCharCode.apply(null, Array.from(new TextEncoder().encode(text)))); };
+  var PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAIAAABqVuVZAAAAmElEQVR42u3WMRGAMBAEwJigoIqaOEAACiIgiimpaMEBVQqe35lTsMXdlbou8pKCABAgQIAAAUoHdI+WKoAAAQIECBAgQIAAzQG6ziNVAAEC9C2gvm9BAwhQCCAdBAgQIEB+kJkH5AfpIECAAAHyg8w8ID9IBwECBAiQH2TmAflBOggQIECA/CAzHxhIAAECBAgQIEA/B3oA0ZDL3nWofoEAAAAASUVORK5CYII=';
+  var PDF_B64 = b64('%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [] /Count 0 >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+  function byteLen(data) { try { return atob(data).length; } catch (e) { return -1; } }
+  function putFile(name, mime, data, addedAt) {
+    var id = 'att-' + (++attSeq).toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    files[id] = data;
+    return { id: id, name: name, mime: mime, size: byteLen(data), addedAt: addedAt || now };
+  }
+  function seedAttachments(items) {
+    var byId = function (id) { return items.find(function (x) { return x.id === id; }); };
+    var docs = byId('att-docs');
+    if (docs) {
+      docs.attachments = [
+        putFile('マイナンバーカード（表面）.png', 'image/png', PNG_B64, date('2025/10/02')),
+        putFile('確定申告書_2025.pdf', 'application/pdf', PDF_B64, date('2025/10/03')),
+        putFile('復旧コード.txt', 'text/plain', b64('e-Tax 復旧コード\n7KQ2-M9XP-4RTV\nW3N4-8PLQ-ZD6C\n'), date('2025/10/04')),
+        putFile('令和七年分所得税及び復興特別所得税の確定申告書の控え（税務署受付印あり）スキャン版_最終.pdf', 'application/pdf', PDF_B64, date('2025/10/05')),
+      ];
+    }
+    var full = byId('att-full');
+    if (full) {
+      full.attachments = [];
+      for (var i = 1; i <= ATT.perItem; i++) {
+        var n = String(i).padStart(2, '0');
+        full.attachments.push(i % 3 === 0
+          ? putFile('scan-' + n + '.png', 'image/png', PNG_B64, date('2025/09/' + n))
+          : putFile('page-' + n + '.txt', 'text/plain', b64('page ' + n + '\n'), date('2025/09/' + n)));
+      }
+    }
+  }
+  function featureItems() {
+    return [
+      L('fields-login', 'work', 'dash.cloudflare.com', 'admin@studio-mori.jp', 'Cl0ud!Edge#Mori-26', 30, {
+        url: 'https://dash.cloudflare.com/login', lastUsedAt: now - 6 * DAY,
+        extra: [
+          { label: 'アカウント ID', value: '9f2c4a7e81b3d605', kind: 'text', secret: false },
+          { label: 'API トークン', value: 'cf_Rk8Q2mLx7VpW3nZt9sYb4jH6', kind: 'hidden', secret: true },
+          { label: '予備の 2FA', value: 'JBSWY3DPEHPK3PXP', kind: 'totp', secret: true },
+          { label: '契約更新日', value: '2027-04-01', kind: 'date', secret: false },
+          { label: 'サポート PIN', value: '4417', secret: false },
+        ],
+      }),
+      X('fields-member', 'membership', 'family', 'スポーツクラブ ルネサンス', 115, {
+        organization: 'ルネサンス', memberName: '佐藤 遥', memberId: 'RN-0048213', since: '2023-06-01', expiry: '', pin: '', url: '',
+      }, {
+        lastUsedAt: now - 7 * DAY,
+        extra: [
+          { label: '店舗', value: '渋谷店', kind: 'text', secret: false },
+          { label: '会員アプリの認証', value: 'otpauth://totp/Renaissance:haruka?secret=KRSXG5CTMVRXEZLU&issuer=Renaissance', kind: 'totp', secret: true },
+          { label: '次回の更新', value: '2026-05-31', kind: 'date', secret: false },
+          { label: 'ロッカー暗証番号', value: '0731', kind: 'hidden', secret: true },
+        ],
+      }),
+      { id: 'att-docs', type: 'note', vault: 'personal', title: '確定申告の書類', url: '', username: '', password: '', totp: null, note: '2025 年分。原本は書斎の青いファイル。', fav: false, hue: 35, passkeys: [], extra: [], createdAt: date('2025/10/02'), updatedAt: date('2025/10/05'), passwordUpdatedAt: null, lastUsedAt: now - 2 * DAY },
+      { id: 'att-full', type: 'note', vault: 'family', title: '家の書類スキャン', url: '', username: '', password: '', totp: null, note: '保険証券・保証書・契約書のスキャン。', fav: false, hue: 320, passkeys: [], extra: [], createdAt: date('2025/09/01'), updatedAt: date('2025/09/10'), passwordUpdatedAt: null, lastUsedAt: now - 3 * DAY },
+    ];
+  }
 
   function seed() {
     return [
@@ -147,7 +215,7 @@
     locked: cfg.state !== 'unlocked',
     master: 'akari-master',
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
-    items: cfg.empty || cfg.state === 'setup' ? [] : seed(),
+    items: cfg.empty || cfg.state === 'setup' ? [] : seed().concat(cfg.featureSeed ? featureItems() : []),
     trash: [],
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
     backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
@@ -162,6 +230,8 @@
     var p = cfg.seedPatch[id];
     Object.assign(it, p, p.fields ? { fields: Object.assign({}, it.fields, p.fields) } : {});
   });
+  seedAttachments(db.items);
+  db.files = files;
   window.__AKARI_DB__ = db;
 
   function backupStatus() {
@@ -185,7 +255,10 @@
     var moved = db.items.filter(function (x) { return gone[x.id]; });
     db.items = db.items.filter(function (x) { return !gone[x.id]; });
     var t = Date.now();
-    db.trash = moved.map(function (x) { return Object.assign({}, x, { deletedAt: t }); }).concat(db.trash);
+    db.trash = moved.map(function (x) {
+      var bytes = (x.attachments || []).reduce(function (n, a) { return n + a.size; }, 0);
+      return Object.assign({}, x, { deletedAt: t }, bytes ? { attachmentBytes: bytes } : {});
+    }).concat(db.trash);
     return moved.map(function (x) { return x.id; });
   }
   function vaultName(name, exceptId) {
@@ -195,6 +268,44 @@
     if (db.vaults.some(function (x) { return x.id !== exceptId && key(x.name) === key(v); })) throw AkErr('INVALID', 'Duplicate vault name');
     return v;
   }
+  var B32 = /^[A-Z2-7]+=*$/;
+  function totpOk(v) {
+    if (/^otpauth:\/\/totp\//i.test(v)) {
+      var m = /[?&]secret=([^&]+)/i.exec(v);
+      return !!m && B32.test(decodeURIComponent(m[1]).replace(/[\s-]/g, '').toUpperCase());
+    }
+    return B32.test(v);
+  }
+  function realDate(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    var d = new Date(v + 'T00:00:00Z');
+    return !isNaN(d) && d.toISOString().slice(0, 10) === v;
+  }
+  function normExtra(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    list.forEach(function (x) {
+      if (!x || typeof x !== 'object') throw AkErr('INVALID', 'bad extra');
+      var label = String(x.label == null ? '' : x.label);
+      var value = String(x.value == null ? '' : x.value);
+      var kind = ['text', 'hidden', 'totp', 'date'].indexOf(x.kind) >= 0 ? x.kind : x.secret ? 'hidden' : 'text';
+      if (!label.trim() && !value.trim()) return;
+      if (kind === 'date' && value && !realDate(value)) throw AkErr('INVALID', 'bad date');
+      if (kind === 'totp' && value) {
+        value = value.trim();
+        if (!/^otpauth:/i.test(value)) value = value.replace(/[\s-]/g, '').toUpperCase();
+        if (!totpOk(value)) throw AkErr('INVALID', 'bad totp');
+      }
+      out.push({ label: label, value: value, kind: kind, secret: kind === 'hidden' || kind === 'totp' });
+    });
+    return out;
+  }
+  function attTotal() {
+    var sum = 0;
+    db.items.concat(db.trash).forEach(function (x) { (x.attachments || []).forEach(function (a) { sum += a.size; }); });
+    return sum;
+  }
+  function dropFiles(list) { (list || []).forEach(function (a) { delete files[a.id]; }); }
   function hostOf(u) { try { return new URL(/^[a-z]+:\/\//i.test(u) ? u : 'https://' + u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
   function site(host) { var p = host.split('.'); var n = /\.(co|ne|or|ac)\.jp$/.test(host) ? 3 : 2; return p.slice(-n).join('.'); }
 
@@ -222,7 +333,22 @@
       var t = Date.now();
       var cur = it.id && db.items.find(function (x) { return x.id === it.id; });
       if (it.id && !cur) throw AkErr('NOT_FOUND');
+      it = Object.assign({}, it);
+      if ('extra' in it) it.extra = normExtra(it.extra);
+      var keepIds = null;
+      if ('attachments' in it) {
+        if (!Array.isArray(it.attachments)) throw AkErr('INVALID', 'attachments must be a list');
+        keepIds = it.attachments.map(function (a) { return a && a.id; });
+        delete it.attachments;
+        if (!cur && keepIds.length) throw AkErr('INVALID', 'a new item cannot carry attachments');
+        if (cur && keepIds.some(function (id) { return !(cur.attachments || []).some(function (a) { return a.id === id; }); })) throw AkErr('INVALID', 'unknown attachment');
+      }
       if (cur) {
+        if (keepIds) {
+          var kept = (cur.attachments || []).filter(function (a) { return keepIds.indexOf(a.id) >= 0; });
+          dropFiles((cur.attachments || []).filter(function (a) { return keepIds.indexOf(a.id) < 0; }));
+          if (kept.length) cur.attachments = kept; else delete cur.attachments;
+        }
         var prevPw = cur.password;
         var keep = {
           passkeys: cur.passkeys, createdAt: cur.createdAt, lastUsedAt: cur.lastUsedAt,
@@ -242,6 +368,33 @@
         login ? { passkeys: [], passwordUpdatedAt: it.password ? t : null } : {});
       db.items.push(created);
       return { item: clone(created) };
+    },
+    'vault/addAttachment': async function (m) {
+      needUnlocked();
+      await sleep(cfg.uploadDelay);
+      var it = db.items.find(function (x) { return x.id === m.itemId; });
+      if (!it) throw AkErr('NOT_FOUND');
+      var name = typeof m.name === 'string' ? m.name.trim() : '';
+      if (!name || Array.from(name).length > ATT.name || /[\u0000-\u001f\u007f]/.test(name)) throw AkErr('INVALID', 'bad name');
+      if (typeof m.data !== 'string' || !m.data) throw AkErr('INVALID', 'empty file');
+      var size = byteLen(m.data);
+      if (size <= 0) throw AkErr('INVALID', 'bad base64');
+      var fail = cfg.failUpload;
+      if (fail === true || (typeof fail === 'string' && fail && name.indexOf(fail) >= 0)) throw AkErr(cfg.failCode || 'QUOTA', 'mock: upload failed');
+      if (size > ATT.fileBytes) throw AkErr('QUOTA', 'file too large');
+      if ((it.attachments || []).length >= ATT.perItem) throw AkErr('QUOTA', 'too many files');
+      if (attTotal() + size > ATT.totalBytes) throw AkErr('QUOTA', 'vault full');
+      var mime = typeof m.mime === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(m.mime) ? m.mime : 'application/octet-stream';
+      it.attachments = (it.attachments || []).concat([putFile(name, mime, m.data, Date.now())]);
+      it.updatedAt = Date.now();
+      return { item: clone(it) };
+    },
+    'vault/getAttachment': async function (m) {
+      needUnlocked(); await sleep(150);
+      var it = db.items.find(function (x) { return x.id === m.itemId; });
+      var a = it && (it.attachments || []).find(function (x) { return x.id === m.attachmentId; });
+      if (!a || !(a.id in files)) throw AkErr('NOT_FOUND');
+      return { name: a.name, mime: a.mime, size: a.size, data: files[a.id] };
     },
     'vault/pendingPassword': async function (m) {
       needUnlocked(); await sleep(200);
@@ -283,6 +436,7 @@
         if (!want[x.id]) return true;
         var it = Object.assign({}, x);
         delete it.deletedAt;
+        delete it.attachmentBytes;
         if (!db.vaults.some(function (v) { return v.id === it.vault; })) it.vault = db.vaults[0].id;
         back.push(it);
         return false;
@@ -294,11 +448,11 @@
     'vault/purgeItems': async function (m) {
       needUnlocked(); await sleep(200);
       var n = db.trash.length;
-      if (m.all === true) db.trash = [];
+      if (m.all === true) { db.trash.forEach(function (x) { dropFiles(x.attachments); }); db.trash = []; }
       else {
         var gone = {};
         (m.ids || []).forEach(function (id) { gone[id] = true; });
-        db.trash = db.trash.filter(function (x) { return !gone[x.id]; });
+        db.trash = db.trash.filter(function (x) { if (gone[x.id]) dropFiles(x.attachments); return !gone[x.id]; });
       }
       if (db.trash.length === n) throw AkErr('NOT_FOUND');
       return { purged: n - db.trash.length, trash: clone(db.trash) };
@@ -334,7 +488,7 @@
       var t = Date.now();
       db.items.push(L('imp1-' + t, 'personal', 'booking.com', 'haruka.sato@example.com', 'Tabi!Kyoto#2026', 200, { createdAt: t, updatedAt: t }));
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
-      return { count: 2 };
+      return { count: 2, skippedAttachments: cfg.importSkipped || 0 };
     },
     'vault/importItems': async function (m) {
       needUnlocked(); await sleep(700);
