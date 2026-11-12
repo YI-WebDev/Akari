@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AkariError } from '../../extension/src/shared/errors.js';
 import { createAutofillService, urlMatches, suggestedLength, IDENTITY_KINDS } from '../../extension/src/background/autofill-service.js';
+import { generateTotp } from '../../extension/src/lib/totp.js';
 
 const T0 = 1_700_000_000_000;
 
@@ -663,4 +664,75 @@ test('autofill/offerSave: on a sign-up form a name is not matched to the first h
   assert.equal((await svc.offerSave({ username: 'alice', password: 'Sug-gested-4!', signUp: true }, page)).action, 'new');
   assert.equal((await svc.offerSave({ username: 'alice@example.com', password: 'Sug-gested-4!', signUp: true }, page)).action, 'update');
   assert.equal((await svc.offerSave({ username: 'alice', password: 'Typed-11' }, page)).action, 'update', 'a sign-in with the short name still finds the login');
+});
+
+const TOTP = { secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30, issuer: '', label: '' };
+const TWO_FACTOR = 'https://github.com/sessions/two-factor';
+
+test('autofill/pageTotp: lists the logins of this site that have a code, and hands out no code when Akari filled nothing', async () => {
+  const { svc, vault } = setup({ items: [
+    login({ totp: TOTP }),
+    login({ id: 'i2', username: 'bob', totp: null }),
+    login({ id: 'i3', url: 'https://other.example', totp: TOTP }),
+  ] });
+  assert.deepEqual(await svc.pageTotp({ fill: true }, sender(TWO_FACTOR)), {
+    locked: false,
+    items: [{ id: 'i1', title: 'GitHub', username: 'alice', hue: 40 }],
+  });
+  assert.equal(vault.state.touches, 0, 'a page showing a code field is not user activity');
+});
+
+test('autofill/pageTotp: right after Akari filled that login on the same origin, its code comes along, once', async () => {
+  const { svc, clock } = setup({ items: [login({ totp: TOTP })] });
+  await svc.requestFill({ itemId: 'i1' }, sender('https://github.com/login'));
+  clock.t += 20_000;
+  const look = await svc.pageTotp({}, sender(TWO_FACTOR));
+  assert.equal('code' in look, false, 'a page that is not going to fill it now gets no code and does not use it up');
+  const first = await svc.pageTotp({ fill: true }, sender(TWO_FACTOR));
+  assert.equal(first.code, await generateTotp(TOTP, clock.t));
+  assert.match(first.code, /^\d{6}$/);
+  const second = await svc.pageTotp({ fill: true }, sender(TWO_FACTOR));
+  assert.equal('code' in second, false, 'a second field, or a second look, has to ask the user');
+  assert.equal(second.items.length, 1);
+});
+
+test('autofill/pageTotp: no code on another origin of the site, after 3 minutes, in another tab, or for a login without one', async () => {
+  const filledThen = async (items, at, wait = 0) => {
+    const ctx = setup({ items });
+    await ctx.svc.requestFill({ itemId: 'i1' }, sender('https://github.com/login'));
+    ctx.clock.t += wait;
+    return ctx.svc.pageTotp({ fill: true }, at);
+  };
+  const withCode = [login({ totp: TOTP })];
+  assert.equal('code' in await filledThen(withCode, sender('https://gist.github.com/two-factor')), false, 'a subdomain is another origin');
+  assert.equal('code' in await filledThen(withCode, sender(TWO_FACTOR), 3 * 60 * 1000 + 1), false);
+  assert.equal('code' in await filledThen(withCode, sender(TWO_FACTOR, TWO_FACTOR, { tab: { id: 2, url: TWO_FACTOR } })), false);
+  assert.equal('code' in await filledThen([login({ totp: null })], sender(TWO_FACTOR)), false);
+  assert.equal(typeof (await filledThen(withCode, sender(TWO_FACTOR), 3 * 60 * 1000)).code, 'string', 'still inside the 3 minutes');
+});
+
+test('autofill/pageTotp: locked, framed and non-web senders get nothing', async () => {
+  const items = [login({ totp: TOTP })];
+  assert.deepEqual(await setup({ locked: true, items }).svc.pageTotp({ fill: true }, sender(TWO_FACTOR)), { locked: true, items: [] });
+  const { svc } = setup({ items });
+  await svc.requestFill({ itemId: 'i1' }, sender('https://github.com/login'));
+  assert.deepEqual(await svc.pageTotp({ fill: true }, sender('https://github.com/f', TWO_FACTOR, { frameId: 3 })), { locked: false, items: [] });
+  await rejectsWith(svc.pageTotp({ fill: true }, { id: 'ext', url: 'about:blank', frameId: 0, tab: { id: 1, url: TWO_FACTOR } }), 'FORBIDDEN');
+  assert.equal(typeof (await svc.pageTotp({ fill: true }, sender(TWO_FACTOR))).code, 'string', 'the frame did not use up the code');
+});
+
+test('autofill/requestTotp: the current code of a login of this site, as user activity', async () => {
+  const { svc, vault, clock } = setup({ items: [
+    login({ totp: TOTP }),
+    login({ id: 'i2', username: 'bob', totp: null }),
+    login({ id: 'i3', url: 'https://other.example', totp: TOTP }),
+  ] });
+  clock.t += 45_000;
+  assert.deepEqual(await svc.requestTotp({ itemId: 'i1' }, sender(TWO_FACTOR)), { code: await generateTotp(TOTP, clock.t) });
+  assert.equal(vault.state.touches, 1);
+  await rejectsWith(svc.requestTotp({ itemId: 'i2' }, sender(TWO_FACTOR)), 'NOT_FOUND');
+  await rejectsWith(svc.requestTotp({ itemId: 'i3' }, sender(TWO_FACTOR)), 'DOMAIN_MISMATCH');
+  await rejectsWith(svc.requestTotp({ itemId: 'i1' }, sender('https://evil.example/f', TWO_FACTOR, { frameId: 3 })), 'FORBIDDEN');
+  await rejectsWith(svc.requestTotp({ itemId: 'nope' }, sender(TWO_FACTOR)), 'NOT_FOUND');
+  await rejectsWith(setup({ locked: true, items: [login({ totp: TOTP })] }).svc.requestTotp({ itemId: 'i1' }, sender(TWO_FACTOR)), 'LOCKED');
 });

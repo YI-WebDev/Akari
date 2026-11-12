@@ -29,6 +29,8 @@
     SUGGEST_PASSWORD: 'autofill/suggestPassword',
     IDENTITIES: 'autofill/identities',
     REQUEST_IDENTITY: 'autofill/requestIdentity',
+    PAGE_TOTP: 'autofill/pageTotp',
+    REQUEST_TOTP: 'autofill/requestTotp',
     DO_FILL: 'autofill/doFill',
   };
   const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
@@ -51,6 +53,7 @@
   const MAX_IDENTITY_SCAN = 80;
   const MIN_IDENTITY_FIELDS_IN_SCOPE = 3;
   const POSTAL_DIGITS = 7;
+  const CODE_BOX_ANCESTORS = 4;
   const MAX_HINT_TEXT = 200;
   const MIN_READABLE_FONT_PX = 6;
   const MIN_READABLE_ALPHA = 0.5;
@@ -492,6 +495,14 @@
     choose: () => chooseIdentity(it.id),
   }));
 
+  const totpRows = (items) => (items || []).map((it) => ({
+    glyph: (Array.from(it.title || '?')[0] || '?').toUpperCase(),
+    hue: it.hue,
+    title: it.title || '',
+    sub: [t('認証コード'), it.username].filter(Boolean).join(' · '),
+    choose: () => chooseTotp(it.id),
+  }));
+
   const suggestionRow = (password) => ({
     glyph: '*', hue: 40, title: t('強いパスワードを使う'), sub: password, choose: chooseSuggestion,
   });
@@ -559,6 +570,7 @@
     if (s.locked) renderMenu([], lockedText());
     else if (field.role === 'new-password') renderMenu([suggestionRow(s.password)]);
     else if (field.role === 'identity') renderMenu(identityRows(s.items), s.items.length ? '' : t('アイデンティティの情報なし'));
+    else if (field.role === 'otp') renderMenu(totpRows(s.items));
     else renderMenu(loginRows(s.items));
   }
 
@@ -693,11 +705,11 @@
     maxLength: input.maxLength > 0 ? input.maxLength : undefined,
   });
 
-  const followsFocus = () => field.role === 'new-password' || field.role === 'identity';
+  const followsFocus = () => field.role === 'new-password' || field.role === 'identity' || field.role === 'otp';
 
   function opensByItself(input) {
     if (!field.state || field.state.locked || field.open || input.value) return false;
-    if (field.role === 'identity') return true;
+    if (field.role === 'identity' || field.role === 'otp') return true;
     return field.role === 'new-password' && newPasswordFields(scopeOf(input)).every((p) => replaceable(p, input));
   }
 
@@ -739,13 +751,94 @@
     if (opensByItself(input)) openMenu(true);
   }
 
+  const OTP_TYPES = new Set(['text', 'tel', 'number', 'password']);
+  const OTP_HINT = /(^|[^a-z])t?otp|2fa|(^|[^a-z])mfa|one[-_ ]?time|two[-_ ]?(factor|step)|verif[a-z]*[-_ ]?(code|token)|auth[a-z]*[-_ ]?(code|token|app)|passcode|認証コード|確認コード|認証アプリ|ワンタイム|[2二] ?段階/i;
+  const NOT_OTP = /card|cvv|cvc|cvn|カード|coupon|クーポン|captcha|画像|promo|invit|招待|referral|zip|postal|郵便|sms|text message|ショートメッセージ|e-?mail|メール|phone[-_]|mobile[-_]|電話|backup|recovery|バックアップ|リカバリ/i;
+  let askingCodeFor = null;
+
+  const marksOneTimeCode = (el) => acTokens(el).includes('one-time-code');
+
+  function isOtpField(el) {
+    if (!el || el.tagName !== 'INPUT' || !OTP_TYPES.has(el.type) || !usable(el)) return false;
+    const name = [el.name, el.id].filter(Boolean).join(' ').replace(CAMEL_EDGE, '$1_$2');
+    const text = [name, el.getAttribute('aria-label'), labelText(el), el.placeholder].filter(Boolean).join(' ').slice(0, MAX_HINT_TEXT);
+    if (NOT_OTP.test(text)) return false;
+    return marksOneTimeCode(el) || (el.type !== 'password' && OTP_HINT.test(text));
+  }
+
+  function codeTargets(input, length) {
+    if (input.maxLength !== 1) return [input];
+    let node = input.parentElement;
+    for (let i = 0; node && i < CODE_BOX_ANCESTORS; i++, node = node.parentElement) {
+      const boxes = Array.from(node.querySelectorAll('input')).filter((b) => b.maxLength === 1 && usable(b));
+      if (boxes.length === length) return boxes;
+      if (boxes.length > length) break;
+    }
+    return [];
+  }
+
+  function fillCode(input, code, onlyIfEmpty = false) {
+    const targets = input.isConnected ? codeTargets(input, code.length) : [];
+    if (!targets.length || (onlyIfEmpty && targets.some((el) => el.value))) return false;
+    filling = true;
+    try {
+      targets.forEach((el, i) => fillField(el, targets.length === 1 ? code : code[i]));
+      targets[targets.length - 1].focus({ preventScroll: true });
+    } catch {
+    } finally {
+      filling = false;
+    }
+    return true;
+  }
+
+  async function chooseTotp(itemId) {
+    const input = field.el;
+    closeMenu();
+    const res = await send(M.REQUEST_TOTP, { itemId });
+    if (field.el !== input) return;
+    if (!res.ok) {
+      if (field.root) renderMenu([], res.code === 'LOCKED' ? lockedText() : t('このサイトでは使えません'));
+      return;
+    }
+    removeFieldUi();
+    fillCode(input, res.data.code);
+    considerFocus(deepActive());
+  }
+
+  async function onOtpFocus(input) {
+    if (askingCodeFor === input) return;
+    removeFieldUi();
+    field.el = input;
+    field.role = 'otp';
+    const token = ++field.token;
+    const fill = !input.value && document.visibilityState === 'visible' && document.hasFocus();
+    askingCodeFor = input;
+    const res = await send(M.PAGE_TOTP, { fill });
+    askingCodeFor = null;
+    if (token !== field.token || field.el !== input) return;
+    if (!res.ok || (!res.data.locked && !res.data.items.length)) {
+      quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
+      return removeFieldUi();
+    }
+    if (res.data.code && fillCode(input, res.data.code, true)) {
+      removeFieldUi();
+      return considerFocus(deepActive());
+    }
+    field.state = res.data;
+    showOrb();
+    place();
+    if (opensByItself(input)) openMenu(true);
+  }
+
   const isAddressField = (el) => el.tagName === 'INPUT' && usable(el) && ADDRESS_KINDS.includes(identityKind(el));
 
   const closesWhenFocusLeaves = () => !field.open || followsFocus();
 
   function considerFocus(target) {
     const role = target && fieldRole(target);
-    if (role === 'username' || role === 'password') onFieldFocus(target, role);
+    const asksForCode = isTop && !!target && isOtpField(target) && (!role || marksOneTimeCode(target));
+    if (asksForCode) onOtpFocus(target);
+    else if (role === 'username' || role === 'password') onFieldFocus(target, role);
     else if (role === 'new-password' && isTop) onNewPasswordFocus(target);
     else if (!role && isTop && target && isAddressField(target)) onIdentityFocus(target);
     else if (field.el && closesWhenFocusLeaves()) removeFieldUi();
