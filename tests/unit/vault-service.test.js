@@ -389,7 +389,7 @@ test('ゴミ箱: restore puts items back (into the first vault when theirs is go
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'S', password: 'secret-pw', note: 'n' } });
   const s = (await svc.readData()).items.find((i) => i.title === 'S');
   const shown = (await call(MSG.VAULT_DELETE_ITEM, { id: s.id })).trash[0];
-  assert.deepEqual(Object.keys(shown).sort(), ['deletedAt', 'hue', 'id', 'title', 'type', 'vault']);
+  assert.deepEqual(Object.keys(shown).sort(), ['attachmentBytes', 'deletedAt', 'hue', 'id', 'title', 'type', 'vault']);
   await call(MSG.VAULT_PURGE_ITEMS, { all: true });
 
   await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'E', vault: 'family' } });
@@ -480,11 +480,11 @@ test('export/import: backup opens with its own password and merges by id', async
   await b.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'From B' } });
   await assert.rejects(b.call(MSG.VAULT_IMPORT, { json, masterPassword: 'other-password-b' }), { code: 'BAD_PASSWORD' });
   await assert.rejects(b.call(MSG.VAULT_IMPORT, { json: '{"x":1}', masterPassword: PW }), { code: 'INVALID' });
-  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1 });
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
   const data = await b.svc.readData();
   assert.deepEqual(data.items.map((i) => i.title).sort(), ['From A', 'From B']);
   assert.deepEqual(data.items.find((i) => i.id === item.id).passkeys, [pk]);
-  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 0 }, 'Re-importing the same backup changes nothing (not newer)');
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 0, skippedAttachments: 0 }, 'Re-importing the same backup changes nothing (not newer)');
 
   await b.call(MSG.VAULT_LOCK);
   await assert.rejects(b.call(MSG.VAULT_EXPORT), { code: 'LOCKED' });
@@ -641,7 +641,7 @@ function sampleFields(type) {
 test('saveItem: all 18 types round-trip through saveItem → getAll, also after a SW restart', async () => {
   const { call, chrome } = await setupUnlocked();
   assert.equal(TYPE_IDS.length, 18);
-  const extra = [{ label: '会員サイト', value: 'https://example.com', secret: false }, { label: '合言葉', value: 'yama', secret: true }];
+  const extra = [{ label: '会員サイト', value: 'https://example.com', kind: 'text', secret: false }, { label: '合言葉', value: 'yama', kind: 'hidden', secret: true }];
   const saved = new Map();
   for (const type of TYPE_IDS) {
     const item = { type, title: 'T ' + type, note: 'n', vault: 'work', extra };
@@ -667,7 +667,7 @@ test('saveItem: all 18 types round-trip through saveItem → getAll, also after 
 
 test('saveItem: partial saves keep fields/extra, full saves replace them; bad payloads write nothing', async () => {
   const { call, chrome, clock } = await setupUnlocked();
-  const extra = [{ label: 'PIN2', value: '9999', secret: true }];
+  const extra = [{ label: 'PIN2', value: '9999', kind: 'hidden', secret: true }];
   const { item: card } = await call(MSG.VAULT_SAVE_ITEM, {
     item: { type: 'card', title: 'Visa', fields: { cardholder: 'HINA', number: '4111 1111 1111 1111', expiry: '2030-12', cvv: '123' }, extra },
   });
@@ -892,4 +892,430 @@ test('saveItem keeps the replaced password; vault/pendingPassword holds, confirm
   await assert.rejects(call(MSG.VAULT_PENDING_PASSWORD, { id: 'nope', action: 'discard' }), { code: 'NOT_FOUND' });
   const note = (await call(MSG.VAULT_SAVE_ITEM, { item: { type: 'note', title: 'N', note: 'n' } })).item;
   await assert.rejects(call(MSG.VAULT_PENDING_PASSWORD, { id: note.id, action: 'set', password: 'x' }), { code: 'INVALID' });
+});
+
+const ATT_PREFIX = 'akari.att.';
+const fileB64 = (s) => toB64(new TextEncoder().encode(s));
+const attKeys = (chrome) => [...chrome.storage.local.map.keys()].filter((k) => k.startsWith(ATT_PREFIX)).sort();
+const keyOf = (id) => ATT_PREFIX + id;
+const hasKeyField = (v) => JSON.stringify(v).includes('"key"');
+
+async function withItem(opts) {
+  const ctx = await setupUnlocked(opts);
+  const { item } = await ctx.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Doc', note: 'n' } });
+  return { ...ctx, item };
+}
+
+function failVaultWrites(chrome) {
+  const local = chrome.storage.local;
+  const realSet = local.set.bind(local);
+  local.set = async (obj) => {
+    if (VAULT_KEY in obj) throw new Error('disk full');
+    return realSet(obj);
+  };
+  return () => { local.set = realSet; };
+}
+
+test('attachments: add and get round trip; the per-file key never leaves the service worker', async () => {
+  const { call, svc, chrome, clock, item } = await withItem();
+  clock.t += 5000;
+  const added = await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'scan.pdf', mime: 'Application/PDF', data: fileB64('hello pdf') });
+  const [meta] = added.item.attachments;
+  assert.deepEqual(Object.keys(meta).sort(), ['addedAt', 'id', 'mime', 'name', 'size']);
+  assert.deepEqual([meta.name, meta.mime, meta.size, meta.addedAt], ['scan.pdf', 'application/pdf', 9, clock.t]);
+  assert.match(meta.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.equal(added.item.updatedAt, clock.t);
+
+  const box = chrome.storage.local.map.get(keyOf(meta.id));
+  assert.deepEqual(Object.keys(box).sort(), ['ct', 'iv', 'v']);
+  assert.equal(box.v, 1);
+  assert.ok(!JSON.stringify(box).includes(fileB64('hello pdf')));
+  const storedItem = (await svc.readData()).items[0];
+  assert.equal(fromB64(storedItem.attachments[0].key).length, 32);
+  assert.equal(hasKeyField(svc.sanitizeItem(storedItem)), false);
+
+  assert.deepEqual(await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: meta.id }),
+    { name: 'scan.pdf', mime: 'application/pdf', size: 9, data: fileB64('hello pdf') });
+
+  const second = await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'b.bin', mime: 'text/plain; charset=utf-8', data: fileB64('b') });
+  assert.deepEqual(second.item.attachments.map((a) => [a.name, a.mime]), [['scan.pdf', 'application/pdf'], ['b.bin', '']]);
+
+  const outputs = [
+    added, second, await call(MSG.VAULT_GET_ALL), await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, title: 'Doc 2' } }),
+    await call(MSG.VAULT_DELETE_ITEM, { id: item.id }), await call(MSG.VAULT_RESTORE_ITEMS, { ids: [item.id] }),
+  ];
+  for (const out of outputs) assert.equal(hasKeyField(out), false, JSON.stringify(out).slice(0, 80));
+});
+
+test('attachments: concurrent adds are applied in dispatch order and each quota check sees the earlier ones', async () => {
+  const { call, chrome, item } = await withItem();
+  const runs = Array.from({ length: 11 }, (_, i) => call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: `f${i}`, mime: '', data: fileB64('x'.repeat(11 - i)) }));
+  const results = await Promise.allSettled(runs);
+  assert.deepEqual(results.map((r) => r.status), [...Array(10).fill('fulfilled'), 'rejected']);
+  assert.equal(results[10].reason.code, 'QUOTA');
+  const { items } = await call(MSG.VAULT_GET_ALL);
+  assert.deepEqual(items[0].attachments.map((a) => a.name), Array.from({ length: 10 }, (_, i) => `f${i}`));
+  assert.equal(attKeys(chrome).length, 10);
+});
+
+test('attachments: inputs are checked before any work; failures write nothing', async () => {
+  const { call, chrome, item } = await withItem();
+  const add = (over) => call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a.txt', mime: 'text/plain', data: fileB64('x'), ...over });
+  const before = structuredClone(chrome.storage.local.map.get(VAULT_KEY));
+  for (const over of [
+    { name: 5 }, { name: '' }, { name: '   ' }, { name: '\u0000\u0007' }, { name: 'n'.repeat(256) }, { name: undefined },
+    { data: 5 }, { data: '***' }, { data: '' }, { itemId: '' }, { itemId: 7 }, { itemId: 'i'.repeat(101) },
+  ]) await assert.rejects(add(over), { code: 'INVALID' }, JSON.stringify(over).slice(0, 60));
+  const tooLong = 'A'.repeat(Math.ceil((5 * 1024 * 1024) / 3) * 4 + 4);
+  await assert.rejects(add({ data: tooLong }), { code: 'QUOTA' });
+  await assert.rejects(add({ data: toB64(new Uint8Array(5 * 1024 * 1024 + 1)) }), { code: 'QUOTA' });
+  await assert.rejects(add({ itemId: 'missing' }), { code: 'NOT_FOUND' });
+  assert.deepEqual(chrome.storage.local.map.get(VAULT_KEY), before);
+  assert.deepEqual(attKeys(chrome), []);
+
+  const odd = await add({ name: ' ..\\evil/‮txt.exe\u0000 ', mime: 'x'.repeat(101) });
+  assert.deepEqual([odd.item.attachments[0].name, odd.item.attachments[0].mime], ['.._evil_txt.exe', '']);
+  assert.equal((await add({ name: '\u{1F600}'.repeat(255), mime: 'image/svg+xml' })).item.attachments[1].mime, 'image/svg+xml');
+  const max = await add({ data: toB64(new Uint8Array(5 * 1024 * 1024).fill(7)) });
+  assert.equal(max.item.attachments[2].size, 5 * 1024 * 1024);
+
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(add({}), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: odd.item.attachments[0].id }), { code: 'LOCKED' });
+});
+
+test('attachments: per-item and vault-wide limits are QUOTA; trash counts toward the total and reports its bytes', async () => {
+  const { call, chrome, item } = await withItem();
+  for (let i = 0; i < 10; i++) await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: `f${i}`, mime: '', data: fileB64('x' + i) });
+  await assert.rejects(call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'f10', mime: '', data: fileB64('x') }), { code: 'QUOTA' });
+  assert.equal(attKeys(chrome).length, 10);
+
+  const { item: big } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Big' } });
+  const mib5 = toB64(new Uint8Array(5 * 1024 * 1024));
+  for (let i = 0; i < 6; i++) await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: big.id, name: `b${i}`, mime: '', data: mib5 });
+  const deleted = await call(MSG.VAULT_DELETE_ITEM, { id: big.id });
+  assert.equal(deleted.trash[0].attachmentBytes, 30 * 1024 * 1024);
+  const { item: plain } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Plain' } });
+  assert.deepEqual((await call(MSG.VAULT_DELETE_ITEM, { id: plain.id })).trash.map((e) => e.attachmentBytes), [0, 30 * 1024 * 1024]);
+
+  const { item: other } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Other' } });
+  const rest = toB64(new Uint8Array(32 * 1024 * 1024 - 30 * 1024 * 1024 - 20));
+  await assert.rejects(call(MSG.VAULT_ADD_ATTACHMENT, { itemId: other.id, name: 'r', mime: '', data: mib5 }), { code: 'QUOTA' });
+  await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: other.id, name: 'r', mime: '', data: rest });
+  await assert.rejects(call(MSG.VAULT_ADD_ATTACHMENT, { itemId: other.id, name: 'one more byte', mime: '', data: fileB64('z') }), { code: 'QUOTA' });
+  await assert.rejects(call(MSG.VAULT_ADD_ATTACHMENT, { itemId: big.id, name: 'trashed', mime: '', data: fileB64('z') }), { code: 'NOT_FOUND' });
+  await call(MSG.VAULT_PURGE_ITEMS, { ids: [big.id] });
+  await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: other.id, name: 'fits now', mime: '', data: mib5 });
+});
+
+test('attachments: get checks the id, the owner item, the bytes and their integrity', async () => {
+  const { call, chrome, item } = await withItem();
+  const { item: other } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Other' } });
+  const [a] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('aaa') })).item.attachments;
+  const [b] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: other.id, name: 'b', mime: '', data: fileB64('bbb') })).item.attachments;
+  const get = (itemId, attachmentId) => call(MSG.VAULT_GET_ATTACHMENT, { itemId, attachmentId });
+  for (const id of ['../akari.vault', 'x', a.id.toUpperCase(), 5, undefined]) await assert.rejects(get(item.id, id), { code: 'INVALID' }, String(id));
+  await assert.rejects(get(item.id, b.id), { code: 'NOT_FOUND' }, 'an id from another item');
+  await assert.rejects(get('missing', a.id), { code: 'NOT_FOUND' });
+
+  chrome.storage.local.map.set(keyOf(a.id), structuredClone(chrome.storage.local.map.get(keyOf(b.id))));
+  await assert.rejects(get(item.id, a.id), { code: 'INVALID' }, 'bytes of another attachment do not decrypt');
+  const box = chrome.storage.local.map.get(keyOf(b.id));
+  const ct = fromB64(box.ct);
+  ct[0] ^= 1;
+  chrome.storage.local.map.set(keyOf(b.id), { ...box, ct: toB64(ct) });
+  await assert.rejects(get(other.id, b.id), { code: 'INVALID' });
+  chrome.storage.local.map.set(keyOf(b.id), { v: 2, iv: box.iv, ct: box.ct });
+  await assert.rejects(get(other.id, b.id), { code: 'INVALID' });
+  chrome.storage.local.map.delete(keyOf(b.id));
+  await assert.rejects(get(other.id, b.id), { code: 'NOT_FOUND' });
+});
+
+test('attachments: saveItem keeps only the listed ids, refuses unknown ones, and deletes the dropped bytes', async () => {
+  const { call, svc, chrome, item } = await withItem();
+  const add = async (name) => (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name, mime: '', data: fileB64(name) })).item;
+  await add('a');
+  await add('b');
+  const [a, b, c] = (await add('c')).attachments;
+
+  const unchanged = (await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, title: 'renamed' } })).item;
+  assert.deepEqual(unchanged.attachments.map((x) => x.name), ['a', 'b', 'c']);
+  const before = structuredClone(chrome.storage.local.map.get(VAULT_KEY));
+  for (const attachments of [[{ id: 'nope' }], [{ id: a.id }, { id: crypto.randomUUID() }], 'x', [null], [a.id]]) {
+    await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, attachments } }), { code: 'INVALID' }, JSON.stringify(attachments));
+  }
+  await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { title: 'new', attachments: [{ id: a.id }] } }), { code: 'INVALID' });
+  assert.deepEqual(chrome.storage.local.map.get(VAULT_KEY), before);
+
+  const kept = (await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, attachments: [{ id: c.id, name: 'ignored', key: 'ignored' }, { id: a.id }] } })).item;
+  assert.deepEqual(kept.attachments.map((x) => x.name), ['a', 'c'], 'stored order, stored metadata');
+  assert.deepEqual(attKeys(chrome), [keyOf(a.id), keyOf(c.id)].sort());
+  assert.equal(chrome.storage.local.map.has(keyOf(b.id)), false);
+
+  const none = (await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, attachments: [] } })).item;
+  assert.equal('attachments' in none, false);
+  assert.equal('attachments' in (await svc.readData()).items[0], false);
+  assert.deepEqual(attKeys(chrome), []);
+  const fresh = (await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'new', attachments: [] } })).item;
+  assert.equal('attachments' in fresh, false);
+});
+
+test('attachments: trash and restore keep the bytes; purge and the 30-day expiry delete them', async () => {
+  const { call, chrome, clock, item } = await withItem();
+  const { item: two } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Two' } });
+  const [a] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('aaa') })).item.attachments;
+  const [b] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: two.id, name: 'b', mime: '', data: fileB64('bbb') })).item.attachments;
+
+  const trashed = await call(MSG.VAULT_DELETE_ITEMS, { ids: [item.id, two.id] });
+  assert.deepEqual(trashed.trash.map((e) => e.attachmentBytes), [3, 3]);
+  assert.deepEqual(attKeys(chrome), [keyOf(a.id), keyOf(b.id)].sort());
+  const back = await call(MSG.VAULT_RESTORE_ITEMS, { ids: [item.id] });
+  assert.deepEqual(back.items[0].attachments.map((x) => x.id), [a.id]);
+  assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: a.id })).data, fileB64('aaa'));
+
+  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  await call(MSG.VAULT_PURGE_ITEMS, { ids: [item.id] });
+  assert.deepEqual(attKeys(chrome), [keyOf(b.id)]);
+
+  clock.t += 30 * 24 * 3600 * 1000;
+  await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'any write prunes' } });
+  assert.deepEqual(attKeys(chrome), []);
+});
+
+test('attachments: when sealing the vault fails the new bytes are removed; a failed delete does not fail the write', async () => {
+  const { call, chrome, item } = await withItem();
+  const restore = failVaultWrites(chrome);
+  await assert.rejects(call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('a') }), /disk full/);
+  assert.deepEqual(attKeys(chrome), []);
+  restore();
+
+  const [a] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('a') })).item.attachments;
+  const local = chrome.storage.local;
+  const realRemove = local.remove.bind(local);
+  local.remove = async (keys) => {
+    if ([keys].flat().some((k) => k.startsWith(ATT_PREFIX))) throw new Error('io');
+    return realRemove(keys);
+  };
+  const saved = await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, attachments: [] } });
+  assert.equal('attachments' in saved.item, false);
+  assert.ok(chrome.storage.local.map.has(keyOf(a.id)), 'orphan left behind, write still succeeded');
+});
+
+test('attachments: Akari backup carries the encrypted bytes and restores them; missing or bad ones are skipped and counted', async () => {
+  const a = await withItem();
+  const add = async (itemId, name, text) => (await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId, name, mime: 'text/plain', data: fileB64(text) })).item.attachments.at(-1);
+  const one = await add(a.item.id, 'one.txt', 'first');
+  const two = await add(a.item.id, 'two.txt', 'second');
+  const { item: gone } = await a.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Trashed' } });
+  const trashed = await add(gone.id, 'trash.txt', 'trash');
+  await a.call(MSG.VAULT_DELETE_ITEM, { id: gone.id });
+
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  const backup = JSON.parse(json);
+  assert.deepEqual(Object.keys(backup.attachments).sort(), [one.id, two.id].sort(), 'live items only');
+  assert.deepEqual(backup.attachments[one.id], a.chrome.storage.local.map.get(keyOf(one.id)));
+  assert.ok(!json.includes(fileB64('first')) && !json.includes('one.txt'));
+
+  const b = await setupUnlocked();
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.deepEqual(await b.call(MSG.VAULT_GET_ATTACHMENT, { itemId: a.item.id, attachmentId: two.id }),
+    { name: 'two.txt', mime: 'text/plain', size: 6, data: fileB64('second') });
+  assert.deepEqual(attKeys(b.chrome), [keyOf(one.id), keyOf(two.id)].sort());
+  assert.equal(attKeys(b.chrome).includes(keyOf(trashed.id)), false);
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 0, skippedAttachments: 0 });
+
+  const broken = structuredClone(backup);
+  delete broken.attachments[one.id];
+  const ct = fromB64(broken.attachments[two.id].ct);
+  ct[3] ^= 1;
+  broken.attachments[two.id].ct = toB64(ct);
+  const c = await setupUnlocked();
+  assert.deepEqual(await c.call(MSG.VAULT_IMPORT, { json: JSON.stringify(broken), masterPassword: PW }), { count: 1, skippedAttachments: 2 });
+  assert.equal('attachments' in (await c.svc.readData()).items[0], false);
+  assert.deepEqual(attKeys(c.chrome), []);
+
+  const swapped = structuredClone(backup);
+  swapped.attachments[one.id] = backup.attachments[two.id];
+  const d = await setupUnlocked();
+  assert.deepEqual(await d.call(MSG.VAULT_IMPORT, { json: JSON.stringify(swapped), masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  assert.deepEqual((await d.call(MSG.VAULT_GET_ALL)).items[0].attachments.map((x) => x.id), [two.id]);
+
+  for (const bad of [{ ...backup, attachments: [] }, { ...backup, attachments: 'x' }, { ...backup, attachments: null }]) {
+    await assert.rejects(d.call(MSG.VAULT_IMPORT, { json: JSON.stringify(bad), masterPassword: PW }), { code: 'INVALID' });
+  }
+});
+
+test('attachments: an old backup without attachments imports as before; incoming metadata never takes over stored bytes', async () => {
+  const a = await withItem();
+  const [att] = (await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: a.item.id, name: 'a', mime: '', data: fileB64('mine') })).item.attachments;
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  const old = JSON.parse(json);
+  delete old.attachments;
+  const b = await setupUnlocked();
+  await b.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'B' } });
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json: JSON.stringify(old), masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  const noAtt = await setupUnlocked();
+  const { json: plain } = await noAtt.call(MSG.VAULT_EXPORT);
+  assert.equal('attachments' in JSON.parse(plain), false);
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json: plain, masterPassword: PW }), { count: 0, skippedAttachments: 0 });
+
+  const forged = structuredClone(await a.svc.readData());
+  forged.items[0].id = 'other-item';
+  forged.items[0].attachments[0].key = toB64(randomBytes(32));
+  const { createVaultRecord, exportBackup, encryptAttachment } = await import('../../extension/src/lib/vault.js');
+  const forgedBox = await encryptAttachment(forged.items[0].attachments[0].key, att.id, new TextEncoder().encode('evil'));
+  const forgedJson = exportBackup(await createVaultRecord(PW, forged, { iterations: 1000 }), 1, { [att.id]: forgedBox });
+  const storedBox = structuredClone(a.chrome.storage.local.map.get(keyOf(att.id)));
+  assert.deepEqual(await a.call(MSG.VAULT_IMPORT, { json: forgedJson, masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  assert.deepEqual(a.chrome.storage.local.map.get(keyOf(att.id)), storedBox);
+  assert.equal((await a.call(MSG.VAULT_GET_ATTACHMENT, { itemId: a.item.id, attachmentId: att.id })).data, fileB64('mine'));
+});
+
+test('attachments: import respects the vault total and rolls back written bytes when sealing fails', async () => {
+  const a = await withItem();
+  const mib5 = toB64(new Uint8Array(5 * 1024 * 1024).fill(1));
+  await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: a.item.id, name: 'big', mime: '', data: mib5 });
+  await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: a.item.id, name: 'small', mime: '', data: fileB64('s') });
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+
+  const b = await withItem();
+  for (let i = 0; i < 6; i++) await b.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: b.item.id, name: 'f' + i, mime: '', data: mib5 });
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  const imported = (await b.call(MSG.VAULT_GET_ALL)).items.find((i) => i.id === a.item.id);
+  assert.deepEqual(imported.attachments.map((x) => x.name), ['small']);
+  assert.equal(attKeys(b.chrome).length, 7);
+
+  const c = await setupUnlocked();
+  failVaultWrites(c.chrome);
+  await assert.rejects(c.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), /disk full/);
+  assert.deepEqual(attKeys(c.chrome), []);
+});
+
+test('attachments: still readable after the master password changes', async () => {
+  const { call, item } = await withItem();
+  const [att] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('kept') })).item.attachments;
+  await call(MSG.VAULT_CHANGE_PASSWORD, { current: PW, next: 'brand-new-password' });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: 'brand-new-password' });
+  assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: att.id })).data, fileB64('kept'));
+});
+
+test('attachments: a backup entry with malformed metadata is dropped and counted, the item and its other files are imported', async () => {
+  const a = await withItem();
+  const [good] = (await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: a.item.id, name: 'good.txt', mime: '', data: fileB64('good') })).item.attachments;
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  const boxes = JSON.parse(json).attachments;
+  const data = await a.svc.readData();
+  const stored = data.items[0].attachments[0];
+  data.items[0].attachments.push({ ...stored, id: crypto.randomUUID(), size: 64 * 1024 * 1024 }, { ...stored, id: 'not-an-id' });
+  const { createVaultRecord, exportBackup } = await import('../../extension/src/lib/vault.js');
+  const forged = exportBackup(await createVaultRecord(PW, data, { iterations: 1000 }), 1, boxes);
+
+  const b = await setupUnlocked();
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json: forged, masterPassword: PW }), { count: 1, skippedAttachments: 2 });
+  const [item] = (await b.call(MSG.VAULT_GET_ALL)).items;
+  assert.deepEqual([item.title, item.attachments.map((x) => x.id)], ['Doc', [good.id]]);
+  assert.equal((await b.call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: good.id })).data, fileB64('good'));
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json: forged, masterPassword: PW }), { count: 0, skippedAttachments: 0 },
+    'items that are not merged count nothing');
+});
+
+async function twoProfiles() {
+  const p1 = await withItem();
+  const p2 = await setupUnlocked();
+  await p2.call(MSG.VAULT_IMPORT, { json: (await p1.call(MSG.VAULT_EXPORT)).json, masterPassword: PW });
+  p1.clock.t += 1e9;
+  const x = p1.item.id;
+  const addTo = async (p, name) => (await p.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: x, name, mime: '', data: fileB64(name) })).item.attachments.at(-1);
+  return { p1, p2, x, addTo };
+}
+
+test('attachments: importing a newer version of an item keeps the files only this vault has', async () => {
+  const { p1, p2, x, addTo } = await twoProfiles();
+  const f = await addTo(p2, 'only-here');
+  await p1.call(MSG.VAULT_SAVE_ITEM, { item: { id: x, password: 'changed later' } });
+  const { json } = await p1.call(MSG.VAULT_EXPORT);
+  assert.deepEqual(await p2.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  const item = (await p2.svc.readData()).items.find((i) => i.id === x);
+  assert.equal(item.password, 'changed later');
+  assert.deepEqual(item.attachments.map((a) => a.id), [f.id]);
+  assert.ok(p2.chrome.storage.local.map.has(keyOf(f.id)));
+  assert.equal((await p2.call(MSG.VAULT_GET_ATTACHMENT, { itemId: x, attachmentId: f.id })).data, fileB64('only-here'));
+});
+
+test('attachments: a newer incoming item adds its new files after the stored ones', async () => {
+  const p1 = await withItem();
+  const x = p1.item.id;
+  const g = (await p1.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: x, name: 'g', mime: '', data: fileB64('g') })).item.attachments[0];
+  const p2 = await setupUnlocked();
+  await p2.call(MSG.VAULT_IMPORT, { json: (await p1.call(MSG.VAULT_EXPORT)).json, masterPassword: PW });
+  p1.clock.t += 1e9;
+  const f = (await p2.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: x, name: 'f', mime: '', data: fileB64('f') })).item.attachments.at(-1);
+  const h = (await p1.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: x, name: 'h', mime: '', data: fileB64('h') })).item.attachments.at(-1);
+  const { json } = await p1.call(MSG.VAULT_EXPORT);
+  assert.deepEqual(await p2.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  const item = (await p2.call(MSG.VAULT_GET_ALL)).items.find((i) => i.id === x);
+  assert.deepEqual(item.attachments.map((a) => a.id), [g.id, f.id, h.id]);
+  for (const [a, text] of [[g, 'g'], [f, 'f'], [h, 'h']]) {
+    assert.equal((await p2.call(MSG.VAULT_GET_ATTACHMENT, { itemId: x, attachmentId: a.id })).data, fileB64(text), text);
+  }
+});
+
+test('attachments: an incoming entry reusing a stored id with another key never replaces the stored file', async () => {
+  const { p1, p2, x, addTo } = await twoProfiles();
+  const f = await addTo(p2, 'mine');
+  const data = await p1.svc.readData();
+  const item = data.items.find((i) => i.id === x);
+  item.updatedAt = p1.clock.t;
+  item.attachments = [{ ...f, key: toB64(randomBytes(32)) }];
+  const { createVaultRecord, exportBackup, encryptAttachment } = await import('../../extension/src/lib/vault.js');
+  const box = await encryptAttachment(item.attachments[0].key, f.id, new TextEncoder().encode('evil'));
+  const json = exportBackup(await createVaultRecord(PW, data, { iterations: 1000 }), 1, { [f.id]: box });
+  const storedBox = structuredClone(p2.chrome.storage.local.map.get(keyOf(f.id)));
+  assert.deepEqual(await p2.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  assert.deepEqual(p2.chrome.storage.local.map.get(keyOf(f.id)), storedBox);
+  assert.equal((await p2.call(MSG.VAULT_GET_ATTACHMENT, { itemId: x, attachmentId: f.id })).data, fileB64('mine'));
+});
+
+test('attachments: stored files plus new incoming ones stay within the per-item limit, the extra ones are counted', async () => {
+  const { p1, p2, x, addTo } = await twoProfiles();
+  const stored = [];
+  for (let i = 0; i < 9; i++) stored.push(await addTo(p2, 'stored' + i));
+  const incoming = [];
+  for (let i = 0; i < 3; i++) incoming.push(await addTo(p1, 'incoming' + i));
+  const { json } = await p1.call(MSG.VAULT_EXPORT);
+  assert.deepEqual(await p2.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 2 });
+  const item = (await p2.call(MSG.VAULT_GET_ALL)).items.find((i) => i.id === x);
+  assert.deepEqual(item.attachments.map((a) => a.id), [...stored, incoming[0]].map((a) => a.id));
+  assert.equal(attKeys(p2.chrome).length, 10);
+});
+
+test('attachments: importing an item that is in the trash keeps the files of the trashed copy', async () => {
+  const { call, chrome, item } = await withItem();
+  const add = async (name) => (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name, mime: '', data: fileB64(name) })).item.attachments.at(-1);
+  const g = await add('g');
+  const { json } = await call(MSG.VAULT_EXPORT);
+  const f = await add('f');
+  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  assert.deepEqual(await call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  const all = await call(MSG.VAULT_GET_ALL);
+  assert.deepEqual(all.items.find((i) => i.id === item.id).attachments.map((a) => a.id), [g.id, f.id]);
+  assert.equal(all.trash.some((e) => e.id === item.id), false);
+  assert.ok(chrome.storage.local.map.has(keyOf(f.id)));
+  for (const [a, text] of [[g, 'g'], [f, 'f']]) {
+    assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: a.id })).data, fileB64(text), text);
+  }
+});
+
+test('attachments: an incoming copy without files does not erase the files of the trashed copy', async () => {
+  const { call, chrome, item } = await withItem();
+  const { json } = await call(MSG.VAULT_EXPORT);
+  const [f] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'f', mime: '', data: fileB64('f') })).item.attachments;
+  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  assert.deepEqual(await call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  const all = await call(MSG.VAULT_GET_ALL);
+  assert.deepEqual(all.items.find((i) => i.id === item.id).attachments.map((a) => a.id), [f.id]);
+  assert.deepEqual(all.trash, []);
+  assert.ok(chrome.storage.local.map.has(keyOf(f.id)));
+  assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: f.id })).data, fileB64('f'));
 });

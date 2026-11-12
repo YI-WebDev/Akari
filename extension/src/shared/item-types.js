@@ -176,6 +176,10 @@ export function optionLabel(typeId, key, optionId) {
 export const hasTemplate = (id) => !!BY_ID.get(id)?.fields.length;
 export const isSecretKind = (kind) => kind === 'secret' || kind === 'secret-multiline';
 
+export const EXTRA_KINDS = Object.freeze(['text', 'hidden', 'totp', 'date']);
+export const isSecretExtraKind = (kind) => kind === 'hidden' || kind === 'totp';
+export const extraKind = (e) => (EXTRA_KINDS.includes(e?.kind) ? e.kind : e?.secret ? 'hidden' : 'text');
+
 export const LIMITS = Object.freeze({
   fieldValue: 4096,
   multilineValue: 16384,

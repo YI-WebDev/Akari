@@ -173,7 +173,7 @@ test('every item type through the real service worker: save, import dedupe, back
     r = await send('vault/getAll');
     for (const type of TYPE_IDS) {
       const it = r.data.items.find((i) => i.id === ids[type]);
-      assert.deepEqual([it.type, it.extra], [type, extra], type);
+      assert.deepEqual([it.type, it.extra], [type, [{ ...extra[0], kind: 'hidden' }]], type);
       if (hasTemplate(type)) assert.deepEqual(it.fields, sample(type), type);
     }
 
@@ -211,7 +211,7 @@ test('every item type through the real service worker: save, import dedupe, back
     const before = (await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey);
     assert.equal((await send('vault/deleteItem', { id: ids.sshKey })).ok, true);
     r = await send('vault/import', { json, masterPassword: MASTER });
-    assert.deepEqual(r, { ok: true, data: { count: 1 } });
+    assert.deepEqual(r, { ok: true, data: { count: 1, skippedAttachments: 0 } });
     assert.deepEqual((await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey), before);
     assert.deepEqual(ext.errors, []);
   } finally {

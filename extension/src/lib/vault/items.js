@@ -1,6 +1,10 @@
 import { randomInt } from '../../shared/bytes.js';
-import { TYPE_IDS, typeOf, hasTemplate, isSecretKind, LIMITS } from '../../shared/item-types.js';
+import {
+  TYPE_IDS, typeOf, hasTemplate, isSecretKind, LIMITS, EXTRA_KINDS, isSecretExtraKind,
+} from '../../shared/item-types.js';
+import { parseOtpauthUri } from '../totp.js';
 import { invalid, isObject, isHue, MAX_VAULT_ID_LENGTH } from './common.js';
+import { normalizeAttachments, keepAttachments } from './attachments.js';
 
 export const FIELD_CAPS = Object.freeze({ title: 200, url: 2048, username: 512, password: 1024, note: 10000 });
 const LOGIN_ONLY = Object.freeze(['url', 'username', 'password', 'totp']);
@@ -142,17 +146,41 @@ function normalizeFields(type, fields) {
   return out;
 }
 
+function normalizeExtraValue(kind, value) {
+  if (kind !== 'date' && kind !== 'totp') return value;
+  const v = value.trim();
+  if (!v) return '';
+  if (kind === 'date') {
+    const m = DATE_RE.exec(v);
+    if (!m || !isCalendarDate(+m[1], +m[2], +m[3])) throw invalid('Invalid extra date');
+    return v;
+  }
+  if (/^otpauth:/i.test(v)) {
+    try {
+      parseOtpauthUri(v);
+    } catch {
+      throw invalid('Invalid extra totp');
+    }
+    return v;
+  }
+  const secret = v.replace(/[\s-]/g, '').replace(/=+$/, '').toUpperCase();
+  if (!/^[A-Z2-7]{8,1024}$/.test(secret)) throw invalid('Invalid extra totp');
+  return secret;
+}
+
 function normalizeExtra(list) {
   if (!Array.isArray(list) || list.length > LIMITS.extraCount) throw invalid('Invalid extra');
   const out = [];
   for (const e of list) {
     if (!isObject(e) || typeof e.label !== 'string' || typeof e.value !== 'string'
-      || (e.secret !== undefined && typeof e.secret !== 'boolean')) throw invalid('Invalid extra field');
+      || (e.secret !== undefined && typeof e.secret !== 'boolean')
+      || (e.kind !== undefined && !EXTRA_KINDS.includes(e.kind))) throw invalid('Invalid extra field');
+    const kind = e.kind ?? (e.secret === true ? 'hidden' : 'text');
     const label = e.label.trim();
-    const value = e.value.replace(/\r\n?/g, '\n');
-    if (label.length > LIMITS.extraLabel || value.length > LIMITS.extraValue) throw invalid('extra field is too long');
-    if (!label && !value.trim()) continue;
-    out.push({ label, value, secret: e.secret === true });
+    const raw = e.value.replace(/\r\n?/g, '\n');
+    if (label.length > LIMITS.extraLabel || raw.length > LIMITS.extraValue) throw invalid('extra field is too long');
+    if (!label && !raw.trim()) continue;
+    out.push({ label, value: normalizeExtraValue(kind, raw), kind, secret: isSecretExtraKind(kind) });
   }
   return out;
 }
@@ -206,6 +234,10 @@ export function validateItem(item, stored = null) {
     else if (!isObject(item.fields) || Object.keys(item.fields).length) throw invalid('fields are not allowed for ' + type);
   }
   if (has('extra')) out.extra = normalizeExtra(item.extra);
+  if (has('attachments')) {
+    const list = stored === item ? normalizeAttachments(item.attachments).list : keepAttachments(item.attachments, stored);
+    if (stored || list.length) out.attachments = list;
+  }
   return out;
 }
 
@@ -226,6 +258,13 @@ export function sanitizeItem(item) {
     copy.passkeys = copy.passkeys.map((pk) => {
       if (!isObject(pk)) return pk;
       const { privateKey, ...rest } = pk;
+      return rest;
+    });
+  }
+  if (Array.isArray(copy.attachments)) {
+    copy.attachments = copy.attachments.map((a) => {
+      if (!isObject(a)) return a;
+      const { key, ...rest } = a;
       return rest;
     });
   }

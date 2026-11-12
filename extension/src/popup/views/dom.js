@@ -98,6 +98,14 @@ const ICONS = {
   passport: [['rect', { x: 5, y: 2, width: 14, height: 20, rx: 2 }], ['circle', { cx: 12, cy: 10, r: 3.5 }], ['path', { d: 'M9 17.5h6' }]],
   gift: [['rect', { x: 3, y: 8, width: 18, height: 4, rx: 1 }], ['path', { d: 'M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M12 8C10.5 4 7 4 7 6s2 2 5 2 5 0 5-2-3.5-2-5 2' }]],
   shieldUser: [['path', { d: 'M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z' }], ['circle', { cx: 12, cy: 10, r: 2.2 }], ['path', { d: 'M8.5 16.5a3.5 3.5 0 0 1 7 0' }]],
+  clip: [['path', { d: 'm20 11.5-8.3 8.3a5.3 5.3 0 0 1-7.5-7.5l8.6-8.6a3.5 3.5 0 0 1 5 5l-8.6 8.6a1.75 1.75 0 0 1-2.5-2.5l7.9-7.9' }]],
+  file: [['path', { d: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z' }], ['path', { d: 'M14 3v6h6' }]],
+  image: [['rect', { x: 3, y: 3, width: 18, height: 18, rx: 2 }], ['circle', { cx: 9, cy: 9, r: 1.8 }], ['path', { d: 'm21 15-5-5L5 21' }]],
+  download: [['path', { d: 'M12 4v11M7 10l5 5 5-5M5 20h14' }]],
+  upload: [['path', { d: 'M12 15V4M7 9l5-5 5 5M5 20h14' }]],
+  calendar: [['rect', { x: 3, y: 5, width: 18, height: 16, rx: 2 }], ['path', { d: 'M3 10h18M8 3v4M16 3v4' }]],
+  text: [['path', { d: 'M4 6h16M4 10h11M4 14h16M4 18h8' }]],
+  otp: [['path', { d: 'M4 6h4M10 6h4M16 6h4' }], ['path', { d: 'M5 12v8M9.67 12v8M14.33 14.5v5.5M19 17v3' }]],
 };
 
 export function icon(name, size = 14, strokeWidth) {

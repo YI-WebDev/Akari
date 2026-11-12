@@ -448,7 +448,7 @@ test('validateItem: template fields are normalized and checked per kind', () => 
 test('validateItem: extra on any type, with count and length limits', () => {
   for (const type of TYPE_IDS) {
     const extra = [{ label: ' PIN ', value: ' 12\r\n34', secret: true }, { label: '', value: ' ', secret: false }, { label: 'x', value: '' }];
-    assert.deepEqual(validateItem({ type, extra }).extra, [{ label: 'PIN', value: ' 12\n34', secret: true }, { label: 'x', value: '', secret: false }], type);
+    assert.deepEqual(validateItem({ type, extra }).extra, [{ label: 'PIN', value: ' 12\n34', kind: 'hidden', secret: true }, { label: 'x', value: '', kind: 'text', secret: false }], type);
   }
   assert.deepEqual(validateItem({ extra: [] }).extra, []);
   const max = Array.from({ length: LIMITS.extraCount }, (_, i) => ({ label: 'l' + i, value: 'v', secret: false }));
@@ -508,7 +508,7 @@ test('sanitizeItem leaves fields and extra intact', () => {
 
 test('backup export/import keeps fields and extra; legacy note keys; invalid typed items dropped', async () => {
   const data = defaultData(1000);
-  const extra = [{ label: 'メモ欄', value: 'v', secret: false }, { label: '暗証', value: '0000', secret: true }];
+  const extra = [{ label: 'メモ欄', value: 'v', kind: 'text', secret: false }, { label: '暗証', value: '0000', kind: 'hidden', secret: true }];
   for (const type of TYPE_IDS.filter(hasTemplate)) data.items.push(makeItem({ type, title: type, fields: sampleFields(type), extra, vault: 'work' }, 1000));
   data.items.push(makeItem({ title: 'Login', url: 'https://a.example', username: 'u', password: 'p', extra }, 1000));
   const legacyEmpty = { ...makeItem({ title: 'legacy' }, 1000), type: 'note', note: 'body' };
@@ -555,7 +555,7 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   data.items.push(makeItem(visa, 1000));
   const now = 9000;
   const all = TYPE_IDS.filter(hasTemplate).map((type) => ({
-    type, title: 'All ' + type, fields: sampleFields(type), extra: [{ label: 'x', value: 'y', secret: true }],
+    type, title: 'All ' + type, fields: sampleFields(type), extra: [{ label: 'x', value: 'y', kind: 'hidden', secret: true }],
   }));
   const gh = { type: 'login', title: 'GH', url: 'https://github.com', username: 'hina', password: 'pw' };
   const res = await addImportedItems(data, [
@@ -602,9 +602,9 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   const salvaged = added.find((i) => i.title === 'Salvaged');
   assert.deepEqual(salvaged.fields, { lastName: 'Sato' });
   assert.deepEqual(salvaged.extra, [
-    { label: '生年月日', value: '1990/01/02', secret: false },
-    { label: 'bogus', value: 'kept', secret: false },
-    { label: 'port', value: '5', secret: false },
+    { label: '生年月日', value: '1990/01/02', kind: 'text', secret: false },
+    { label: 'bogus', value: 'kept', kind: 'text', secret: false },
+    { label: 'port', value: '5', kind: 'text', secret: false },
   ]);
   assert.deepEqual(added.find((i) => i.title === 'Office').fields, { ssid: 'Office', security: 'wpa2' });
   const count = (title) => added.filter((i) => i.title === title).length;
@@ -619,7 +619,7 @@ test('addImportedItems: every type, same validation, exact-duplicate dedupe, fie
   assert.equal(count('GH'), 4);
   assert.equal(count('Other title'), 0);
   const noteFields = added.find((i) => i.title === 'note fields');
-  assert.deepEqual([noteFields.fields, noteFields.extra], [undefined, [{ label: 'x', value: '1', secret: false }]]);
+  assert.deepEqual([noteFields.fields, noteFields.extra], [undefined, [{ label: 'x', value: '1', kind: 'text', secret: false }]]);
   assert.ok(!('passkeys' in added.find((i) => i.title === 'srv')));
   assert.ok(!added.some((i) => ['with url', 'bad extra'].includes(i.title)));
 });
@@ -688,4 +688,126 @@ test('backups keep the history and the pending password, cleaned; a merge loses 
   const { data: merged } = mergeData(current, incoming);
   assert.equal(merged.items[0].password, 'cur');
   assert.deepEqual(merged.items[0].passwordHistory.map((h) => h.password), ['mine', 'old1', 'older']);
+});
+
+test('validateItem: custom field kinds, kind wins over secret, values checked per kind', () => {
+  const one = (e) => validateItem({ extra: [e] }).extra[0];
+  assert.deepEqual(one({ label: 'a', value: 'x', kind: 'text' }), { label: 'a', value: 'x', kind: 'text', secret: false });
+  assert.deepEqual(one({ label: 'a', value: ' x ', kind: 'hidden' }), { label: 'a', value: ' x ', kind: 'hidden', secret: true });
+  assert.deepEqual(one({ label: 'a', value: 'x', kind: 'text', secret: true }), { label: 'a', value: 'x', kind: 'text', secret: false });
+  assert.deepEqual(one({ label: 'a', value: 'x', kind: 'hidden', secret: false }), { label: 'a', value: 'x', kind: 'hidden', secret: true });
+  assert.deepEqual(one({ label: 'a', value: 'x', secret: true }), { label: 'a', value: 'x', kind: 'hidden', secret: true });
+  assert.deepEqual(one({ label: 'a', value: 'x' }), { label: 'a', value: 'x', kind: 'text', secret: false });
+  assert.deepEqual(one({ label: 'd', value: ' 2024-02-29 ', kind: 'date' }), { label: 'd', value: '2024-02-29', kind: 'date', secret: false });
+  assert.deepEqual(one({ label: 'd', value: '  ', kind: 'date' }), { label: 'd', value: '', kind: 'date', secret: false });
+  assert.deepEqual(one({ label: 't', value: 'jbsw y3dp-ehpk 3pxp==', kind: 'totp' }),
+    { label: 't', value: 'JBSWY3DPEHPK3PXP', kind: 'totp', secret: true });
+  const uri = 'otpauth://totp/Akari:hina?secret=JBSWY3DPEHPK3PXP&issuer=Akari&digits=8';
+  assert.deepEqual(one({ label: 't', value: '  ' + uri + '\n', kind: 'totp' }), { label: 't', value: uri, kind: 'totp', secret: true });
+  assert.deepEqual(one({ label: 't', value: '', kind: 'totp' }), { label: 't', value: '', kind: 'totp', secret: true });
+  assert.deepEqual(validateItem({ extra: [{ label: '', value: ' ', kind: 'totp' }, { label: '', value: '', kind: 'date' }] }).extra, []);
+  for (const e of [
+    { label: 'a', value: 'x', kind: 'secret' }, { label: 'a', value: 'x', kind: null }, { label: 'a', value: 'x', kind: 'TEXT' },
+    { label: 'd', value: '2023-02-29', kind: 'date' }, { label: 'd', value: '2024-13-01', kind: 'date' }, { label: 'd', value: '2024/01/01', kind: 'date' },
+    { label: 'd', value: 'tomorrow', kind: 'date' }, { label: 't', value: 'not base32!', kind: 'totp' }, { label: 't', value: 'ABC', kind: 'totp' },
+    { label: 't', value: 'otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP', kind: 'totp' }, { label: 't', value: 'otpauth://totp/x', kind: 'totp' },
+    { label: 't', value: 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=7', kind: 'totp' },
+  ]) bad({ extra: [e] }, null, JSON.stringify(e));
+});
+
+test('custom field kinds: legacy rows without kind still read, search and export key on secret', async () => {
+  const { searchTextOf, extraKind } = await import('../../extension/src/shared/item-types.js');
+  const { toCsv } = await import('../../extension/src/lib/export/csv.js');
+  const { toBitwardenJson } = await import('../../extension/src/lib/export/bitwarden.js');
+  assert.deepEqual([{ secret: true }, { secret: false }, {}, { kind: 'date' }, { kind: 'bogus', secret: true }].map(extraKind),
+    ['hidden', 'text', 'text', 'date', 'hidden']);
+  const extra = validateItem({
+    extra: [
+      { label: 'plain', value: 'p-value', kind: 'text' }, { label: 'day', value: '2030-01-02', kind: 'date' },
+      { label: 'pin', value: 'h-value', kind: 'hidden' }, { label: 'otp', value: 'JBSWY3DPEHPK3PXP', kind: 'totp' },
+      { label: 'old', value: 'legacy-secret', secret: true },
+    ],
+  }).extra;
+  const item = makeItem({ type: 'note', title: 'n', extra }, 1);
+  const text = searchTextOf(item);
+  for (const v of ['p-value', '2030-01-02']) assert.ok(text.includes(v), v);
+  for (const v of ['h-value', 'JBSWY3DPEHPK3PXP', 'legacy-secret']) assert.ok(!text.includes(v), v);
+  const legacy = makeItem({ type: 'note', title: 'n', extra: [{ label: 'old-label', value: 'old-value', secret: true }] }, 1);
+  assert.equal(searchTextOf(legacy).includes('old-value'), false);
+  const data = { vaults: defaultData(1).vaults, items: [item] };
+  const fields = JSON.parse(toBitwardenJson(data)).items[0].fields;
+  assert.deepEqual(fields.map((f) => [f.name, f.type]), [['plain', 0], ['day', 0], ['pin', 1], ['otp', 1], ['old', 1]]);
+  assert.ok(toCsv(data).includes('otp: JBSWY3DPEHPK3PXP'));
+});
+
+test('validateItem: attachments are a keep-list against the stored item; backup metadata is checked strictly', () => {
+  const att = (over = {}) => ({
+    id: crypto.randomUUID(), name: 'a.pdf', mime: 'application/pdf', size: 10, addedAt: 5, key: toB64(randomBytes(32)), ...over,
+  });
+  const a = att();
+  const b = att({ name: 'b.txt', mime: '' });
+  const stored = makeItem({ title: 'x', attachments: [a, b] }, 1);
+  assert.deepEqual(validateItem({ attachments: [{ id: b.id, key: 'k', name: 'n' }] }, stored).attachments, [b]);
+  assert.deepEqual(validateItem({ attachments: [{ id: b.id }, { id: a.id }] }, stored).attachments, [a, b]);
+  assert.deepEqual(validateItem({ attachments: [] }, stored).attachments, []);
+  assert.equal('attachments' in validateItem({ title: 'y' }, stored), false);
+  assert.equal('attachments' in validateItem({ attachments: [] }), false);
+  for (const attachments of [[{ id: crypto.randomUUID() }], [{}], [a.id], 'x', null]) bad({ attachments }, stored, JSON.stringify(attachments));
+  bad({ attachments: [{ id: a.id }] }, null, 'new item');
+  bad({ attachments: [{ id: a.id }] }, makeItem({ title: 'z' }, 1), 'stored item without attachments');
+
+  const raw = (list) => ({ ...makeItem({ title: 'r' }, 1), attachments: list });
+  const ok = raw([a, { ...b, addedAt: 9e15, extra: 1 }]);
+  const [first, second] = validateItem(ok, ok).attachments;
+  assert.deepEqual(first, a);
+  assert.deepEqual(Object.keys(second).sort(), ['addedAt', 'id', 'key', 'mime', 'name', 'size']);
+  assert.ok(second.addedAt <= Date.now(), 'future addedAt is clamped');
+
+  const one = (list) => {
+    const r = raw(list);
+    const out = normalizeData({ vaults: [], items: [r] }, 5000);
+    assert.equal(out.items.length, 1, 'the item itself is always imported');
+    return [out.items[0].attachments?.map((x) => x.id) ?? [], out.skippedAttachments.get(r.id)];
+  };
+  for (const over of [
+    { id: 'not-a-uuid' }, { id: a.id.toUpperCase() }, { name: '' }, { name: 'a/b' }, { name: ' a' }, { name: 'n'.repeat(256) },
+    { mime: 'Text/Plain' }, { mime: 5 }, { size: 0 }, { size: 1.5 }, { size: 5 * 1024 * 1024 + 1 }, { size: '10' },
+    { key: toB64(randomBytes(16)) }, { key: '***' }, { key: undefined },
+  ]) assert.deepEqual(one([a, att(over), b]), [[a.id, b.id], 1], JSON.stringify(over).slice(0, 60));
+  assert.deepEqual(one([a, null, 'x', { ...a }]), [[a.id], 3], 'non-objects and a duplicate id');
+  const many = Array.from({ length: 12 }, () => att());
+  assert.deepEqual(one(many), [many.slice(0, 10).map((x) => x.id), 2], 'beyond the per-item count');
+  assert.deepEqual(one([att({ size: 0 }), ...many.slice(0, 10)]), [many.slice(0, 10).map((x) => x.id), 1], 'the count applies to valid entries');
+  for (const list of ['x', {}, 5, null]) assert.deepEqual(one(list), [[], 1], 'a non-array counts as one: ' + JSON.stringify(list));
+  assert.deepEqual(one(undefined), [[], 0]);
+  assert.deepEqual(one([]), [[], 0]);
+});
+
+test('sanitizeItem strips the per-file key from every attachment', () => {
+  const item = makeItem({ title: 'x', attachments: [{ id: crypto.randomUUID(), name: 'a', mime: '', size: 1, addedAt: 1, key: toB64(randomBytes(32)) }] }, 1);
+  const clean = sanitizeItem(item);
+  assert.deepEqual(Object.keys(clean.attachments[0]).sort(), ['addedAt', 'id', 'mime', 'name', 'size']);
+  assert.equal(typeof item.attachments[0].key, 'string');
+});
+
+test('backup import keeps every item; malformed attachment entries are removed and counted per item', async () => {
+  const data = defaultData(1000);
+  const meta = { id: crypto.randomUUID(), name: 'a.pdf', mime: 'application/pdf', size: 3, addedAt: 50, key: toB64(randomBytes(32)) };
+  data.items.push(makeItem({ title: 'with', attachments: [meta] }, 1000));
+  data.items.push(makeItem({ title: 'empty', attachments: [] }, 1000));
+  data.items.push(makeItem({ title: 'broken', attachments: [{ ...meta, id: 'x' }] }, 1000));
+  data.items.push(makeItem({ title: 'future', attachments: [{ ...meta, id: crypto.randomUUID(), size: 50 * 1024 * 1024 }, meta] }, 1000));
+  const imported = await importBackup(exportBackup(await createVaultRecord(PW, data, OPTS), 5000), PW);
+  const byTitle = new Map(imported.items.map((i) => [i.title, i]));
+  assert.deepEqual([...byTitle.keys()], ['with', 'empty', 'broken', 'future']);
+  assert.deepEqual(byTitle.get('with').attachments, [meta]);
+  assert.equal('attachments' in byTitle.get('empty'), false);
+  assert.equal('attachments' in byTitle.get('broken'), false);
+  assert.deepEqual(byTitle.get('future').attachments, [meta]);
+  assert.deepEqual(imported.items.map((i) => imported.skippedAttachments.get(i.id)), [0, 0, 1, 1]);
+  assert.deepEqual(imported.attachments, {});
+
+  const { ids, count } = mergeData(defaultData(1), imported);
+  assert.deepEqual([ids, count], [imported.items.map((i) => i.id), 4]);
+  assert.deepEqual(mergeData(structuredClone({ ...defaultData(1), items: imported.items }), imported).ids, [], 'nothing newer, nothing merged');
 });

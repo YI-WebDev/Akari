@@ -377,7 +377,7 @@ function wire() {
     renderList();
     showPasswordUpdated(id, info);
   });
-  on('saved', (item, isNew) => {
+  on('saved', (item, isNew, { keepEditor = false } = {}) => {
     if (S.phase !== 'main') return;
     replaceItem(item);
     setSel(item.id);
@@ -385,7 +385,7 @@ function wire() {
     renderList();
     renderDetail({ animate: true });
     setTimeout(() => scrollToRow(item.id), 0);
-    toast(isNew ? t('{title} を追加しました', { title: item.title }) : t('{title} を保存しました', { title: item.title }),
+    if (!keepEditor) toast(isNew ? t('{title} を追加しました', { title: item.title }) : t('{title} を保存しました', { title: item.title }),
       isNew ? null : t('変更は暗号化して保存されました'));
     refreshAutofill();
   });

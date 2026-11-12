@@ -61,6 +61,13 @@ const quiet = async (page) => {
   await page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 9000 });
 };
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
+async function addExtra(page, key, label, value) {
+  await page.click('.xf-slot');
+  await page.keyboard.press(key);
+  await page.waitForTimeout(150);
+  if (label) await page.keyboard.type(label);
+  await page.locator('.xf-row .xf-value').last().fill(value);
+}
 async function view(page, id) {
   await page.click('#typeBtn');
   await page.waitForSelector('#typeMenu.open');
@@ -1174,13 +1181,8 @@ const scenarios = {
     await settle(page, 500);
     await page.click('#genApply');
     await settle(page, 400);
-    await page.click('.ex-head .btn-line');
-    await page.fill('.ex-row:nth-child(1) .ex-label', '文字コード');
-    await page.fill('.ex-row:nth-child(1) .ex-value', 'utf8mb4');
-    await page.click('.ex-head .btn-line');
-    await page.fill('.ex-row:nth-child(2) .ex-label', 'root パスワード');
-    await page.fill('.ex-row:nth-child(2) .ex-value', 'R00t!Shop-2026');
-    await page.click('.ex-row:nth-child(2) .ex-secret');
+    await addExtra(page, '1', '文字コード', 'utf8mb4');
+    await addExtra(page, '2', 'root パスワード', 'R00t!Shop-2026');
     await page.evaluate(() => { document.querySelector('.ed-scroll').scrollTop = 250; });
     await quiet(page);
     await shot(page, 'editor-database');
@@ -1191,18 +1193,19 @@ const scenarios = {
     await shot(page, 'editor-database-saved');
     const db = await page.evaluate(() => window.__AKARI_DB__.items.at(-1));
     expect(db.type === 'database' && db.title === 'shop' && db.fields.port === '3306' && db.fields.password.length >= 8, 'stored fields');
-    expect(JSON.stringify(db.extra) === JSON.stringify([{ label: '文字コード', value: 'utf8mb4', secret: false }, { label: 'root パスワード', value: 'R00t!Shop-2026', secret: true }]), 'stored extra');
+    expect(JSON.stringify(db.extra) === JSON.stringify([{ label: '文字コード', value: 'utf8mb4', kind: 'text', secret: false }, { label: 'root パスワード', value: 'R00t!Shop-2026', kind: 'hidden', secret: true }]), 'stored extra');
     expect(await page.locator('.row[aria-selected="true"] .tag').textContent() === 'DB', 'new row selected with its tag');
     await page.click('.row[data-id="github"]');
     await settle(page, 500);
     await page.click('.d-head .ibtn[title="編集"]');
-    await page.click('.ex-head .btn-line');
-    await page.fill('.ex-row .ex-value', 'value without a name');
+    await addExtra(page, '1', '', 'value without a name');
     await page.click('.ed-foot .btn-primary');
     await settle(page, 300);
-    expect(await page.locator('.ex-row .field-err').textContent() === '項目名を入力してください', 'extra needs a label');
-    await page.fill('.ex-row .ex-label', 'リカバリーコード');
-    await page.click('.ex-row .ex-secret');
+    expect(await page.locator('.xf-row .field-err:not(:empty)').textContent() === '項目名を入力してください', 'extra needs a label');
+    await page.fill('.xf-row .xf-label', 'リカバリーコード');
+    await page.click('.xf-row .xf-kind');
+    await page.keyboard.press('2');
+    await settle(page, 200);
     await page.click('.ed-foot .btn-primary');
     await page.waitForSelector('#editor[hidden]', { state: 'attached' });
     const gh = await dbItem('github');
@@ -1277,11 +1280,10 @@ const scenarios = {
     const jcb = await dbItem('card-jcb');
     expect(jcb.fields.cvv === '1234567' && jcb.fields.expiry === '2101-07', 'any CVV; MM/YYYY kept as typed');
     await page.click('.d-head .ibtn[title="編集"]');
-    await page.click('.ex-head .btn-line');
-    await page.fill('.ex-row:last-child .ex-value', 'no name');
+    await addExtra(page, '1', '', 'no name');
     await page.click('.ed-foot .btn-primary');
     await settle(page, 300);
-    expect(await page.locator('.ex-row:last-child .field-err').textContent() === '項目名を入力してください', 'new extra needs a name');
+    expect(await page.locator('.xf-row .field-err:not(:empty)').last().textContent() === '項目名を入力してください', 'new extra needs a name');
     await ctx.close();
   },
   async light() {
@@ -1444,6 +1446,292 @@ const scenarios = {
     await ctx.close();
   },
 };
+
+const FEATURE_VARIANTS = [
+  { tag: 'ja-dark', lang: 'ja', theme: 'dark' },
+  { tag: 'ja-light', lang: 'ja', theme: 'light' },
+  { tag: 'en-dark', lang: 'en', theme: 'dark' },
+  { tag: 'en-light', lang: 'en', theme: 'light' },
+];
+const openFeature = (name, v, extra = {}) => open({ name, featureSeed: true, tabUrl: NEW_TAB, theme: v.theme, lang: v.lang, ...extra });
+async function pickItem(page, q, id) {
+  await page.fill('#search', q);
+  await page.waitForTimeout(300);
+  await page.click(`.row[data-id="${id}"]`);
+  await page.waitForTimeout(700);
+}
+async function editItem(page) {
+  await page.click('.d-head .d-acts .ibtn >> nth=0');
+  await page.waitForSelector('.ed-form .xf-box');
+  await page.waitForTimeout(700);
+}
+async function scrollEditorTo(page, sel, { end = false } = {}) {
+  await page.evaluate(([s, atEnd]) => {
+    const sc = document.querySelector('.ed-scroll');
+    const el = document.querySelector(s);
+    if (!el) throw new Error('missing ' + s);
+    const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    sc.scrollTop = atEnd ? top + el.offsetHeight - sc.clientHeight + 12 : top - 8;
+  }, [sel, end]);
+  await page.waitForTimeout(250);
+}
+async function detailToEnd(page) {
+  await page.evaluate(() => { const sc = document.getElementById('cardScroll'); sc.scrollTop = sc.scrollHeight; });
+  await page.waitForTimeout(300);
+}
+const fakeFile = (name, size, mimeType = 'application/octet-stream') => ({ name, mimeType, buffer: Buffer.alloc(size, 7) });
+async function dropOnAttachments(page, list) {
+  return page.evaluate((files) => {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(new File([new Uint8Array(f.size).fill(7)], f.name, { type: f.type }));
+    const ev = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true });
+    document.querySelector('.at-box').dispatchEvent(ev);
+    return ev.defaultPrevented;
+  }, list);
+}
+async function dragOverAttachments(page, on) {
+  await page.evaluate((enter) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x'], 'drag.txt', { type: 'text/plain' }));
+    document.querySelector('.at-slot').dispatchEvent(new DragEvent(enter ? 'dragover' : 'dragleave', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, on);
+  await page.waitForTimeout(250);
+}
+
+function featureScenarios() {
+  const out = {};
+  for (const v of FEATURE_VARIANTS) {
+    const ja = v.lang === 'ja';
+    out[`fields-${v.tag}`] = async () => {
+      const { page, ctx } = await openFeature(`fields-${v.tag}`, v);
+      const fshot = (n) => shot(page, `fields-${v.tag}-${n}`);
+      await pickItem(page, 'cloudflare', 'fields-login');
+      await detailToEnd(page);
+      await fshot('detail-login');
+      expect(await page.locator('#detail .xf-totp-row').count() === 1, 'custom TOTP row in the detail');
+      expect(await page.locator('#detail .f-label:text-is("サポート PIN")').count() === 1, 'a legacy field without kind is shown');
+
+      await editItem(page);
+      await scrollEditorTo(page, '.xf-box');
+      await fshot('editor');
+      expect(await page.locator('.ed-scroll > .box').evaluateAll((els) => els.map((e) => e.classList.contains('xf-box') ? 'x' : e.classList.contains('at-box') ? 'a' : 'b').join('')) === 'bxab',
+        'section order: fields, custom fields, attachments, vault/note');
+
+      await page.click('.xf-slot');
+      await page.waitForTimeout(300);
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(250);
+      await fshot('chooser');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      expect(await page.locator('.xf-chooser').count() === 0, 'Esc closes the chooser');
+      expect(await page.locator('#editor:not([hidden])').count() === 1 && await page.locator('.ed-foot .ed-confirm').count() === 0, 'Esc leaves the editor open and asks nothing');
+      expect(await page.evaluate(() => document.activeElement?.classList.contains('xf-slot')), 'focus returns to the slot');
+
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(200);
+      await page.keyboard.press('4');
+      await page.waitForTimeout(300);
+      await page.locator('.xf-row .xf-label').last().fill(ja ? '更新日' : 'Renewal');
+      await page.locator('.xf-row .xf-value').last().fill('2026-02-30');
+      await page.click('.xf-slot');
+      await page.waitForTimeout(200);
+      await page.keyboard.press('3');
+      await page.waitForTimeout(200);
+      await page.locator('.xf-row .xf-label').last().fill('VPN');
+      await page.locator('.xf-row .xf-value').last().fill('not-a-secret!');
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForTimeout(400);
+      await scrollEditorTo(page, '.xf-row:nth-last-child(2)');
+      await fshot('invalid');
+      expect(await page.locator('.xf-row .field-err:not(:empty)').count() === 2, 'two invalid rows');
+      expect(await page.locator('#editor:not([hidden])').count() === 1, 'invalid rows keep the editor open');
+
+      await page.fill('.xf-row:nth-last-child(2) input.xf-value', '2026/3/1');
+      await page.locator('.xf-row:nth-last-child(2) input.xf-value').blur();
+      expect(await page.inputValue('.xf-row:nth-last-child(2) input.xf-value') === '2026-03-01', 'date normalized on blur');
+      await page.fill('.xf-row:last-child input.xf-value', 'otpauth://totp/VPN:me?secret=KRSXG5CTMVRXEZLU&issuer=VPN');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      await scrollEditorTo(page, '.xf-row:nth-last-child(2)');
+      await fshot('new-rows');
+      await page.click('.xf-row:first-child .xf-kind');
+      await page.waitForTimeout(250);
+      await scrollEditorTo(page, '.xf-box');
+      await fshot('kind-chooser');
+      await page.click('.xf-row:first-child .xf-kind', { delay: 120 });
+      await page.waitForTimeout(250);
+      expect(await page.locator('.xf-chooser').count() === 0, 'a second click on the kind button closes its chooser');
+      expect(await page.evaluate(() => document.activeElement === document.querySelector('.xf-row:first-child .xf-kind')), 'focus stays on the kind button after closing');
+      await page.click('.xf-row:first-child .xf-kind', { delay: 120 });
+      await page.waitForTimeout(250);
+      expect(await page.locator('.xf-chooser').count() === 1, 'a third click opens the chooser again');
+      await page.keyboard.press('2');
+      await page.waitForTimeout(200);
+      await scrollEditorTo(page, '.xf-box');
+      await fshot('editor-filled');
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+      const ex = await page.evaluate(() => window.__AKARI_DB__.items.find((x) => x.id === 'fields-login').extra);
+      expect(ex[0].kind === 'hidden' && ex[0].secret === true && ex[0].value === '9f2c4a7e81b3d605', 'text -> hidden keeps the value');
+      expect(ex[2].value === 'JBSWY3DPEHPK3PXP' && ex[2].kind === 'totp', 'untouched TOTP round-trips');
+      expect(ex.some((x) => x.kind === 'date' && x.value === '2026-03-01'), 'new date saved');
+      expect(ex.some((x) => x.kind === 'totp' && x.value.startsWith('otpauth://')), 'new TOTP saved as URI');
+      await page.waitForTimeout(600);
+      await detailToEnd(page);
+      await fshot('detail-saved');
+
+      await pickItem(page, 'ルネサンス', 'fields-member');
+      await detailToEnd(page);
+      await fshot('detail-member');
+      expect(await page.locator('#detail .xf-totp-row').count() === 1, 'otpauth URI field shows a live code');
+      await ctx.close();
+    };
+
+    out[`attach-${v.tag}`] = async () => {
+      const { page, ctx } = await openFeature(`attach-${v.tag}`, v);
+      const ashot = (n) => shot(page, `attach-${v.tag}-${n}`);
+      await pickItem(page, '確定申告', 'att-docs');
+      await ashot('detail');
+      expect(await page.locator('#detail .at-dbox .at-ditem').count() === 4, 'four files listed');
+      expect(await page.locator('#detail > .box + .sect + div > .at-dbox').count() === 1, 'files sit right under the field box');
+      await page.click('.at-dbox .at-btn[aria-expanded]');
+      await page.waitForSelector('.at-img');
+      await page.waitForTimeout(400);
+      await page.evaluate(() => { document.getElementById('cardScroll').scrollTop = 140; });
+      await page.waitForTimeout(200);
+      await ashot('detail-preview');
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.at-dbox .at-ditem:nth-child(3) .at-btn:not([aria-expanded])')]);
+      const got = await readFile(await dl.path(), 'utf8');
+      expect(got.startsWith('e-Tax'), 'downloaded the stored bytes');
+      await quiet(page);
+
+      await editItem(page);
+      await scrollEditorTo(page, '.at-box');
+      await ashot('editor-stored');
+      await page.click('.at-box .at-item:nth-child(2) .ibtn');
+      await page.locator('.at-input').setInputFiles([fakeFile('鍵の控え.txt', 1200, 'text/plain'), fakeFile('scan-2025-11.png', 2.4 * 1024 * 1024, 'image/png')]);
+      expect(await dropOnAttachments(page, [{ name: 'big-video.mov', size: 6 * 1024 * 1024, type: 'video/quicktime' }, { name: 'empty.txt', size: 0, type: 'text/plain' }]), 'the attachments box takes the drop');
+      await page.waitForTimeout(300);
+      expect(await page.locator('.at-err:not(:empty)').count() === 1, 'too big / empty files are refused with a reason');
+      await scrollEditorTo(page, '.at-box', { end: true });
+      await ashot('editor-mixed');
+      await dragOverAttachments(page, true);
+      await ashot('editor-dragging');
+      await dragOverAttachments(page, false);
+
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(/ファイル|file/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'discard question mentions queued files');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.uploadDelay = 1500; window.__AKARI_MOCK__.failUpload = 'scan'; });
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('.ed-foot-note[data-kind="run"]:not([hidden])');
+      await page.waitForTimeout(500);
+      await scrollEditorTo(page, '.at-box', { end: true });
+      await ashot('editor-saving');
+      await page.keyboard.press('Escape');
+      expect(await page.locator('.ed-foot .ed-confirm').count() === 0 && await page.locator('#editor:not([hidden])').count() === 1, 'Esc cannot close the editor while files are being saved');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      await scrollEditorTo(page, '.at-box', { end: true });
+      await ashot('editor-failed');
+      expect(await page.locator('#editor:not([hidden])').count() === 1, 'a failed file keeps the editor open');
+      expect(await page.locator('.at-item.queued').count() === 1, 'the failed file stays queued');
+      expect(await page.locator('.at-item.removed').count() === 0, 'the removed file is gone after the save');
+      expect(await page.evaluate(() => (window.__AKARI_DB__.items.find((x) => x.id === 'att-docs').attachments || []).length) === 4, 'item saved: 4 - 1 removed + 1 added');
+      const footLines = await page.locator('.ed-foot-note').evaluate((el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+      expect(footLines === 1, 'the foot line stays on one line');
+      expect(await page.evaluate(() => document.activeElement?.matches('.ed-foot .btn-primary')), 'focus on 保存 after a partial failure');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(/外して閉じ|Close without/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'nothing to discard but the files: the question says the item is saved');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])');
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.failUpload = null; window.__AKARI_MOCK__.uploadDelay = 100; });
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached', timeout: 15000 });
+      await page.waitForTimeout(600);
+      await ashot('editor-retried');
+      expect(await page.locator('#detail .at-dbox .at-ditem').count() === 5, 'five files after the retry');
+      await ctx.close();
+    };
+  }
+
+  out['attach-limits'] = async () => {
+    for (const v of [FEATURE_VARIANTS[0], FEATURE_VARIANTS[3]]) {
+      const { page, ctx } = await openFeature(`attach-limits-${v.tag}`, v);
+      const ashot = (n) => shot(page, `attach-${v.tag}-${n}`);
+      await pickItem(page, '家の書類', 'att-full');
+      await ashot('detail-ten');
+      await editItem(page);
+      await page.evaluate(() => { const s = document.querySelector('.ed-scroll'); s.scrollTop = s.scrollHeight; });
+      await page.waitForTimeout(200);
+      await dropOnAttachments(page, [{ name: 'page-11.txt', size: 100, type: 'text/plain' }]);
+      await page.waitForTimeout(300);
+      await ashot('editor-full');
+      expect(await page.locator('.at-input').getAttribute('aria-disabled') === 'true', 'input aria-disabled at the limit');
+      expect(await page.locator('.at-slot').evaluate((el) => getComputedStyle(el).opacity) === '1', 'the limit message keeps full opacity');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      if (await page.locator('.ed-foot .ed-confirm').count()) await page.click('.ed-foot .ed-confirm .btn-mini.danger');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+
+      await page.click('#plusBtn');
+      await page.click('#newNote');
+      await page.waitForSelector('.at-box');
+      await page.waitForTimeout(600);
+      await scrollEditorTo(page, '.at-box');
+      await ashot('editor-new-empty');
+      await page.locator('.at-input').setInputFiles([fakeFile('レシート.pdf', 88 * 1024, 'application/pdf')]);
+      await page.fill('#edTitle', v.lang === 'ja' ? '領収書' : 'Receipt');
+      await scrollEditorTo(page, '.at-box');
+      await ashot('editor-new-queued');
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached', timeout: 15000 });
+      const made = await page.evaluate(() => window.__AKARI_DB__.items.at(-1));
+      expect(made.type === 'note' && made.attachments?.length === 1 && made.attachments[0].name === 'レシート.pdf', 'a new item gets its file after the first save');
+      await ctx.close();
+    }
+  };
+
+  out['fields-edge'] = async () => {
+    for (const v of [FEATURE_VARIANTS[0], FEATURE_VARIANTS[3]]) {
+      const { page, ctx } = await openFeature(`fields-edge-${v.tag}`, v);
+      const fshot = (n) => shot(page, `fields-${v.tag}-${n}`);
+      await page.click('#plusBtn');
+      await page.click('#newNote');
+      await page.waitForSelector('.xf-box');
+      await page.waitForTimeout(600);
+      await scrollEditorTo(page, '.xf-box');
+      await fshot('empty');
+      await page.evaluate(() => { const sc = document.querySelector('.ed-scroll'); sc.scrollTop = sc.scrollHeight; });
+      await page.click('.xf-slot');
+      await page.waitForTimeout(300);
+      await fshot('chooser-bottom');
+      await page.keyboard.press('1');
+      await page.waitForTimeout(200);
+      await page.locator('.xf-row .xf-label').last().fill(v.lang === 'en' ? 'A very long field name that keeps going' : 'とても長い項目名がここに入ってもはみ出さない');
+      await page.locator('.xf-row .xf-value').last().fill('line one\nline two\nline three');
+      for (let i = 0; i < 99; i++) await page.evaluate(() => document.querySelector('.xf-slot').click() || document.querySelector('.xf-opt').click());
+      await page.waitForTimeout(300);
+      const n = await page.locator('.xf-row').count();
+      expect(n === 100, `limit stops at 100 (got ${n})`);
+      expect(await page.locator('.xf-slot[aria-disabled="true"]').count() === 1, 'slot marked disabled at the limit');
+      expect(await page.locator('.xf-slot').evaluate((el) => getComputedStyle(el).opacity) === '1', 'the limit message keeps full opacity');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth) <= 680, 'the frame does not widen');
+      await page.evaluate(() => { const sc = document.querySelector('.ed-scroll'); sc.scrollTop = sc.scrollHeight; });
+      await page.waitForTimeout(200);
+      await fshot('limit');
+      await ctx.close();
+    }
+  };
+  return out;
+}
+Object.assign(scenarios, featureScenarios());
 
 try {
   for (const [name, fn] of Object.entries(scenarios)) {

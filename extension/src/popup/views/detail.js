@@ -1,6 +1,6 @@
 import { MSG } from '../../shared/messages.js';
 import {
-  typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, maskTail,
+  typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, maskTail, extraKind,
 } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
 import {
@@ -17,6 +17,8 @@ import { meterEl, setMeter } from './meter.js';
 import { tileEl } from './list.js';
 import { renderPicker } from './picker.js';
 import { toast, toastError } from './toast.js';
+import { extraDetailRows } from './extra-fields.js';
+import { attachmentsDetail } from './attachments.js';
 
 let view = null;
 
@@ -26,7 +28,11 @@ export function stopDetail() {
   cancelScramble('pass');
   for (const k of view.scr) cancelScramble(k);
   view.timers.forEach(clearTimeout);
+  const stops = view.stops;
   view = null;
+  for (const fn of stops) {
+    try { fn(); } catch (e) { console.error('[akari popup] stopDetail', e); }
+  }
 }
 
 const MAX_MASK_LENGTH = 16;
@@ -300,7 +306,7 @@ function totpRow(it) {
 }
 
 const URL_LABEL = /^(url|uri|website|web ?site|ウェブサイト|サイト|ホームページ)\s*\d*$/i;
-const isUrlExtra = (x) => !!x && !x.secret && URL_LABEL.test(str(x.label).trim())
+const isUrlExtra = (x) => !!x && extraKind(x) === 'text' && URL_LABEL.test(str(x.label).trim())
   && !!str(x.value).trim() && !str(x.value).includes('\n');
 
 function websitesRow(it) {
@@ -439,16 +445,7 @@ function fieldRows(it) {
 }
 
 function extraRows(it, skip = () => false) {
-  const rows = [];
-  (Array.isArray(it.extra) ? it.extra : []).forEach((x, i) => {
-    const value = str(x?.value);
-    if (!x || (!value && !x.label) || skip(x)) return;
-    const label = str(x.label) || t('detail.extraUntitled', null, '（無題の項目）');
-    const get = () => str(itemById(it.id)?.extra?.[i]?.value);
-    if (x.secret && value) rows.push(secretRow({ key: 'x:' + i, label, get, multiline: value.includes('\n') }));
-    else rows.push(plainRow({ key: 'x:' + i, label, kind: /^https?:\/\//i.test(value.trim()) ? 'url' : 'text', display: value, copyValue: get }));
-  });
-  return rows;
+  return extraDetailRows(it, { skip, secretRow, plainRow, copyButton, onStop: (fn) => view?.stops.push(fn) });
 }
 
 function cardLine(it) {
@@ -580,7 +577,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
     return;
   }
   D.classList.remove('is-empty');
-  view = { id: it.id, reveal, totp: null, els: {}, timers: [], shown: new Set(), scr: new Set() };
+  view = { id: it.id, reveal, totp: null, els: {}, timers: [], shown: new Set(), scr: new Set(), stops: [] };
   D.append(head(it));
   const box = h('div', { class: 'box', dataset: { f: '' } });
   if (it.type === 'login') {
@@ -608,6 +605,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
     box.append(noteRow(it.note || ''), ...extraRows(it));
   }
   D.append(box);
+  D.append(...attachmentsDetail(it, { onStop: (fn) => view?.stops.push(fn) }));
   if (it.type === 'login' && it.passkeys?.length) D.append(...passkeysBlock(it));
   if (it.type === 'login') D.append(...historyBlock(it));
   D.append(stats(it));

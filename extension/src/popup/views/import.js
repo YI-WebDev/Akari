@@ -10,7 +10,7 @@ import { t } from '../../shared/i18n.js';
 const $ = (id) => document.getElementById(id);
 const MB = 1024 * 1024;
 const MAX_BYTES = 64 * MB;
-const BACKUP_MAX = 20 * MB;
+const BACKUP_MAX = 60 * MB;
 const COLS = 4;
 const LEAD = () => t('別のパスワードマネージャーから移行するには、そのアプリでデータを書き出してから、ここで読み込みます。読み込んだら、書き出したファイルは削除してください。');
 const AKARI = Object.freeze({ id: 'akari', name: 'Akari バックアップ', exts: ['json'], own: true });
@@ -351,8 +351,9 @@ async function importBackup(pw) {
     if (!live(token)) return;
     emit('reload');
     const count = res?.count ?? 0;
-    if (my !== run) { toast(t('{n} 件を読み込みました', { n: count }), name); return; }
-    renderDone({ backup: true, count, name });
+    const skipped = Number(res?.skippedAttachments) || 0;
+    if (my !== run) { toast(t('{n} 件を読み込みました', { n: count }), skipped ? skippedText(skipped) : name); return; }
+    renderDone({ backup: true, count, skipped, name });
   } catch (e) {
     if (!live(token) || my !== run) return;
     st.busy = false;
@@ -512,6 +513,8 @@ async function doImport() {
   }
 }
 
+const skippedText = (n) => t('import.skippedAttachments', { n }, '添付ファイル {n} 件は読み込みませんでした');
+
 export const resultText = (r) => t('{n} 件を追加 · 重複 {dup} · 無効 {bad}', { n: r.added, dup: r.duplicates, bad: r.invalid })
   + (r.passkeys ? ' · ' + t('パスキー {n}', { n: r.passkeys }) : '');
 
@@ -526,7 +529,8 @@ function renderDone(r) {
   if (r.backup) {
     body = [
       cmdLine(`akari import --backup ${quote(r.name)}`),
-      h('div', { class: 'io-log', 'data-f': '' }, logLine('ok', t('{n} 件を読み込みました', { n: r.count }), r.name)),
+      h('div', { class: 'io-log', 'data-f': '' }, logLine('ok', t('{n} 件を読み込みました', { n: r.count }), r.name),
+        r.skipped > 0 ? logLine('skip', skippedText(r.skipped), t('import.skippedWhy', null, 'データがないか、容量の上限を超えます')) : null),
       h('p', { class: 'io-note', 'data-f': '' }, t('バックアップのアイテムを、いまの保管庫に追加しました。バックアップのファイルは暗号化されたままです。')),
     ];
   } else {
@@ -551,7 +555,7 @@ export function initImport({ close }) {
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
   const accepting = () => isImportPage() && !!lib && !st.busy && (st.step === 'source' || st.step === 'file');
   window.addEventListener('dragover', (e) => {
-    if (!hasFiles(e)) return;
+    if (!hasFiles(e) || e.defaultPrevented) return;
     e.preventDefault();
     if (!accepting() || !sheet.contains(e.target)) e.dataTransfer.dropEffect = 'none';
   });

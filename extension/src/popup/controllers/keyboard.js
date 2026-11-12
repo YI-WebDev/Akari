@@ -36,7 +36,11 @@ export function onKey(e) {
       e.preventDefault();
       return;
     }
-    if (editorOpen()) { requestClose(); e.preventDefault(); return; }
+    if (editorOpen()) {
+      if (!e.defaultPrevented) requestClose();
+      e.preventDefault();
+      return;
+    }
     if (S.picking && pickerConfirming()) { resetPicker(); renderPicker(); e.preventDefault(); return; }
     if (S.picking && !(ae === search && S.query)) { setPicking(false); e.preventDefault(); return; }
     if (S.query) { setQuery(''); e.preventDefault(); return; }

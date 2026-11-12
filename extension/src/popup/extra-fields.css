@@ -1,0 +1,80 @@
+.xf-box { position: relative; }
+.xf-box[hidden] { display: none; }
+
+.xf-rows { border-top: 1px solid var(--line); }
+.xf-rows:empty { display: none; }
+.xf-row { padding-top: 7px; padding-bottom: 7px; }
+
+.xf-name { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.xf-label {
+  width: 100%; height: 24px; padding: 0; border: 0; border-bottom: 1px dashed var(--border-strong); background: transparent; outline: none;
+  color: var(--text); font: inherit; font-size: 12px; caret-color: var(--accent); user-select: text;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.xf-label::placeholder { color: var(--text-faint); }
+.xf-label:focus { border-bottom-color: var(--accent); }
+.app .xf-label:focus-visible { outline: none; }
+.xf-row:has(.field.invalid) .xf-label { color: var(--danger); border-bottom-color: var(--danger-border); }
+
+.xf-kind {
+  max-width: 100%; height: 26px; margin: -4px 0 -4px -6px; padding: 0; display: inline-flex; align-items: center;
+  border: 0; background: transparent; cursor: pointer; font: inherit;
+}
+.app .xf-kind:focus-visible { outline: none; }
+.xf-kind-face {
+  min-width: 0; height: 18px; display: inline-flex; align-items: center; gap: 5px; padding: 0 5px;
+  border: 1px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1; color: var(--text-soft); white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.xf-kind svg { flex: none; stroke: var(--text-faint); transition: stroke .15s, transform .2s var(--spring-soft); }
+.xf-kind-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.xf-chev { stroke-width: 2.6; margin-left: 1px; }
+.xf-kind:hover .xf-kind-face, .xf-kind:focus-visible .xf-kind-face, .xf-kind[aria-expanded="true"] .xf-kind-face {
+  border-color: var(--accent-line); background: var(--accent-on); color: var(--accent-ink);
+}
+.xf-kind:hover svg, .xf-kind:focus-visible svg, .xf-kind[aria-expanded="true"] svg { stroke: var(--accent-strong); }
+.xf-kind[aria-expanded="true"] .xf-chev { transform: rotate(180deg); }
+
+.xf-field { align-items: flex-start; }
+.xf-field > .ibtn { margin-top: 1px; }
+.xf-field > .xf-remove { margin-left: auto; }
+.field textarea.xf-value { min-height: 28px; height: 28px; padding: 5px 0; font-size: 13px; line-height: 1.5; overflow-y: auto; }
+.field textarea.xf-value.masked { -webkit-text-security: disc; letter-spacing: .14em; white-space: pre; overflow-x: hidden; }
+.field input.xf-value { font-size: 13px; }
+.field.mono input.xf-value { font-size: 12.5px; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.field input.xf-value::placeholder, .field textarea.xf-value::placeholder { color: var(--text-faint); letter-spacing: 0; }
+
+.xf-totp { flex: 1; min-width: 0; padding: 2px 0; }
+.xf-totp .totp-col { gap: 5px; }
+.xf-totp .totp-code { font-size: 16px; }
+.xf-totp .ticks span { height: 6px; }
+.xf-totp-meta { font-size: 11px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.xf-note { font-size: 11px; line-height: 1.5; color: var(--text-soft); }
+.xf-note[hidden] { display: none; }
+
+.xf-chooser { display: flex; flex-direction: column; gap: 4px; }
+.xf-chooser-row { grid-column: 1 / -1; margin-top: 6px; }
+.xf-echo { display: flex; align-items: center; gap: 8px; min-height: 22px; padding: 0 0 0 2px; }
+.xf-cmd { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xf-cmd .ps { color: var(--accent); font-weight: 700; }
+.xf-arg { color: var(--text); }
+.xf-cmd .cursor { height: 11px; }
+
+.xf-opts .xf-opt { width: 100%; font: inherit; font-size: 12.5px; }
+.xf-opt > svg { width: 13px; height: 13px; }
+.xf-opt-name { flex: none; width: 84px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xf-opt-desc { flex: 1; min-width: 0; font-size: 11px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xf-opt .cmd-key { flex: none; width: 10px; text-align: right; }
+.xf-opt:focus { background: var(--accent-select); }
+.app .xf-opt:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
+.xf-opt.cur .xf-opt-name { color: var(--accent-ink); }
+.xf-radio { flex: none; width: 3ch; font-weight: 700; color: var(--text-soft); white-space: pre; }
+.xf-radio.on { color: var(--accent); }
+.field input.xf-value[type="password"] { letter-spacing: .14em; }
+.xf-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .xf-cmd .cursor { animation: none; }
+  .xf-kind svg { transition: none; }
+}

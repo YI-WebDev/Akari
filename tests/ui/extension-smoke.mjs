@@ -152,16 +152,19 @@ try {
     await page.click('.d-head .ibtn[title="編集"]');
     assert.equal(await page.inputValue('#edF-expiry'), '09/2029', 'months are edited as MM/YYYY');
     await page.fill('#edF-expiry', '2030-01');
-    await page.click('.ex-head .btn-line');
-    await page.fill('.ex-row .ex-label', 'カード会社 電話');
-    await page.fill('.ex-row .ex-value', '0120-000-000');
+    await page.click('.xf-slot');
+    await page.waitForSelector('.xf-opt:focus');
+    await page.keyboard.press('1');
+    await page.waitForSelector('.xf-row .xf-label:focus');
+    await page.locator('.xf-row .xf-label').last().fill('カード会社 電話');
+    await page.locator('.xf-row .xf-value').last().fill('0120-000-000');
     await page.click('.ed-foot .btn-primary');
     await page.waitForSelector('#editor[hidden]', { state: 'attached' });
     assert.match(await toastText(), /テスト JCB を保存しました/);
     card = (await items()).find((i) => i.type === 'card');
     assert.equal(card.fields.expiry, '2030-01');
     assert.equal(card.fields.number.replace(/\s/g, ''), '3530111333300000', 'number kept');
-    assert.deepEqual(card.extra, [{ label: 'カード会社 電話', value: '0120-000-000', secret: false }]);
+    assert.deepEqual(card.extra, [{ label: 'カード会社 電話', value: '0120-000-000', kind: 'text', secret: false }]);
     assert.equal(await page.locator('.f-row:has-text("カード会社 電話") .f-value').textContent(), '0120-000-000');
 
     assert.equal(await page.locator('.row').count(), 2);
@@ -193,6 +196,63 @@ try {
     await page.waitForSelector('#toast:not(.on)', { state: 'attached', timeout: 9000 });
     await del();
     assert.equal(await page.locator('.row').count(), 1);
+  }
+
+  step('custom fields of every kind + an attachment: save, show, download the same bytes, remove');
+  {
+    const getAll = () => page.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'vault/getAll' })).data.items);
+    const attKeys = () => page.evaluate(async () => Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('akari.att.')));
+    let rows = 0;
+    const addField = async (key, label, value) => {
+      await page.click('.xf-slot');
+      await page.waitForSelector('.xf-opt:focus');
+      await page.keyboard.press(key);
+      await page.waitForFunction((n) => document.querySelectorAll('.xf-row').length === n && document.activeElement?.classList.contains('xf-label'), rows + 1);
+      rows++;
+      await page.locator('.xf-row .xf-label').last().fill(label);
+      await page.locator('.xf-row .xf-value').last().fill(value);
+    };
+    await page.click('.row');
+    await page.click('.d-head .ibtn[title="編集"]');
+    await page.waitForSelector('.ed-form .xf-slot');
+    await addField('1', '会員番号', 'AK-2048');
+    await addField('2', '暗証番号', '7321');
+    await addField('3', '予備の 2FA', 'JBSW Y3DP EHPK 3PXP');
+    await page.keyboard.press('Enter');
+    await addField('4', '更新日', '2027-04-01');
+    const bytes = Buffer.from('灯 Akari attachment\nline 2\n', 'utf8');
+    await page.setInputFiles('.at-box input[type="file"]', { name: 'akari-note.txt', mimeType: 'text/plain', buffer: bytes });
+    await page.waitForSelector('.at-box .at-item:has-text("akari-note.txt")');
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('#editor[hidden]', { state: 'attached', timeout: 15000 });
+    let login = (await getAll()).find((i) => i.type === 'login');
+    assert.deepEqual(login.extra.map((x) => [x.label, x.kind, x.secret]), [
+      ['会員番号', 'text', false], ['暗証番号', 'hidden', true], ['予備の 2FA', 'totp', true], ['更新日', 'date', false],
+    ]);
+    assert.equal(login.extra[2].value, 'JBSWY3DPEHPK3PXP', 'TOTP secret normalized by the service worker');
+    assert.equal(login.attachments.length, 1);
+    assert.equal(login.attachments[0].key, undefined, 'the file key never reaches the popup');
+    assert.equal(login.attachments[0].size, bytes.length);
+    assert.equal((await attKeys()).length, 1, 'encrypted bytes stored once');
+    await page.waitForSelector('#detail .at-dbox .pk-user:text-is("akari-note.txt")');
+    for (const label of ['会員番号', '暗証番号', '予備の 2FA', '更新日']) {
+      assert.equal(await page.locator(`#detail .f-label:has-text("${label}")`).count() > 0, true, `detail shows ${label}`);
+    }
+    await page.locator('#detail .at-dbox').scrollIntoViewIfNeeded();
+    await shot('attachment');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#detail .at-btn[aria-label="akari-note.txt をダウンロード"]')]);
+    assert.equal(dl.suggestedFilename(), 'akari-note.txt');
+    assert.ok(Buffer.compare(await readFile(await dl.path()), bytes) === 0, 'downloaded bytes are the uploaded bytes');
+
+    await page.click('.d-head .ibtn[title="編集"]');
+    await page.click('.at-box [aria-label="akari-note.txt を削除"]');
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('#editor[hidden]', { state: 'attached' });
+    login = (await getAll()).find((i) => i.type === 'login');
+    assert.ok(!login.attachments?.length, 'attachment removed from the item');
+    assert.equal((await attKeys()).length, 0, 'its bytes are gone from storage');
+    assert.equal(await page.locator('#detail .at-dbox').count(), 0, 'detail no longer lists it');
+    assert.equal(login.extra.length, 4, 'custom fields kept');
   }
 
   step('lock → wrong password → unlock');

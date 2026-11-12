@@ -15,6 +15,8 @@ import { rise, shake } from './fx.js';
 import { meterEl, setMeter } from './meter.js';
 import { totpView } from './totp-view.js';
 import { toast, toastError } from './toast.js';
+import { createExtrasEditor } from './extra-fields.js';
+import { createAttachmentsEditor } from './attachments.js';
 import { TEL_RE } from '../../lib/vault/items.js';
 
 let E = null;
@@ -28,7 +30,6 @@ const DEFAULT_TOTP_PERIOD = 30;
 const TITLE_MAX_LENGTH = 200;
 const CARD_DIGITS_MIN = 8;
 const CARD_DIGITS_MAX = 19;
-const EXTRA_VALUE_MAX_HEIGHT_PX = 120;
 const INITIAL_FOCUS_DELAY_MS = 80;
 const GEN_FIELDS = { wifi: 'password', database: 'password', server: 'password', cryptoWallet: 'password' };
 
@@ -61,6 +62,20 @@ function setErr(key, msg) {
 
 function markDirty() {
   if (E) E.dirty = true;
+}
+
+function errsAdapter() {
+  return {
+    add(key) {
+      const el = h('div', { class: 'field-err', role: 'alert' });
+      E.errs[key] = el;
+      return el;
+    },
+    set: (key, msg) => setErr(key, msg),
+    remove(key) {
+      if (E) delete E.errs[key];
+    },
+  };
 }
 
 function inputField(key, label, input, extra = [], below = [], { mono = key === 'password' || key === 'totp' } = {}) {
@@ -357,102 +372,6 @@ function templateField(fd, raw) {
 
 const str = (v) => (v == null ? '' : String(v));
 
-let extraSeq = 0;
-
-function extraRow(x = {}) {
-  const uid = ++extraSeq;
-  const errKey = 'x:' + uid;
-  const labelIn = h('input', {
-    class: 'ex-label', type: 'text', maxlength: LIMITS.extraLabel, autocomplete: 'off', spellcheck: 'false',
-    placeholder: t('editor.extraLabel', null, '項目名'), 'aria-label': t('editor.extraLabel', null, '項目名'),
-  });
-  labelIn.value = str(x.label);
-  const value = h('textarea', {
-    class: 'ex-value', rows: 1, maxlength: LIMITS.extraValue, spellcheck: 'false', placeholder: t('editor.extraValue', null, '値'),
-  });
-  value.value = str(x.value);
-  const nameValue = () => t('editor.extraValueOf', { label: labelIn.value.trim() || t('editor.extraLabel', null, '項目名') }, '{label} の値');
-  value.setAttribute('aria-label', nameValue());
-  labelIn.addEventListener('input', () => { value.setAttribute('aria-label', nameValue()); setErr(errKey, ''); });
-  const grow = () => {
-    value.style.height = 'auto';
-    value.style.height = Math.min(value.scrollHeight, EXTRA_VALUE_MAX_HEIGHT_PX) + 'px';
-  };
-  value.addEventListener('input', grow);
-
-  const entry = { uid, labelIn, value, secret: !!x.secret, touched: !('value' in x) };
-  for (const el of [labelIn, value]) el.addEventListener('input', () => { entry.touched = true; });
-  const { eye } = revealButton(value, labelIn.value.trim() || t('editor.extraValue', null, '値'));
-  const tgl = h('button', {
-    class: 'tgl ex-secret', type: 'button', role: 'switch', 'aria-checked': String(entry.secret),
-    title: t('editor.extraSecretHint', null, '秘密にすると伏せて表示し、コピー後にクリップボードから消去します'),
-  }, h('span', { class: 'tgl-mark', 'aria-hidden': 'true' }), t('editor.extraSecret', null, '秘密'));
-  const paintSecret = () => {
-    tgl.setAttribute('aria-checked', String(entry.secret));
-    eye.hidden = !entry.secret;
-    if (!entry.secret) value.classList.remove('masked');
-    else if (eye.getAttribute('aria-pressed') !== 'true') value.classList.add('masked');
-  };
-  tgl.addEventListener('click', () => { entry.secret = !entry.secret; markDirty(); paintSecret(); });
-  paintSecret();
-  const remove = h('button', {
-    class: 'ibtn', type: 'button', title: t('editor.extraRemove', null, '項目を削除'), 'aria-label': t('editor.extraRemove', null, '項目を削除'),
-  }, icon('x', 11, 3));
-  const err = h('div', { class: 'field-err', role: 'alert' });
-  E.errs[errKey] = err;
-  entry.row = h('div', { class: 'ed-row ex-row', dataset: { x: String(uid) } },
-    h('div', { class: 'ex-name' }, labelIn),
-    h('div', { class: 'ed-ctl' }, h('div', { class: 'field' }, value, eye, tgl, remove), err));
-  remove.addEventListener('click', () => {
-    const i = E.extras.indexOf(entry);
-    E.extras.splice(i, 1);
-    entry.row.remove();
-    delete E.errs[errKey];
-    markDirty();
-    paintExtras();
-    const next = E.extras[i] || E.extras[i - 1];
-    (next ? next.labelIn : E.els.extraAdd).focus();
-  });
-  entry.errKey = errKey;
-  setTimeout(grow, 0);
-  return entry;
-}
-
-function paintExtras() {
-  E.els.extraCount.textContent = E.extras.length ? String(E.extras.length) : '';
-  E.els.extraAdd.disabled = E.extras.length >= LIMITS.extraCount;
-}
-
-function extrasBox(list) {
-  const count = h('span', { class: 'ex-count' });
-  const add = h('button', { class: 'btn-line btn-sm', type: 'button' }, icon('plus', 11, 2.6), t('editor.extraAdd', null, '項目を追加'));
-  E.els.extraCount = count;
-  E.els.extraAdd = add;
-  const rows = h('div', { class: 'ex-rows' });
-  E.extras = [];
-  for (const x of list) {
-    const entry = extraRow(x);
-    E.extras.push(entry);
-    rows.append(entry.row);
-  }
-  add.addEventListener('click', () => {
-    if (E.extras.length >= LIMITS.extraCount) return;
-    const entry = extraRow();
-    E.extras.push(entry);
-    rows.append(entry.row);
-    markDirty();
-    paintExtras();
-    entry.labelIn.focus();
-    rise(rows, `[data-x="${entry.uid}"]`);
-  });
-  paintExtras();
-  return h('div', { class: 'box ex-box', dataset: { f: '' } },
-    h('div', { class: 'ed-row ex-head' },
-      h('div', { class: 'ed-label' }, t('editor.extra', null, '追加の項目'), ' ', count),
-      h('div', { class: 'ex-tools' }, add)),
-    rows);
-}
-
 function vaultPicker() {
   const group = h('div', { class: 'vault-pick', role: 'radiogroup', 'aria-label': t('vaults.label', null, '保管庫') });
   const render = () => {
@@ -481,7 +400,7 @@ function footIdle() {
   if (E.original) {
     foot.append(h('button', { class: 'btn-text danger', type: 'button', onclick: confirmDelete }, t('削除')));
   }
-  foot.append(h('span', { class: 'grow' }),
+  foot.append(E.els.footNote, h('span', { class: 'grow' }),
     h('button', { class: 'btn-line', type: 'button', onclick: () => requestClose() }, t('キャンセル')),
     E.els.save);
 }
@@ -533,21 +452,18 @@ export function requestClose(then) {
     if (then) then();
     else emit('editorClosed');
   };
-  if (!E.dirty) { done(); return; }
+  const n = E.attach.pendingCount();
+  if (!E.dirty && !n) { done(); return; }
   shake(E.els.foot);
-  footConfirm(t('変更を破棄しますか？'), t('破棄する'), done, t('編集を続ける'));
-}
-
-function collectExtras(bad) {
-  const out = [];
-  for (const x of E.extras) {
-    const label = x.labelIn.value.trim();
-    const value = x.value.value.replace(/\r\n?/g, '\n');
-    if (!label && !value.trim()) continue;
-    if (!label && x.touched) { bad(x.errKey, t('editor.err.extraLabel', null, '項目名を入力してください'), x.labelIn); continue; }
-    out.push({ label, value, secret: !!x.secret });
+  if (!E.dirty) {
+    footConfirm(t('editor.dropFailed', { n }, '追加できなかった {n} ファイルを外して閉じますか？（アイテムは保存済み）'),
+      t('editor.dropFailedYes', null, '外して閉じる'), done, t('編集を続ける'));
+    return;
   }
-  return out;
+  const ask = n
+    ? t('editor.discardFiles', { n }, '変更を破棄しますか？ 追加待ちの {n} ファイルも破棄されます')
+    : t('変更を破棄しますか？');
+  footConfirm(ask, t('破棄する'), done, t('編集を続ける'));
 }
 
 function collect() {
@@ -557,7 +473,7 @@ function collect() {
   Object.keys(E.errs).forEach((k) => setErr(k, ''));
   const title = els.title.value.trim();
   const note = els.note.value.replace(/\s+$/, '');
-  const extra = collectExtras(bad);
+  const extra = E.extras.collect(bad);
   const firstBad = () => problems.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))[0];
 
   if (E.type === 'note' || (!E.templated && E.type !== 'login')) {
@@ -576,7 +492,7 @@ function collect() {
       else fields[key] = r.value;
     }
     let finalTitle = title || derivedTitle();
-    if (!finalTitle && (filled || note || extra.length)) finalTitle = typeLabel(E.type);
+    if (!finalTitle && (filled || note || extra.length || E.attach.pendingCount())) finalTitle = typeLabel(E.type);
     if (!finalTitle) bad('title', t('editor.err.empty', null, 'タイトルか項目を入力してください'), els.title);
     if (problems.length) return { firstBad: firstBad() };
     return { value: { title: finalTitle, fields, note, vault: E.vault, fav: E.fav, extra } };
@@ -608,22 +524,79 @@ async function save(e) {
   const mine = E;
   mine.busy = true;
   mine.els.save.classList.add('busy');
+  setFootNote(null);
+  const idle = () => {
+    mine.busy = false;
+    mine.els.save.classList.remove('busy');
+  };
+  const queued = mine.attach.pendingCount();
+  if (queued) {
+    let ready = false;
+    try { ready = await mine.attach.prepare(); } catch { ready = false; }
+    if (E !== mine) return;
+    if (!ready) {
+      idle();
+      mine.attach.el.scrollIntoView({ block: 'nearest' });
+      shake(mine.attach.el);
+      return;
+    }
+  }
   const isNew = !mine.original;
   const payload = isNew
     ? { type: mine.type, hue: hueOf({ title: r.value.title }), ...r.value }
-    : { ...forSave(mine.original), ...r.value };
+    : { ...forSave(mine.original), ...r.value, attachments: mine.attach.kept() };
+  let saved;
   try {
     const res = await call(MSG.VAULT_SAVE_ITEM, { item: payload });
     if (E !== mine) return;
-    const saved = mergeSaved(res?.item, mine.original ? { ...mine.original, ...r.value } : payload);
-    closeEditor();
-    emit('saved', saved, isNew);
+    saved = mergeSaved(res?.item, mine.original ? { ...mine.original, ...r.value } : payload);
   } catch (err) {
     if (E !== mine) return;
-    mine.busy = false;
-    mine.els.save.classList.remove('busy');
+    idle();
     toastError(t('保存できませんでした'), errText(err));
+    return;
   }
+  let failed = [];
+  if (queued) {
+    const progress = (done, total) => {
+      if (E === mine) setFootNote(t('editor.storing', { done, total }, 'ファイルを保存中 {done}/{total} · 終わるまで閉じないでください'), 'run');
+    };
+    progress(0, queued);
+    try {
+      const up = await mine.attach.upload(saved.id, { onProgress: progress });
+      if (up?.item) saved = mergeSaved(up.item, saved);
+      failed = Array.isArray(up?.failed) ? up.failed : [];
+    } catch (err) {
+      failed = [{ name: '', message: errText(err) }];
+    }
+  }
+  if (E !== mine || !failed.length) {
+    if (E === mine) closeEditor();
+    emit('saved', saved, isNew);
+    return;
+  }
+  mine.original = saved;
+  mine.dirty = false;
+  idle();
+  retitle();
+  footIdle();
+  setFootNote(t('editor.savedButFiles', { n: failed.length }, 'アイテムは保存済み · {n} ファイルを追加できませんでした'), 'err');
+  emit('saved', saved, isNew, { keepEditor: true });
+  mine.els.save.focus({ preventScroll: true });
+}
+
+function setFootNote(text, kind = '') {
+  const note = E?.els.footNote;
+  if (!note) return;
+  note.textContent = text || '';
+  note.hidden = !text;
+  note.dataset.kind = kind;
+}
+
+function retitle() {
+  const heading = t('editor.edit', { type: typeLabel(E.type) }, '{type}を編集');
+  E.els.heading.textContent = heading;
+  E.els.form.setAttribute('aria-label', heading);
 }
 
 export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
@@ -636,7 +609,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     original, type: kind, templated, dirty: false, busy: false, reveal: false,
     vault: original?.vault || (S.vault !== 'all' ? S.vault : S.vaults[0]?.id || 'personal'),
     fav: !!original?.fav, totp: original?.totp?.secret ? { ...original.totp } : null,
-    els: {}, errs: {}, totpView: null, fields: new Map(), extras: [],
+    els: {}, errs: {}, totpView: null, fields: new Map(), extras: null, attach: null,
   };
   const els = E.els;
 
@@ -708,14 +681,19 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     main.append(noteRow);
   }
 
+  E.extras = createExtrasEditor({ list: Array.isArray(original?.extra) ? original.extra : [], errs: errsAdapter(), onDirty: markDirty, type: kind });
+  E.attach = createAttachmentsEditor({ item: original, onDirty: markDirty });
+
+  els.heading = h('div', { class: 'ed-heading' }, heading);
+  els.footNote = h('span', { class: 'ed-foot-note', role: 'status', hidden: true });
   const scroll = h('div', { class: 'ed-scroll' },
     h('div', { class: 'd-head ed-head', dataset: { f: '' } }, els.tile,
-      h('div', { class: 'd-titles' }, h('div', { class: 'ed-heading' }, heading), els.sub), fav),
-    main, extrasBox(Array.isArray(original?.extra) ? original.extra : []), meta);
+      h('div', { class: 'd-titles' }, els.heading, els.sub), fav),
+    main, E.extras.el, E.attach.el, meta);
 
   els.save = h('button', { class: 'btn-primary', type: 'submit' }, h('span', { class: 'go-label' }, t('保存')), h('span', { class: 'spinner' }));
   els.foot = h('div', { class: 'ed-foot' });
-  const form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading, dataset: { type: kind } }, scroll, els.foot);
+  const form = els.form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading, dataset: { type: kind } }, scroll, els.foot);
   form.addEventListener('submit', save);
   form.addEventListener('input', () => {
     markDirty();
@@ -740,6 +718,8 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
 export function closeEditor() {
   if (!E) return;
   E.totpView?.stop();
+  E.extras?.stop();
+  E.attach?.stop();
   E = null;
   const host = $('editor');
   clear(host);

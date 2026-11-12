@@ -289,4 +289,7 @@ export default {
   'import.label.proton.facebook': 'Facebook',
   'import.label.proton.yahoo': 'Yahoo',
   'import.label.proton.instagram': 'Instagram',
+  'import.skippedAttachments': '{n} attachment(s) not imported',
+  'import.skippedWhy': 'Data missing or over the size limit',
+  '添付ファイルは含まれません。添付ファイルごと残すには Akari バックアップを選びます。': 'Attachments are not included. To keep them, choose Akari backup.',
 };

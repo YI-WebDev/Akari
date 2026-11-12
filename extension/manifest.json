@@ -24,7 +24,7 @@
     "service_worker": "src/background/sw.js",
     "type": "module"
   },
-  "permissions": ["storage", "alarms", "offscreen", "clipboardWrite", "activeTab", "scripting"],
+  "permissions": ["storage", "alarms", "offscreen", "clipboardWrite", "activeTab", "scripting", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
