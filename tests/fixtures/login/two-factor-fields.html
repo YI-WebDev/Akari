@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: コード欄とそうでない欄</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 32px auto; max-width: 360px; color: #2e2520; }
+    label { display: block; margin: 0 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; margin-bottom: 56px; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <form id="code-form" action="welcome.html" method="post">
+    <label for="app_totp">コード</label>
+    <input id="app_totp" name="app_totp" type="text">
+    <label for="verify">Verification code</label>
+    <input id="verify" name="code" type="text">
+    <label for="hotpepper">ホットペッパー ID</label>
+    <input id="hotpepper" name="hotpepper_id" type="text">
+    <label for="sms">SMS で届いたコード</label>
+    <input id="sms" name="sms_code" type="text" autocomplete="one-time-code">
+    <label for="cvc">セキュリティコード</label>
+    <input id="cvc" name="securityCode" type="tel" maxlength="4">
+  </form>
+  <script>
+    document.getElementById('code-form').addEventListener('submit', (e) => e.preventDefault());
+  </script>
+</body>
+</html>

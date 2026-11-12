@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fixture: 2 段階認証</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 48px auto; max-width: 360px; color: #2e2520; }
+    label, .caption { display: block; margin: 14px 0 4px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid #ccc; border-radius: 8px; }
+    .boxes { display: flex; gap: 8px; }
+    .boxes input { width: 44px; text-align: center; }
+    button { margin-top: 18px; padding: 10px 20px; font: inherit; border: 0; border-radius: 999px; background: #222; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>2 段階認証</h1>
+  <form id="code-form" action="welcome.html" method="post">
+    <label for="code">認証アプリのコード</label>
+    <input id="code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" autofocus>
+    <button id="submit" type="submit">確認</button>
+  </form>
+  <script>
+    document.getElementById('code-form').addEventListener('submit', (e) => e.preventDefault());
+  </script>
+</body>
+</html>

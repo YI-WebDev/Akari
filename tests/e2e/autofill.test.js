@@ -2,6 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { launch, extensionMessenger, serveStatic, MASTER, ROOT } from './helpers.js';
+import { generateTotp } from '../../extension/src/lib/totp.js';
 
 let ext, ext2, send, site;
 
@@ -588,5 +589,87 @@ test('saving after sign-in: a filled field before the password is the username, 
   await page.waitForTimeout(500);
   const item = (await send('vault/getAll')).data.items.find((i) => i.password === 'Contract-Pass-7');
   assert.equal(item?.username, 'K-20261110');
+  await page.close();
+});
+
+const CODE_SECRET = { secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30 };
+const nearbyCodes = async () => Promise.all([0, -30000].map((shift) => generateTotp(CODE_SECRET, Date.now() + shift)));
+
+test('two-factor: right after Akari filled the login, the code is filled without a click', async () => {
+  const saved = await send('vault/saveItem', { item: {
+    type: 'login', title: 'localhost 2FA', url: site.origin + '/', username: 'totp-user@example.jp', password: 'Totp-Pass-1',
+    totp: CODE_SECRET, vault: 'personal',
+  } });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/login.html');
+  await page.bringToFront();
+  const filled = await send('autofill/fill', { tabId: await tabIdOf(site.origin + '/login.html'), itemId: saved.data.item.id });
+  assert.deepEqual(filled, { ok: true, data: { filled: true } });
+  await page.goto(site.origin + '/two-factor.html');
+  await page.waitForFunction(() => document.querySelector('#code').value.length === 6, null, { timeout: 5000 });
+  const code = await page.inputValue('#code');
+  assert.ok((await nearbyCodes()).includes(code), 'the field that had the focus holds the current code: ' + code);
+
+  await page.fill('#code', '');
+  await page.locator('#submit').focus();
+  await page.locator('#code').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.inputValue('#code'), '', 'only once: after that the user chooses');
+  await page.close();
+});
+
+test('two-factor: without a fill just before, the code is in the menu and filled on choice, into split boxes too', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/two-factor.html');
+  await page.locator('#code').click();
+  await page.waitForTimeout(1300);
+  assert.equal(await page.inputValue('#code'), '', 'nothing by itself');
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#code')));
+  await page.waitForTimeout(500);
+  assert.ok((await nearbyCodes()).includes(await page.inputValue('#code')));
+
+  await page.goto(site.origin + '/two-factor-split.html');
+  await page.locator('#d1').click();
+  await page.waitForTimeout(1300);
+  const r = await rectOf(page, '#d1');
+  await page.mouse.click(r.x + 100, r.bottom + 32);
+  await page.waitForTimeout(500);
+  const digits = await valuesOf(page, ['d1', 'd2', 'd3', 'd4', 'd5', 'd6']);
+  assert.ok((await nearbyCodes()).includes(Object.values(digits).join('')), 'one digit in each box: ' + JSON.stringify(digits));
+  await page.close();
+});
+
+test('two-factor: a code is offered on fields that ask for one, and not on fields that only look alike', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.goto(site.origin + '/two-factor-fields.html');
+  const chooseUnder = async (selector) => {
+    await page.locator(selector).click();
+    await page.waitForTimeout(1300);
+    await page.mouse.click(...menuRowUnder(await rectOf(page, selector)));
+    await page.waitForTimeout(500);
+    return page.inputValue(selector);
+  };
+  for (const selector of ['#app_totp', '#verify']) {
+    assert.match(await chooseUnder(selector), /^\d{6}$/, selector + ' asks for a code');
+  }
+  for (const selector of ['#hotpepper', '#sms', '#cvc']) {
+    assert.equal(await chooseUnder(selector), '', selector + ' does not ask for an authenticator code');
+  }
+  await page.close();
+});
+
+test('two-factor: on a site without a saved code, nothing is offered', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(loopback() + '/two-factor.html');
+  await page.locator('#code').click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, '#code')));
+  await page.waitForTimeout(400);
+  assert.equal(await page.inputValue('#code'), '');
   await page.close();
 });

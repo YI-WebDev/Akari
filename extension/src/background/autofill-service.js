@@ -4,11 +4,13 @@ import { ERR, MSG } from '../shared/messages.js';
 import { sameSite, hostnameOf } from '../shared/domain.js';
 import { setLoginPassword } from '../lib/vault.js';
 import { generatePassword } from '../lib/generator.js';
+import { generateTotp } from '../lib/totp.js';
 import { personName } from '../shared/item-types.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
 const MEMORY_TTL_MS = 10 * 60 * 1000;
+const TOTP_AFTER_FILL_MS = 3 * 60 * 1000;
 const MAX_FIELD_LEN = 4096;
 const SUGGESTED_LENGTH = 20;
 const SUGGESTED_MIN_LENGTH = 8;
@@ -65,7 +67,8 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     }
     return e;
   }
-  const rememberFill = (tabId, itemId, url) => filledIn.set(tabId, { itemId, url, expiresAt: now() + MEMORY_TTL_MS });
+  const rememberFill = (tabId, itemId, url) =>
+    filledIn.set(tabId, { itemId, url, at: now(), codeGiven: false, expiresAt: now() + MEMORY_TTL_MS });
 
   async function requireUnlocked() {
     if (await vault.isLocked()) throw new AkariError(ERR.LOCKED, 'Vault is locked');
@@ -226,6 +229,36 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return { locked: false, password: length ? generatePassword({ length }).password : '' };
   }
 
+  async function pageTotp(msg, sender) {
+    const { tabId, tabUrl, frameUrl } = senderPage(sender);
+    if (sender.frameId !== 0) return { locked: false, items: [] };
+    if (await vault.isLocked()) return { locked: true, items: [] };
+    const logins = (await loginsFor(frameUrl, tabUrl)).filter((it) => it.totp);
+    const out = { locked: false, items: logins.map(summarize) };
+    const filled = recall(filledIn, tabId, tabUrl);
+    const signingIn = msg.fill === true && filled && !filled.codeGiven && now() - filled.at <= TOTP_AFTER_FILL_MS
+      && originOf(filled.url) === originOf(tabUrl);
+    const login = signingIn ? logins.find((it) => it.id === filled.itemId) : null;
+    if (login) {
+      filled.codeGiven = true;
+      out.code = await generateTotp(login.totp, now());
+    }
+    return out;
+  }
+
+  async function requestTotp(msg, sender) {
+    const { tabUrl, frameUrl } = senderPage(sender);
+    if (sender.frameId !== 0) throw new AkariError(ERR.FORBIDDEN, 'Only the top frame can ask for a code');
+    await requireUnlocked();
+    const item = await findLogin(msg.itemId);
+    if (!urlMatches(item.url, frameUrl) || !urlMatches(item.url, tabUrl)) {
+      throw new AkariError(ERR.DOMAIN_MISMATCH, 'This login belongs to a different site');
+    }
+    if (!item.totp) throw new AkariError(ERR.NOT_FOUND, 'This login has no authenticator code');
+    await vault.touchActivity();
+    return { code: await generateTotp(item.totp, now()) };
+  }
+
   async function identities(msg, sender) {
     senderPage(sender);
     if (sender.frameId !== 0) return { locked: false, items: [] };
@@ -371,7 +404,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
 
   return {
     matches, fill, pageMatches, requestFill, noteUsername, suggestPassword, identities, requestIdentity,
-    offerSave, confirmSave, onCommand, forgetTab,
+    pageTotp, requestTotp, offerSave, confirmSave, onCommand, forgetTab,
   };
 }
 
@@ -386,6 +419,8 @@ if (globalThis.chrome?.runtime?.id) {
   register(MSG.AUTOFILL_SUGGEST_PASSWORD, svc.suggestPassword, { from: 'content' });
   register(MSG.AUTOFILL_IDENTITIES, svc.identities, { from: 'content' });
   register(MSG.AUTOFILL_REQUEST_IDENTITY, svc.requestIdentity, { from: 'content' });
+  register(MSG.AUTOFILL_PAGE_TOTP, svc.pageTotp, { from: 'content' });
+  register(MSG.AUTOFILL_REQUEST_TOTP, svc.requestTotp, { from: 'content' });
   register(MSG.AUTOFILL_OFFER_SAVE, svc.offerSave, { from: 'content' });
   register(MSG.AUTOFILL_CONFIRM_SAVE, svc.confirmSave, { from: 'content' });
 
