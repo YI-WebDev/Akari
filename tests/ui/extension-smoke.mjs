@@ -150,6 +150,7 @@ try {
     await shot('card');
 
     await page.click('.d-head .ibtn[title="編集"]');
+    await page.waitForSelector('#edTitle:focus');
     assert.equal(await page.inputValue('#edF-expiry'), '09/2029', 'months are edited as MM/YYYY');
     await page.fill('#edF-expiry', '2030-01');
     await page.click('.xf-slot');
@@ -215,6 +216,7 @@ try {
     await page.click('.row');
     await page.click('.d-head .ibtn[title="編集"]');
     await page.waitForSelector('.ed-form .xf-slot');
+    await page.waitForSelector('#edTitle:focus');
     await addField('1', '会員番号', 'AK-2048');
     await addField('2', '暗証番号', '7321');
     await addField('3', '予備の 2FA', 'JBSW Y3DP EHPK 3PXP');
