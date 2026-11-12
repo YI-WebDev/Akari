@@ -621,3 +621,46 @@ test('autofill/requestIdentity: unknown or non-identity items, locked, framed an
   await rejectsWith(svc.requestIdentity({ itemId: 'id1', kinds: ['city'] }, { id: 'ext', url: 'https://shop.example/' }), 'FORBIDDEN');
   await rejectsWith(setup({ locked: true, items: [identity()] }).svc.requestIdentity({ itemId: 'id1', kinds: ['city'] }, page), 'LOCKED');
 });
+
+test('autofill/offerSave: on a sign-up form a password with no username is a new login, never an update of the only login', async () => {
+  const { svc, vault } = setup();
+  const page = sender('https://github.com/signup');
+  const offer = await svc.offerSave({ username: '', password: 'Sug-gested-1!', signUp: true }, page);
+  assert.deepEqual([offer.action, offer.username], ['new', '']);
+  assert.deepEqual(await svc.confirmSave({ decision: 'save' }, page), { saved: true, action: 'new' });
+  assert.equal(vault.state.data.items.find((i) => i.id === 'i1').password, 'pw-alice', 'the saved login keeps its password');
+  assert.equal(vault.state.data.items.length, 2);
+  assert.equal((await svc.offerSave({ username: '', password: 'Sug-gested-1!', signUp: true }, page)).action, 'none', 'not offered twice');
+});
+
+test('autofill/offerSave: a form that is not a sign-up (password change or reset) still updates the only login', async () => {
+  const { svc } = setup();
+  const offer = await svc.offerSave({ username: '', password: 'Typed-9' }, sender('https://github.com/settings/password'));
+  assert.deepEqual([offer.action, offer.itemId], ['update', 'i1']);
+});
+
+test('autofill/offerSave: on a sign-up form a saved login is updated only when the username names it', async () => {
+  const { svc } = setup();
+  const page = sender('https://github.com/signup');
+  assert.deepEqual(
+    [(await svc.offerSave({ username: 'alice', password: 'Sug-gested-2!', signUp: true }, page)).action,
+      (await svc.offerSave({ username: 'bob', password: 'Sug-gested-2!', signUp: true }, page)).action],
+    ['update', 'new'],
+  );
+});
+
+test('autofill/offerSave: a login filled earlier in the tab is not the target of a sign-up without a username', async () => {
+  const { svc } = setup();
+  await svc.requestFill({ itemId: 'i1' }, sender('https://github.com/login'));
+  const page = sender('https://github.com/signup');
+  assert.equal((await svc.offerSave({ username: '', password: 'Sug-gested-3!', signUp: true }, page)).action, 'new');
+  assert.equal((await svc.offerSave({ username: '', password: 'Typed-10' }, page)).action, 'update', 'the old rule for forms the user typed into');
+});
+
+test('autofill/offerSave: on a sign-up form a name is not matched to the first half of a saved mail address', async () => {
+  const { svc } = setup({ items: [login({ username: 'alice@example.com' })] });
+  const page = sender('https://github.com/signup');
+  assert.equal((await svc.offerSave({ username: 'alice', password: 'Sug-gested-4!', signUp: true }, page)).action, 'new');
+  assert.equal((await svc.offerSave({ username: 'alice@example.com', password: 'Sug-gested-4!', signUp: true }, page)).action, 'update');
+  assert.equal((await svc.offerSave({ username: 'alice', password: 'Typed-11' }, page)).action, 'update', 'a sign-in with the short name still finds the login');
+});

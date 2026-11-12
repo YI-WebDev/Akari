@@ -505,3 +505,88 @@ test('address form: second address lines named street[1] or told apart only by t
   });
   await page.close();
 });
+
+test('sign-up: when Akari locks after the suggestion opened, the password is not put into the form', async () => {
+  const page = await openSignUp('suggest-locked@example.jp');
+  const r = await rectOf(page, '#new-password');
+  assert.equal((await send('vault/lock')).ok, true);
+  try {
+    await page.mouse.click(...menuRowUnder(r));
+    await page.waitForTimeout(600);
+    assert.equal(await page.inputValue('#new-password'), '', 'a password that cannot be offered for saving stays out of the form');
+    assert.equal(await page.inputValue('#confirm-password'), '');
+  } finally {
+    assert.equal((await send('vault/unlock', { masterPassword: MASTER })).ok, true);
+  }
+  await page.close();
+});
+
+const loopback = () => 'http://127.0.0.1:' + new URL(site.origin).port;
+const loginsAt = async (origin) => (await send('vault/getAll')).data.items.filter((i) => i.type === 'login' && String(i.url).startsWith(origin));
+
+async function takeSuggestion(url, selector, prepare) {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(url);
+  if (prepare) await prepare(page);
+  await page.locator(selector).click();
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...menuRowUnder(await rectOf(page, selector)));
+  await page.waitForTimeout(300);
+  const password = await page.inputValue(selector);
+  assert.equal(password.length, 20);
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  return { page, password };
+}
+
+test('password change: a suggestion taken there updates the only saved login', async () => {
+  const origin = loopback();
+  assert.deepEqual(await loginsAt(origin), [], 'this origin starts without logins');
+  const only = await send('vault/saveItem', {
+    item: { type: 'login', title: '127.0.0.1', url: origin + '/', username: 'only@example.jp', password: 'Only-Pass-1', vault: 'personal' },
+  });
+  assert.equal(only.ok, true);
+  const { page, password } = await takeSuggestion(origin + '/change-password.html', '#new', (p) => p.fill('#current', 'Only-Pass-1'));
+  assert.equal(await page.inputValue('#current'), 'Only-Pass-1');
+  assert.equal(await page.inputValue('#confirm'), password);
+  const logins = await loginsAt(origin);
+  assert.deepEqual(logins.map((i) => [i.username, i.password]), [['only@example.jp', password]], 'updated, not saved as a second login');
+  await page.close();
+});
+
+test('password reset: with only new-password fields on the page, a suggestion still updates the only saved login', async () => {
+  const origin = loopback();
+  const { page, password } = await takeSuggestion(origin + '/reset-password.html', '#new');
+  assert.deepEqual((await loginsAt(origin)).map((i) => [i.username, i.password]), [['only@example.jp', password]]);
+  await page.close();
+});
+
+test('sign-up: a suggestion taken before any username is typed is saved as a new login, not over the only saved one', async () => {
+  const origin = loopback();
+  const before = await loginsAt(origin);
+  assert.deepEqual(before.map((i) => i.username), ['only@example.jp'], 'the site has exactly one saved login');
+  const { page, password } = await takeSuggestion(origin + '/signup.html', '#new-password');
+  const after = await loginsAt(origin);
+  assert.equal(after.find((i) => i.username === 'only@example.jp').password, before[0].password, 'the saved login keeps its password');
+  assert.equal(after.find((i) => i.password === password)?.username, '', 'the suggestion is its own login');
+  assert.equal(after.length, 2);
+  await page.close();
+});
+
+test('saving after sign-in: a filled field before the password is the username, not an empty mail field after it', async () => {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto(site.origin + '/login-newsletter.html');
+  await page.fill('#contract', 'K-20261110');
+  await page.fill('#pw', 'Contract-Pass-7');
+  await page.click('#submit');
+  await page.waitForSelector('#status[data-state="submitted"]');
+  await page.waitForTimeout(1300);
+  await page.mouse.click(...SAVE_BAR_BUTTON_AT);
+  await page.waitForTimeout(500);
+  const item = (await send('vault/getAll')).data.items.find((i) => i.password === 'Contract-Pass-7');
+  assert.equal(item?.username, 'K-20261110');
+  await page.close();
+});

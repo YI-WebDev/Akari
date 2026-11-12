@@ -272,19 +272,22 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     const user = username || recall(steppedUser, tabId, tabUrl)?.username || '';
     const filledId = recall(filledIn, tabId, tabUrl)?.itemId;
     const filled = (filledId && logins.find((it) => it.id === filledId)) || null;
-    const sameAccount = (it) => !user || likelySameUser(it.username, user);
+    const signUp = msg.signUp === true;
+    const matches = signUp ? sameUser : likelySameUser;
+    const named = (it) => !user || likelySameUser(it.username, user);
+    const sameAccount = (it) => (user ? matches(it.username, user) : !signUp);
 
     const alreadySaved = (filled && filled.password === password)
-      || logins.some((it) => it.password === password && sameAccount(it));
+      || logins.some((it) => it.password === password && named(it));
     if (alreadySaved) {
       pending.delete(tabId);
       return { action: 'none' };
     }
     const filledLoginOfAccount = filled && sameAccount(filled) ? filled : null;
     const loginOfUser = user
-      ? logins.find((it) => sameUser(it.username, user)) || logins.find((it) => likelySameUser(it.username, user))
+      ? logins.find((it) => sameUser(it.username, user)) || logins.find((it) => matches(it.username, user))
       : null;
-    const onlyLogin = !user && logins.length === 1 ? logins[0] : null;
+    const onlyLogin = !user && !signUp && logins.length === 1 ? logins[0] : null;
     const target = filledLoginOfAccount || loginOfUser || onlyLogin || null;
     const action = target ? 'update' : 'new';
     const host = hostnameOf(tabUrl);
