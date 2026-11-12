@@ -297,8 +297,9 @@
 
   const replaceable = (p, input) => p === input || !p.value || p.value === input.value || p.value === suggested.get(p);
 
-  function findUsername(scope, anchor, loose) {
-    const cands = inputsIn(scope).filter((i) => TEXT_TYPES.has(i.type) && !isPasswordish(i) && usable(i));
+  function findUsername(scope, anchor, loose, filledOnly = false) {
+    const cands = inputsIn(scope)
+      .filter((i) => TEXT_TYPES.has(i.type) && !isPasswordish(i) && usable(i) && (!filledOnly || i.value.trim()));
     const before = anchor ? cands.filter((c) => c.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
     const last = (fn) => {
       for (let i = before.length - 1; i >= 0; i--) if (fn(before[i])) return before[i];
@@ -606,17 +607,25 @@
     fillTarget(target, res.data.username, res.data.password);
   }
 
-  function chooseSuggestion() {
+  async function chooseSuggestion() {
     const input = field.el;
     const password = field.state && field.state.password;
     const scope = input && input.isConnected ? scopeOf(input) : null;
     const targets = scope ? newPasswordFields(scope) : [];
+    closeMenu();
+    if (!password || !targets.includes(input) || targets.length > MAX_NEW_PASSWORD_FIELDS) return removeFieldUi();
+    const offered = await send(M.OFFER_SAVE, { username: usernameNear(scope, input), password, signUp: makesNewAccount(scope) });
+    const withdraw = () => offered.ok && send(M.CONFIRM_SAVE, { decision: 'dismiss' });
+    if (field.el !== input || !input.isConnected) return withdraw();
+    if (!offered.ok) {
+      if (field.root) renderMenu([], offered.code === 'LOCKED' ? lockedText() : t('保存できませんでした'));
+      return;
+    }
     removeFieldUi();
-    if (!password || !targets.includes(input) || targets.length > MAX_NEW_PASSWORD_FIELDS) return;
     let filled = 0;
     filling = true;
     try {
-      for (const p of targets.filter((x) => replaceable(x, input))) {
+      for (const p of targets.filter((x) => x.isConnected && replaceable(x, input))) {
         if (!fillField(p, password)) continue;
         suggested.set(p, password);
         filled++;
@@ -626,8 +635,8 @@
     } finally {
       filling = false;
     }
-    const creds = filled ? credentialsFrom(scope) : null;
-    if (creds) offer(creds, scope);
+    if (!filled) withdraw();
+    else if (offered.data.action === 'new' || offered.data.action === 'update') showSaveBar(offered.data, scope);
     considerFocus(deepActive());
   }
 
@@ -666,6 +675,7 @@
   function showOrb() {
     if (field.host) return;
     const { host, root } = makeHost();
+    if (bar.host && bar.host.isConnected) bar.host.before(host);
     field.host = host;
     field.root = root;
     field.btn = orb(24);
@@ -852,8 +862,15 @@
       const n = filled.length;
       pw = n > 1 && filled[n - 1].value === filled[n - 2].value ? filled[n - 2] : filled[0];
     }
-    const user = findUsername(scope, pw, false) || findUsername(scope, null, false) || findUsername(scope, pw, true);
-    return { username: (user && user.value.trim()) || lastUsername, password: pw.value };
+    return { username: usernameNear(scope, pw), password: pw.value, signUp: suggested.get(pw) === pw.value && makesNewAccount(scope) };
+  }
+
+  const makesNewAccount = (scope) => !currentPassword(passwordsIn(scope))
+    && inputsIn(scope).some((i) => TEXT_TYPES.has(i.type) && !isPasswordish(i) && usable(i) && !notUser(i));
+
+  function usernameNear(scope, pw) {
+    const user = findUsername(scope, pw, false, true) || findUsername(scope, null, false, true) || findUsername(scope, pw, true, true);
+    return (user && user.value.trim()) || lastUsername;
   }
 
   function credentialsFromButton(btn) {
@@ -893,7 +910,7 @@
   }
 
   async function offer(creds, scope) {
-    const res = await send(M.OFFER_SAVE, { username: creds.username, password: creds.password });
+    const res = await send(M.OFFER_SAVE, { username: creds.username, password: creds.password, signUp: creds.signUp });
     if (res.ok && (res.data.action === 'new' || res.data.action === 'update')) {
       showSaveBar({ action: res.data.action, username: res.data.username, host: res.data.host }, scope);
     }
