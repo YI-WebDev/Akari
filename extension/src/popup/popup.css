@@ -326,6 +326,10 @@ svg { display: block; }
 .f-row.top { align-items: start; padding-bottom: 10px; }
 .f-row.top > .f-label { padding-top: 5px; }
 .f-row.wide { grid-template-columns: 88px minmax(0, 1fr); padding: 10px 12px; }
+:is(.f-row, .hist-row):has([data-copy]) { cursor: pointer; transition: background .15s; }
+:is(.f-row, .hist-row):has([data-copy]):hover { background: var(--surface-hover); }
+:is(.f-row, .hist-row) [data-copy] { opacity: 0; pointer-events: none; }
+:is(.f-row, .hist-row) [data-copy]:is(:focus-visible, :has(.copied-ico)) { opacity: 1; }
 .f-label { font-size: 11.5px; color: var(--text-soft); }
 .f-value { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
 .f-value.empty-val { color: var(--text-faint); }
