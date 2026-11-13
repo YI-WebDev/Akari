@@ -78,6 +78,14 @@
         putFile('令和七年分所得税及び復興特別所得税の確定申告書の控え（税務署受付印あり）スキャン版_最終.pdf', 'application/pdf', PDF_B64, date('2025/10/05')),
       ];
     }
+    var names = byId('att-names');
+    if (names) {
+      names.attachments = [
+        putFile(new Array(117).join('A') + '.exe.txt', 'text/plain', b64('not an executable\n'), date('2025/10/06')),
+        putFile('invoice‮txt.exe', 'application/octet-stream', b64('bidi\n'), date('2025/10/07')),
+        putFile(new Array(201).join('長') + '.pdf', 'application/pdf', PDF_B64, date('2025/10/08')),
+      ];
+    }
     var full = byId('att-full');
     if (full) {
       full.attachments = [];
@@ -113,6 +121,7 @@
         ],
       }),
       { id: 'att-docs', type: 'note', vault: 'personal', title: '確定申告の書類', url: '', username: '', password: '', totp: null, note: '2025 年分。原本は書斎の青いファイル。', fav: false, hue: 35, passkeys: [], extra: [], createdAt: date('2025/10/02'), updatedAt: date('2025/10/05'), passwordUpdatedAt: null, lastUsedAt: now - 2 * DAY },
+      { id: 'att-names', type: 'note', vault: 'personal', title: '名前の長い添付', url: '', username: '', password: '', totp: null, note: '', fav: false, hue: 95, passkeys: [], extra: [], createdAt: date('2025/10/06'), updatedAt: date('2025/10/08'), passwordUpdatedAt: null, lastUsedAt: now - 5 * DAY },
       { id: 'att-full', type: 'note', vault: 'family', title: '家の書類スキャン', url: '', username: '', password: '', totp: null, note: '保険証券・保証書・契約書のスキャン。', fav: false, hue: 320, passkeys: [], extra: [], createdAt: date('2025/09/01'), updatedAt: date('2025/09/10'), passwordUpdatedAt: null, lastUsedAt: now - 3 * DAY },
     ];
   }
@@ -219,6 +228,8 @@
     trash: [],
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
     backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
+    defaultEmail: cfg.defaultEmail || '',
+    emailCalls: 0,
   };
   if (cfg.backup) {
     db.backup.lastAt = cfg.backup.lastAt == null ? null : cfg.backup.lastAt;
@@ -249,6 +260,11 @@
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms * cfg.delay); }); };
   function needUnlocked() { if (db.locked) throw AkErr('LOCKED', 'Vault is locked'); }
+  function cleanEmail(v) {
+    if (typeof v !== 'string') return '';
+    v = v.trim();
+    return v.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(v) && !/[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(v) ? v : '';
+  }
   function toTrash(ids) {
     var gone = {};
     ids.forEach(function (id) { gone[id] = true; });
@@ -324,11 +340,23 @@
       return {};
     },
     'vault/lock': function () { db.locked = true; return {}; },
-    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items), trash: clone(db.trash) }; },
+    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items), trash: clone(db.trash), defaultEmail: db.defaultEmail }; },
+    'vault/setDefaultEmail': async function (m) {
+      needUnlocked();
+      db.emailCalls++;
+      await sleep(300);
+      if (cfg.failEmail) throw AkErr(cfg.failEmail === true ? 'INTERNAL' : cfg.failEmail, 'mock: default email not saved');
+      var raw = typeof m.email === 'string' ? m.email.trim() : '';
+      var email = raw && cleanEmail(raw);
+      if (raw && !email) throw AkErr('INVALID', 'Malformed email');
+      db.defaultEmail = email;
+      return { defaultEmail: email };
+    },
     'vault/saveItem': async function (m) {
       needUnlocked();
       var it = m.item || {};
       if (it.passkeys) throw AkErr('INVALID', 'popup must not send passkeys');
+      if (cfg.failSave) throw AkErr(cfg.failSave === true ? 'INTERNAL' : cfg.failSave, 'mock: save failed');
       await sleep(250);
       var t = Date.now();
       var cur = it.id && db.items.find(function (x) { return x.id === it.id; });
@@ -488,6 +516,7 @@
       var t = Date.now();
       db.items.push(L('imp1-' + t, 'personal', 'booking.com', 'haruka.sato@example.com', 'Tabi!Kyoto#2026', 200, { createdAt: t, updatedAt: t }));
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
+      if (cfg.importEmail && !db.defaultEmail) db.defaultEmail = cfg.importEmail;
       return { count: 2, skippedAttachments: cfg.importSkipped || 0 };
     },
     'vault/importItems': async function (m) {

@@ -31,6 +31,8 @@
     REQUEST_IDENTITY: 'autofill/requestIdentity',
     PAGE_TOTP: 'autofill/pageTotp',
     REQUEST_TOTP: 'autofill/requestTotp',
+    EMAILS: 'autofill/emails',
+    REQUEST_EMAIL: 'autofill/requestEmail',
     DO_FILL: 'autofill/doFill',
   };
   const t = (text) => (globalThis.__akariI18n ? globalThis.__akariI18n.t(text) : text);
@@ -239,6 +241,25 @@
       node = node.parentElement;
     }
     return el.parentElement || el.getRootNode();
+  }
+
+  const EMAIL_HINT = /(^|[^a-z])e?[-_.]?mail(?!er|ing)|メール|メアド/i;
+  const ADDRESS_LIKE = /[^\s@]+@[^\s@]+\.[a-z]{2,}/i;
+  const NOT_OWN_EMAIL = /(^|[^a-z])search|検索|query|friend|友達|友人|知人|紹介|招待|invit|referral|referee|recipient|受取人|宛先|送信先|送り先|gift|ギフト/i;
+  const NOT_OWN_EMAIL_NAME = /(^|[-_.\s[\]])(to|cc|bcc)($|[-_.\s[\]\d])/i;
+  const NOT_EMAIL_VALUE = /(^|[^a-z])code|コード|otp|token|subject|件名|本文|captcha|coupon|クーポン|暗証|番号|server|サーバ|(^|[^a-z])host|smtp|imap/i;
+
+  function isEmailField(el) {
+    if (!el || el.tagName !== 'INPUT' || (el.type !== 'email' && el.type !== 'text') || isPasswordish(el) || !usable(el)) return false;
+    const name = [el.name, el.id].filter(Boolean).join(' ').replace(CAMEL_EDGE, '$1_$2').slice(0, MAX_HINT_TEXT);
+    const label = [el.getAttribute('aria-label'), labelText(el), el.placeholder].filter(Boolean).join(' ').slice(0, MAX_HINT_TEXT);
+    if (NOT_OWN_EMAIL.test(name) || NOT_OWN_EMAIL.test(label) || NOT_OWN_EMAIL_NAME.test(name)) return false;
+    const tokens = acTokens(el);
+    if (el.type === 'email' || tokens.includes('email') || el.inputMode === 'email') return true;
+    const meantForSomethingElse = (token) => token !== 'username' && (OTHER_AUTOCOMPLETE.test(token) || !!AUTOCOMPLETE_KIND[token]);
+    if (tokens.some(meantForSomethingElse)) return false;
+    if (NOT_EMAIL_VALUE.test(name) || NOT_EMAIL_VALUE.test(label)) return false;
+    return EMAIL_HINT.test(name) || EMAIL_HINT.test(label) || ADDRESS_LIKE.test(el.placeholder || '');
   }
 
   const untouched = (el) => (el.tagName === 'SELECT' ? el.selectedIndex <= 0 || !el.value : !el.value);
@@ -503,6 +524,14 @@
     choose: () => chooseTotp(it.id),
   }));
 
+  const emailRows = (items) => (items || []).map((it) => ({
+    glyph: it.itemId ? (Array.from(it.title || '@')[0] || '@').toUpperCase() : '@',
+    hue: it.itemId ? it.hue : 40,
+    title: it.itemId ? it.title || it.email : t('既定のメールアドレスを使う'),
+    sub: it.itemId && !it.title ? '' : it.email,
+    choose: () => chooseEmail(it.itemId),
+  }));
+
   const suggestionRow = (password) => ({
     glyph: '*', hue: 40, title: t('強いパスワードを使う'), sub: password, choose: chooseSuggestion,
   });
@@ -571,7 +600,30 @@
     else if (field.role === 'new-password') renderMenu([suggestionRow(s.password)]);
     else if (field.role === 'identity') renderMenu(identityRows(s.items), s.items.length ? '' : t('アイデンティティの情報なし'));
     else if (field.role === 'otp') renderMenu(totpRows(s.items));
+    else if (field.role === 'email') renderMenu(emailRows(s.items));
     else renderMenu(loginRows(s.items));
+  }
+
+  async function chooseEmail(itemId) {
+    const input = field.el;
+    closeMenu();
+    const res = await send(M.REQUEST_EMAIL, { itemId });
+    if (field.el !== input) return;
+    if (!res.ok) {
+      if (field.root) renderMenu([], res.code === 'LOCKED' ? lockedText() : t('入力できませんでした'));
+      return;
+    }
+    removeFieldUi();
+    if (!input.isConnected) return;
+    filling = true;
+    try {
+      fillField(input, res.data.email);
+      input.focus({ preventScroll: true });
+    } catch {
+    } finally {
+      filling = false;
+    }
+    considerFocus(deepActive());
   }
 
   async function chooseIdentity(itemId) {
@@ -676,12 +728,30 @@
     if (token !== field.token || field.el !== input) return;
     if (res.ok && res.data.pendingSave && isTop && !bar.host) showSaveBar(res.data.pendingSave);
     if (!res.ok || (!res.data.locked && !res.data.items.length)) {
+      if (res.ok && role === 'username' && isTop && isEmailField(input)) return onEmailFocus(input);
       quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
       return removeFieldUi();
     }
     field.state = res.data;
     showOrb();
     place();
+  }
+
+  async function onEmailFocus(input) {
+    removeFieldUi();
+    field.el = input;
+    field.role = 'email';
+    const token = ++field.token;
+    const res = await send(M.EMAILS);
+    if (token !== field.token || field.el !== input) return;
+    if (!res.ok || res.data.locked || !res.data.items.length) {
+      quietUntil.set(input, Date.now() + QUIET_AFTER_NO_MATCH_MS);
+      return removeFieldUi();
+    }
+    field.state = res.data;
+    showOrb();
+    place();
+    if (opensByItself(input)) openMenu(true);
   }
 
   function showOrb() {
@@ -705,11 +775,11 @@
     maxLength: input.maxLength > 0 ? input.maxLength : undefined,
   });
 
-  const followsFocus = () => field.role === 'new-password' || field.role === 'identity' || field.role === 'otp';
+  const followsFocus = () => field.role === 'new-password' || field.role === 'identity' || field.role === 'otp' || field.role === 'email';
 
   function opensByItself(input) {
     if (!field.state || field.state.locked || field.open || input.value) return false;
-    if (field.role === 'identity' || field.role === 'otp') return true;
+    if (field.role === 'identity' || field.role === 'otp' || field.role === 'email') return true;
     return field.role === 'new-password' && newPasswordFields(scopeOf(input)).every((p) => replaceable(p, input));
   }
 
@@ -841,6 +911,7 @@
     else if (role === 'username' || role === 'password') onFieldFocus(target, role);
     else if (role === 'new-password' && isTop) onNewPasswordFocus(target);
     else if (!role && isTop && target && isAddressField(target)) onIdentityFocus(target);
+    else if (!role && isTop && target && isEmailField(target)) onEmailFocus(target);
     else if (field.el && closesWhenFocusLeaves()) removeFieldUi();
   }
 

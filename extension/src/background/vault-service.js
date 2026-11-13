@@ -12,13 +12,16 @@ import {
   mergeData, makeItem as makeItemAt, validateItem, sanitizeItem, defaultData,
   addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
   setLoginPassword, setPendingPassword, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash,
-  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, cleanMime, newAttachmentKey,
+  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, attachmentNameFits, pickBox, cleanMime, newAttachmentKey,
   encryptAttachment, decryptAttachment, attachmentsIn, attachmentIdsIn, attachmentBytesIn,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
+import { cleanEmail } from '../shared/email.js';
 
-import { VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY } from '../shared/storage-keys.js';
+import {
+  VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY, ATTACHMENT_KEY_PREFIX, SWEPT_KEY,
+} from '../shared/storage-keys.js';
 
 export { VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY };
 export const AUTOLOCK_ALARM = 'akari-autolock';
@@ -107,6 +110,7 @@ export function createVaultService({
     }
     if (kept) await session.set({ [SESSION_KEY]: { dek: s.dek } });
     cache = c;
+    sweepOncePerSession(false);
     return c;
   }
 
@@ -166,6 +170,7 @@ export function createVaultService({
     }
     sessionGeneration++;
     cache = { dek, data };
+    sweepOncePerSession(true);
     consecutiveBadPasswords = 0;
     await keepIfNeverLock(dek);
     await armAutoLock(true);
@@ -239,6 +244,35 @@ export function createVaultService({
   function dropUnreferenced(before, data) {
     const after = attachmentIdsIn(data);
     return removeQuietly([...before].filter((id) => !after.has(id) && isAttachmentId(id)).map(attachmentStorageKey));
+  }
+
+  async function storedAttachmentKeys() {
+    if (typeof local.getKeys === 'function') return (await local.getKeys()).filter((k) => k.startsWith(ATTACHMENT_KEY_PREFIX));
+    return Object.keys(await local.get(null)).filter((k) => k.startsWith(ATTACHMENT_KEY_PREFIX));
+  }
+
+  async function sweepOncePerSession(always) {
+    try {
+      if (!always && (await session.get(SWEPT_KEY))[SWEPT_KEY] === true) return;
+      await session.set({ [SWEPT_KEY]: true });
+    } catch {
+      if (!always) return;
+    }
+    sweepOrphans();
+  }
+
+  function sweepOrphans() {
+    return runWrite(async () => {
+      if (!cache) return;
+      try {
+        const referenced = attachmentIdsIn(cache.data);
+        const orphans = (await storedAttachmentKeys()).filter((k) => {
+          const id = k.slice(ATTACHMENT_KEY_PREFIX.length);
+          return isAttachmentId(id) && !referenced.has(id);
+        });
+        await removeQuietly(orphans);
+      } catch { }
+    }).catch(() => {});
   }
 
   async function removeQuietly(keys) {
@@ -403,6 +437,7 @@ export function createVaultService({
       vaults: structuredClone(c.data.vaults),
       items: c.data.items.map(sanitizeItem),
       trash: trashOut(c.data),
+      defaultEmail: cleanEmail(c.data.defaultEmail),
     };
   }
 
@@ -521,6 +556,17 @@ export function createVaultService({
     });
   }
 
+  async function setDefaultEmail(email) {
+    if (typeof email !== 'string') throw fail(ERR.INVALID, 'email must be a string');
+    const clean = email.trim() ? cleanEmail(email) : '';
+    if (email.trim() && !clean) throw fail(ERR.INVALID, 'Invalid email address');
+    return mutateData((draft) => {
+      if (clean) draft.defaultEmail = clean;
+      else delete draft.defaultEmail;
+      return { defaultEmail: clean };
+    });
+  }
+
   async function updateVault(id, name, hue) {
     if (typeof id !== 'string' || !id) throw fail(ERR.INVALID, 'id required');
     return mutateData((draft) => {
@@ -562,12 +608,14 @@ export function createVaultService({
     checkItemId(itemId);
     const cleanName = cleanAttachmentName(name);
     if (!cleanName) throw fail(ERR.INVALID, 'Invalid file name');
+    if (!attachmentNameFits(cleanName)) throw fail(ERR.QUOTA, 'File name is too long');
     const bytes = decodeAttachmentData(data);
     const id = crypto.randomUUID();
     const storageKey = attachmentStorageKey(id);
     let written = false;
     try {
       return await mutateData(async (draft) => {
+        pruneTrash(draft, now());
         const item = draft.items.find((i) => i.id === itemId);
         if (!item) throw fail(ERR.NOT_FOUND, 'Item not found');
         const list = Array.isArray(item.attachments) ? item.attachments : [];
@@ -608,7 +656,10 @@ export function createVaultService({
       const keys = ids.map(attachmentStorageKey);
       const stored = keys.length ? await local.get(keys) : {};
       const out = {};
-      for (const id of ids) if (stored[attachmentStorageKey(id)] !== undefined) out[id] = stored[attachmentStorageKey(id)];
+      for (const id of ids) {
+        const box = stored[attachmentStorageKey(id)];
+        if (isObject(box)) out[id] = pickBox(box);
+      }
       return { record: await loadRecord(), boxes: out };
     });
     const json = exportBackup(record, now(), boxes);
@@ -638,7 +689,7 @@ export function createVaultService({
       }
       const storageKey = attachmentStorageKey(a.id);
       written.push(storageKey);
-      await local.set({ [storageKey]: boxes[a.id] });
+      await local.set({ [storageKey]: pickBox(boxes[a.id]) });
       accepted.set(a.id, a);
       total += a.size;
     }
@@ -665,6 +716,7 @@ export function createVaultService({
         const merged = mergeData(draft, incoming);
         draft.vaults = merged.data.vaults;
         draft.items = merged.data.items;
+        if (merged.data.defaultEmail) draft.defaultEmail = merged.data.defaultEmail;
         const malformed = merged.ids.reduce((n, id) => n + (incoming.skippedAttachments?.get(id) ?? 0), merged.skippedAttachments);
         const skippedAttachments = malformed + await takeAttachments(draft, known, incoming.attachments, written);
         return { count: merged.count, skippedAttachments };
@@ -726,6 +778,7 @@ export function createVaultService({
     [MSG.VAULT_CREATE_VAULT]: (m) => addVault(m.name, m.hue),
     [MSG.VAULT_UPDATE_VAULT]: (m) => updateVault(m.id, m.name, m.hue),
     [MSG.VAULT_DELETE_VAULT]: (m) => deleteVault(m.id, m.moveTo ?? null, m.deleteItems ?? false),
+    [MSG.VAULT_SET_DEFAULT_EMAIL]: (m) => setDefaultEmail(m.email),
     [MSG.SETTINGS_GET]: () => getSettings(),
     [MSG.SETTINGS_SET]: (m) => setSettings(m.patch, m.masterPassword),
     [MSG.ACTIVITY_PING]: () => ({}),
@@ -734,7 +787,7 @@ export function createVaultService({
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
     MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD, MSG.VAULT_ADD_ATTACHMENT,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
-    MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
+    MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.VAULT_SET_DEFAULT_EMAIL, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
     MSG.BACKUP_SNOOZE, MSG.BACKUP_RECORD,
   ]);
   const handlers = {};

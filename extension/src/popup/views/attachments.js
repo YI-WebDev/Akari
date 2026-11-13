@@ -449,6 +449,11 @@ export function createAttachmentsEditor({ item = null, onDirty = () => {} } = {}
     el: box,
     kept: () => kept().map((s) => ({ id: s.a.id })),
     pendingCount: () => queue.filter((q) => q.state !== 'done').length,
+    changes: () => ({
+      queued: queue.filter((q) => q.state !== 'done' && q.state !== 'fail').length,
+      failed: queue.filter((q) => q.state === 'fail').length,
+      removed: stored.filter((x) => x.removed).length,
+    }),
     prepare,
     upload,
     stop() { sr.stop(); },
@@ -476,7 +481,7 @@ function busyOn(btn, on) {
 }
 
 function detailRow(itemId, a, release, urls) {
-  const name = String(a.name || '');
+  const name = safeFileName(a.name, 'attachment');
   const actions = h('span', { class: 'pk-actions' });
   const row = h('div', { class: 'pk at-pk' },
     h('span', { class: 'pk-ico', 'aria-hidden': 'true' }, fileIcon(name, a.mime)),
@@ -498,7 +503,7 @@ function detailRow(itemId, a, release, urls) {
     try {
       const res = await fetchBytes();
       if (!live(token) || !dl.isConnected) return;
-      downloadFile(fromB64(res.data), safeFileName(res.name || name, 'attachment'), 'application/octet-stream');
+      downloadFile(fromB64(res.data), name, 'application/octet-stream');
       toast(t('attach.downloaded', null, 'ダウンロードしました'), name);
     } catch (e) {
       if (!live(token) || !dl.isConnected) return;

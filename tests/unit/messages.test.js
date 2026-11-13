@@ -46,7 +46,7 @@ test('every message type written as a string is listed in MSG', () => {
 test('the classic scripts that hard-code types use the MSG values', () => {
   const used = (file) => new Set(matches(src.find((f) => f.name === file).text, TYPE_LITERAL));
   const autofill = used('content/autofill.js');
-  for (const key of ['AUTOFILL_PAGE_MATCHES', 'AUTOFILL_REQUEST_FILL', 'AUTOFILL_OFFER_SAVE', 'AUTOFILL_CONFIRM_SAVE', 'AUTOFILL_NOTE_USERNAME', 'AUTOFILL_DO_FILL']) {
+  for (const key of ['AUTOFILL_PAGE_MATCHES', 'AUTOFILL_REQUEST_FILL', 'AUTOFILL_OFFER_SAVE', 'AUTOFILL_CONFIRM_SAVE', 'AUTOFILL_NOTE_USERNAME', 'AUTOFILL_EMAILS', 'AUTOFILL_REQUEST_EMAIL', 'AUTOFILL_DO_FILL']) {
     assert.ok(autofill.has(MSG[key]), `content/autofill.js lacks ${MSG[key]}`);
   }
   const bridge = used('content/webauthn-bridge.js');

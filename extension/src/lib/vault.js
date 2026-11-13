@@ -11,7 +11,7 @@ export { BACKUP_FORMAT, BACKUP_VERSION, exportBackup, importBackup, normalizeDat
 export { MAX_IMPORT_ITEMS, addImportedItems } from './vault/import-items.js';
 export { createVaultIn, updateVaultIn, deleteVaultIn } from './vault/vaults.js';
 export {
-  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, cleanMime, newAttachmentKey,
+  isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, attachmentNameFits, pickBox, cleanMime, newAttachmentKey,
   encryptAttachment, decryptAttachment, normalizeAttachments, attachmentsIn, attachmentIdsIn, attachmentBytesIn,
 } from './vault/attachments.js';
 export { TRASH_DAYS, TRASH_MS, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash } from './vault/trash.js';

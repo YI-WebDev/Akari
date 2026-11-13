@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { createServer } from 'node:http';
 import { launch, extensionMessenger, serveStatic, MASTER, ROOT } from './helpers.js';
 import { generateTotp } from '../../extension/src/lib/totp.js';
 
@@ -671,5 +672,220 @@ test('two-factor: on a site without a saved code, nothing is offered', async () 
   await page.mouse.click(...menuRowUnder(await rectOf(page, '#code')));
   await page.waitForTimeout(400);
   assert.equal(await page.inputValue('#code'), '');
+  await page.close();
+});
+
+const DEFAULT_MAIL = 'akari.default@example.jp';
+const OFFERED_FIELDS = ['#mail', '#mail2', '#contact', '#loginid'];
+const NOT_OFFERED_FIELDS = ['#friend', '#find', '#to', '#dest', '#code', '#server', '#member', '#sender', '#q', '#tel'];
+const MENU_ROW_HEIGHT = 42;
+
+async function openPage(url) {
+  const page = await ext.context.newPage();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.goto(url);
+  return page;
+}
+
+const akariHosts = (target) => target.evaluate(() => [...document.documentElement.children]
+  .filter((n) => n.tagName === 'DIV' && n.style.zIndex === '2147483647').length);
+
+const menuCovers = (page, [x, y]) => page.evaluate(([px, py]) => {
+  const top = document.elementFromPoint(px, py);
+  return !!top && top.parentElement === document.documentElement && top.style.zIndex === '2147483647';
+}, [x, y]);
+
+const rowUnder = (r, row = 0) => [r.x + 80, r.bottom + 32 + row * MENU_ROW_HEIGHT];
+
+async function focusField(page, selector) {
+  await page.locator(selector).click();
+  await page.waitForTimeout(1500);
+  return rectOf(page, selector);
+}
+
+async function chooseUnderField(page, selector, row = 0) {
+  const r = await focusField(page, selector);
+  await page.mouse.click(...rowUnder(r, row));
+  await page.waitForTimeout(600);
+  return page.inputValue(selector);
+}
+
+async function forgetMailAddresses() {
+  const identities = (await send('vault/getAll')).data.items.filter((i) => i.type === 'identity').map((i) => i.id);
+  if (identities.length) assert.equal((await send('vault/deleteItems', { ids: identities })).ok, true);
+  assert.deepEqual((await send('vault/setDefaultEmail', { email: '' })).data, { defaultEmail: '' });
+}
+
+test('mail field: with no default address and no identity there is nothing to choose', async () => {
+  await forgetMailAddresses();
+  const page = await openPage(site.origin + '/email-fields.html');
+  const r = await focusField(page, '#mail');
+  assert.equal(await akariHosts(page), 0, 'neither the button nor a menu is put on the page');
+  await page.mouse.click(...rowUnder(r));
+  await page.waitForTimeout(400);
+  assert.equal(await page.inputValue('#mail'), '');
+  await page.close();
+});
+
+test('mail field: the default address is offered on focus, and one click puts it into that field only', async () => {
+  assert.deepEqual((await send('vault/setDefaultEmail', { email: ` ${DEFAULT_MAIL} ` })).data, { defaultEmail: DEFAULT_MAIL });
+  const page = await openPage(site.origin + '/email-fields.html');
+  const r = await focusField(page, '#mail');
+  assert.equal(await akariHosts(page), 1);
+  assert.equal(await menuCovers(page, rowUnder(r)), true, 'the menu opened by itself');
+  await page.mouse.click(...rowUnder(r));
+  await page.waitForTimeout(600);
+  const ids = [...OFFERED_FIELDS, ...NOT_OFFERED_FIELDS].map((s) => s.slice(1));
+  assert.deepEqual(await valuesOf(page, ids), Object.fromEntries(ids.map((id) => [id, id === 'mail' ? DEFAULT_MAIL : ''])));
+  await page.close();
+});
+
+test('mail field: fields that ask for your address by name, placeholder or input mode get the offer', async () => {
+  const page = await openPage(site.origin + '/email-fields.html');
+  for (const selector of OFFERED_FIELDS.slice(1)) assert.equal(await chooseUnderField(page, selector), DEFAULT_MAIL, selector);
+  await page.close();
+});
+
+test('mail field: fields for another person, a recipient, a code, mail settings, a name or a search get neither the button nor the menu', async () => {
+  const page = await openPage(site.origin + '/email-fields.html');
+  await focusField(page, '#mail');
+  assert.equal(await akariHosts(page), 1, 'the page is one where Akari does make the offer');
+  for (const selector of NOT_OFFERED_FIELDS) {
+    await page.locator(selector).click();
+    await page.waitForTimeout(900);
+    assert.equal(await akariHosts(page), 0, selector);
+  }
+  await page.close();
+});
+
+test('mail field: typing your own address closes the offer, and emptying the field brings it back', async () => {
+  const page = await openPage(site.origin + '/email-fields.html');
+  const r = await focusField(page, '#mail');
+  assert.equal(await menuCovers(page, rowUnder(r)), true);
+  await page.keyboard.type('me@');
+  await page.waitForTimeout(300);
+  assert.equal(await menuCovers(page, rowUnder(r)), false, 'closed while the field holds text');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
+  await page.waitForTimeout(1500);
+  assert.equal(await menuCovers(page, rowUnder(r)), true, 'back once the field is empty');
+  await page.mouse.click(...rowUnder(r));
+  await page.waitForTimeout(600);
+  assert.equal(await page.inputValue('#mail'), DEFAULT_MAIL);
+  await page.close();
+});
+
+test('mail field: addresses saved in identities are listed under the default', async () => {
+  assert.equal((await send('vault/saveItem', { item: HOME })).ok, true);
+  const page = await openPage(site.origin + '/email-fields.html');
+  assert.equal(await chooseUnderField(page, '#mail', 1), HOME.fields.email);
+  await page.close();
+});
+
+test('mail field: a sign-up form and a sign-in form with no saved login offer the default', async () => {
+  const signUp = await openPage(site.origin + '/signup.html');
+  assert.equal(await chooseUnderField(signUp, '#email'), DEFAULT_MAIL);
+  await signUp.close();
+
+  const known = (await loginsAt(loopback())).map((i) => i.id);
+  if (known.length) assert.equal((await send('vault/deleteItems', { ids: known })).ok, true);
+  const fresh = await openPage(loopback() + '/login.html');
+  assert.equal(await chooseUnderField(fresh, '#username'), DEFAULT_MAIL);
+  assert.equal(await fresh.inputValue('#password'), '');
+  await fresh.close();
+});
+
+test('mail field: a sign-in form with saved logins keeps its button and offers those logins, not the mail menu', async () => {
+  assert.equal((await send('vault/saveItem', { item: { type: 'login', title: 'Fixture', url: site.origin, username: 'saved-user', password: 'Saved-Pass-1', vault: 'personal' } })).ok, true);
+  const usernames = (await loginsAt(site.origin)).map((i) => i.username);
+  const page = await openPage(site.origin + '/login.html');
+  const r = await focusField(page, '#username');
+  assert.equal(await akariHosts(page), 1, 'the button is there');
+  assert.equal(await menuCovers(page, rowUnder(r)), false, 'no menu opens by itself');
+  await page.mouse.click(r.right - 18, r.y + r.h / 2);
+  await page.waitForTimeout(900);
+  assert.equal(await menuCovers(page, rowUnder(r)), true, 'the button opens the list of logins');
+  await page.mouse.click(...rowUnder(r));
+  await page.waitForTimeout(600);
+  const filledUser = await page.inputValue('#username');
+  assert.ok(usernames.includes(filledUser) && filledUser !== DEFAULT_MAIL, `a saved login was filled, got ${JSON.stringify(filledUser)}`);
+  assert.notEqual(await page.inputValue('#password'), '');
+  await page.close();
+});
+
+test('mail field: a form inside a frame gets neither the button nor the menu', async () => {
+  const page = await openPage(site.origin + '/email-frame.html');
+  const frame = page.frame({ url: /email-fields\.html/ });
+  const mail = page.frameLocator('#embedded').locator('#mail');
+  await mail.click();
+  await page.waitForTimeout(1500);
+  assert.equal(await akariHosts(frame), 0, 'nothing inside the frame');
+  assert.equal(await akariHosts(page), 0, 'nothing in the page around it');
+  const box = await mail.boundingBox();
+  await page.mouse.click(box.x + 80, box.y + box.height + 32);
+  await page.waitForTimeout(600);
+  assert.equal(await mail.inputValue(), '');
+  await page.close();
+});
+
+test('mail field: nothing is offered while Akari is locked, and the offer is back after unlocking', async () => {
+  const page = await openPage(site.origin + '/email-fields.html');
+  assert.equal((await send('vault/lock')).ok, true);
+  try {
+    const r = await focusField(page, '#mail');
+    assert.equal(await akariHosts(page), 0, 'neither the button nor a menu while locked');
+    await page.mouse.click(...rowUnder(r));
+    await page.waitForTimeout(400);
+    assert.equal(await page.inputValue('#mail'), '');
+  } finally {
+    assert.equal((await send('vault/unlock', { masterPassword: MASTER })).ok, true);
+  }
+  assert.equal(await chooseUnderField(page, '#mail2'), DEFAULT_MAIL);
+  await page.close();
+});
+
+test('in-page menu: fonts supplied by the page never learn what the menu draws', async () => {
+  const letters = [...'abcdefghijklmnopqrstuvwxyz0123456789@._+-自宅'];
+  const families = ['ui-monospace', 'Cascadia Mono', 'Consolas', 'BIZ UDGothic', 'Courier New', 'MS Gothic', 'Meiryo', 'Yu Gothic UI', 'monospace'];
+  const hex = (c) => c.codePointAt(0).toString(16).padStart(4, '0');
+  const faces = families.flatMap((family) => letters.map((c) =>
+    `@font-face { font-family: "${family}"; src: url(/leak?c=${hex(c)}); unicode-range: U+${hex(c)}; }`)).join('\n');
+  const leaked = new Set();
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    if (url.pathname === '/leak') {
+      leaked.add(String.fromCodePoint(parseInt(url.searchParams.get('c'), 16)));
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><meta charset="utf-8"><style>${faces}</style><body><input id="mail" type="email" autofocus></body>`);
+  });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    assert.equal((await send('vault/setDefaultEmail', { email: 'zq@xy.jp' })).ok, true);
+    const page = await openPage(`http://localhost:${server.address().port}/`);
+    await page.waitForTimeout(2500);
+    const r = await rectOf(page, '#mail');
+    assert.equal(await menuCovers(page, rowUnder(r)), true, 'the menu is drawn, with the addresses in it');
+    assert.deepEqual([...leaked].sort(), [], 'no font was fetched for a character the menu shows');
+    await page.mouse.click(...rowUnder(r));
+    await page.waitForTimeout(600);
+    assert.equal(await page.inputValue('#mail'), 'zq@xy.jp');
+    await page.close();
+  } finally {
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    assert.equal((await send('vault/setDefaultEmail', { email: DEFAULT_MAIL })).ok, true);
+  }
+});
+
+test('mail field: an address removed after the menu opened is not put into the form', async () => {
+  const page = await openPage(site.origin + '/email-fields.html');
+  const r = await focusField(page, '#mail');
+  assert.equal(await menuCovers(page, rowUnder(r)), true);
+  assert.deepEqual((await send('vault/setDefaultEmail', { email: '' })).data, { defaultEmail: '' });
+  await page.mouse.click(...rowUnder(r));
+  await page.waitForTimeout(600);
+  assert.equal(await page.inputValue('#mail'), '');
   await page.close();
 });

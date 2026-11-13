@@ -90,9 +90,16 @@ export function revokeDownloads() {
   for (const url of [...revokeTimers.keys()]) revoke(url);
 }
 
+const FILE_NAME_MAX = 120;
+const INVISIBLE = /[­؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ￹-￻]/g;
+const trimEnds = (s) => s.replace(/^[.\s]+|[.\s]+$/g, '');
+
 export function safeFileName(name, fallback) {
-  const s = String(name || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 120);
-  return s || fallback;
+  const s = trimEnds(String(name || '').replace(INVISIBLE, '').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, '-'));
+  if (s.length <= FILE_NAME_MAX) return s || fallback;
+  const ext = /\.[a-z0-9]{1,8}$/i.exec(s)?.[0] || '';
+  const base = trimEnds(s.slice(0, FILE_NAME_MAX - ext.length));
+  return base ? base + ext : fallback;
 }
 
 export function setBusy(btn, busy) {

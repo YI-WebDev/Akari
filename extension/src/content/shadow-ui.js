@@ -3,7 +3,7 @@
 
   if (globalThis.__akariShadowUi) return;
 
-  const FONT = 'ui-monospace, "Cascadia Mono", Consolas, "BIZ UDGothic", monospace';
+  const FONT = 'monospace';
   const CSS = `
 :host { all: initial; }
 *, *::before, *::after { box-sizing: border-box; }

@@ -900,6 +900,11 @@ const attKeys = (chrome) => [...chrome.storage.local.map.keys()].filter((k) => k
 const keyOf = (id) => ATT_PREFIX + id;
 const hasKeyField = (v) => JSON.stringify(v).includes('"key"');
 
+async function settle(svc) {
+  await new Promise((r) => setTimeout(r, 0));
+  await svc.mutateData(() => {});
+}
+
 async function withItem(opts) {
   const ctx = await setupUnlocked(opts);
   const { item } = await ctx.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Doc', note: 'n' } });
@@ -963,9 +968,12 @@ test('attachments: inputs are checked before any work; failures write nothing', 
   const add = (over) => call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a.txt', mime: 'text/plain', data: fileB64('x'), ...over });
   const before = structuredClone(chrome.storage.local.map.get(VAULT_KEY));
   for (const over of [
-    { name: 5 }, { name: '' }, { name: '   ' }, { name: '\u0000\u0007' }, { name: 'n'.repeat(256) }, { name: undefined },
+    { name: 5 }, { name: '' }, { name: '   ' }, { name: '\u0000\u0007' }, { name: undefined },
     { data: 5 }, { data: '***' }, { data: '' }, { itemId: '' }, { itemId: 7 }, { itemId: 'i'.repeat(101) },
   ]) await assert.rejects(add(over), { code: 'INVALID' }, JSON.stringify(over).slice(0, 60));
+  for (const name of ['n'.repeat(256), ' \u0000' + '\u{1F600}'.repeat(256), 'n'.repeat(5000)]) {
+    await assert.rejects(add({ name }), { code: 'QUOTA' }, name.slice(0, 20));
+  }
   const tooLong = 'A'.repeat(Math.ceil((5 * 1024 * 1024) / 3) * 4 + 4);
   await assert.rejects(add({ data: tooLong }), { code: 'QUOTA' });
   await assert.rejects(add({ data: toB64(new Uint8Array(5 * 1024 * 1024 + 1)) }), { code: 'QUOTA' });
@@ -1318,4 +1326,256 @@ test('attachments: an incoming copy without files does not erase the files of th
   assert.deepEqual(all.trash, []);
   assert.ok(chrome.storage.local.map.has(keyOf(f.id)));
   assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: f.id })).data, fileB64('f'));
+});
+
+test('attachments: only { v, iv, ct } of an imported box is stored and exported again; an iv of the wrong length is rejected', async () => {
+  const a = await withItem();
+  const add = async (name) => (await a.call(MSG.VAULT_ADD_ATTACHMENT, { itemId: a.item.id, name, mime: '', data: fileB64(name) })).item.attachments.at(-1);
+  const padded = await add('padded');
+  const spaced = await add('spaced');
+  const backup = JSON.parse((await a.call(MSG.VAULT_EXPORT)).json);
+  backup.attachments[padded.id].pad = 'x'.repeat(10000);
+  backup.attachments[spaced.id].iv = ' ' + backup.attachments[spaced.id].iv;
+
+  const b = await setupUnlocked();
+  assert.deepEqual(await b.call(MSG.VAULT_IMPORT, { json: JSON.stringify(backup), masterPassword: PW }), { count: 1, skippedAttachments: 1 });
+  assert.deepEqual(Object.keys(b.chrome.storage.local.map.get(keyOf(padded.id))).sort(), ['ct', 'iv', 'v']);
+  assert.equal(b.chrome.storage.local.map.has(keyOf(spaced.id)), false);
+  assert.equal((await b.call(MSG.VAULT_GET_ATTACHMENT, { itemId: a.item.id, attachmentId: padded.id })).data, fileB64('padded'));
+  const again = (await b.call(MSG.VAULT_EXPORT)).json;
+  assert.equal(again.includes('"pad"'), false);
+  assert.deepEqual(Object.keys(JSON.parse(again).attachments[padded.id]).sort(), ['ct', 'iv', 'v']);
+});
+
+test('attachments: expired trash does not count toward the vault total when adding, and its bytes are removed', async () => {
+  const { call, chrome, clock, item } = await withItem();
+  const { item: old } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Old' } });
+  const mib5 = toB64(new Uint8Array(5 * 1024 * 1024));
+  const oldIds = [];
+  for (let i = 0; i < 6; i++) oldIds.push((await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: old.id, name: 'o' + i, mime: '', data: mib5 })).item.attachments.at(-1).id);
+  await call(MSG.VAULT_DELETE_ITEM, { id: old.id });
+  clock.t += 31 * 24 * 3600 * 1000;
+  const added = await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'new', mime: '', data: mib5 });
+  assert.equal(added.item.attachments.length, 1);
+  assert.deepEqual(attKeys(chrome), [keyOf(added.item.attachments[0].id)]);
+  for (const id of oldIds) assert.equal(chrome.storage.local.map.has(keyOf(id)), false);
+});
+
+test('attachments: unlocking sweeps bytes that nothing references and leaves everything else alone', async () => {
+  const { call, svc, chrome, item } = await withItem();
+  const local = chrome.storage.local;
+  const { item: gone } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Trashed' } });
+  const [kept] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'kept', mime: '', data: fileB64('kept') })).item.attachments;
+  const [inTrash] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: gone.id, name: 't', mime: '', data: fileB64('t') })).item.attachments;
+  await call(MSG.VAULT_DELETE_ITEM, { id: gone.id });
+  const [orphan] = (await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'orphan', mime: '', data: fileB64('o') })).item.attachments.slice(-1);
+  const realRemove = local.remove.bind(local);
+  local.remove = async () => { throw new Error('io'); };
+  await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, attachments: [{ id: kept.id }] } });
+  local.remove = realRemove;
+  local.map.set(ATT_PREFIX + 'not-a-uuid', { keep: true });
+  local.map.set('akari.other', 1);
+  assert.ok(local.map.has(keyOf(orphan.id)), 'orphan left by the failed remove');
+
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle(svc);
+  assert.deepEqual(attKeys(chrome), [ATT_PREFIX + 'not-a-uuid', keyOf(kept.id), keyOf(inTrash.id)].sort());
+  assert.ok(local.map.has('akari.other'));
+  assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: kept.id })).data, fileB64('kept'));
+
+  const stray = crypto.randomUUID();
+  local.map.set(keyOf(stray), { v: 1, iv: 'x', ct: 'y' });
+  const restarted = makeService({ chrome });
+  await restarted.call(MSG.VAULT_GET_ALL);
+  await settle(restarted.svc);
+  assert.ok(local.map.has(keyOf(stray)), 'a restart in the same browser session does not sweep again');
+  await restarted.call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle(restarted.svc);
+  assert.equal(local.map.has(keyOf(stray)), false, 'an explicit unlock always sweeps');
+});
+
+test('attachments: the sweep uses storage.local.getKeys when present instead of reading every value', async () => {
+  const { call, svc, chrome, item } = await withItem();
+  const local = chrome.storage.local;
+  const realGet = local.get.bind(local);
+  const reads = [];
+  local.getKeys = async () => [...local.map.keys()];
+  local.get = async (keys) => { reads.push(keys); return realGet(keys); };
+  const stray = crypto.randomUUID();
+  local.map.set(keyOf(stray), { v: 1, iv: 'x', ct: 'y' });
+  await call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'a', mime: '', data: fileB64('a') });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle(svc);
+  assert.equal(local.map.has(keyOf(stray)), false);
+  assert.equal(attKeys(chrome).length, 1);
+  assert.equal(reads.some((k) => k == null), false, 'no get(null)');
+});
+
+test('attachments: a sweep never deletes the bytes of an add that is still waiting to seal', async () => {
+  const { call, svc, chrome, item } = await withItem();
+  const local = chrome.storage.local;
+  const realSet = local.set.bind(local);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  local.set = async (obj) => {
+    if (VAULT_KEY in obj) await gate;
+    return realSet(obj);
+  };
+  const adding = call(MSG.VAULT_ADD_ATTACHMENT, { itemId: item.id, name: 'slow', mime: '', data: fileB64('slow') });
+  while (!attKeys(chrome).length) await new Promise((r) => setTimeout(r, 1));
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(attKeys(chrome).length, 1, 'bytes written, not yet sealed, still there');
+  release();
+  local.set = realSet;
+  const [att] = (await adding).item.attachments;
+  await settle(svc);
+  assert.deepEqual(attKeys(chrome), [keyOf(att.id)]);
+  assert.equal((await call(MSG.VAULT_GET_ATTACHMENT, { itemId: item.id, attachmentId: att.id })).data, fileB64('slow'));
+});
+
+test('attachments: a failing remove during the sweep does not fail the unlock', async () => {
+  const { call, svc, chrome } = await withItem();
+  const local = chrome.storage.local;
+  const stray = crypto.randomUUID();
+  local.map.set(keyOf(stray), { v: 1, iv: 'x', ct: 'y' });
+  await call(MSG.VAULT_LOCK);
+  local.remove = async () => { throw new Error('io'); };
+  assert.deepEqual(await call(MSG.VAULT_UNLOCK, { masterPassword: PW }), {});
+  await settle(svc);
+  assert.equal(await svc.isLocked(), false);
+  assert.ok(local.map.has(keyOf(stray)));
+});
+
+test('attachments: a reopened service worker sweeps at most once per browser session', async () => {
+  const { call, svc, chrome } = await withItem();
+  const local = chrome.storage.local;
+  const realGet = local.get.bind(local);
+  let listings = 0;
+  local.get = async (keys) => {
+    if (keys == null) listings++;
+    return realGet(keys);
+  };
+  await settle(svc);
+  const stray = crypto.randomUUID();
+  local.map.set(keyOf(stray), { v: 1, iv: 'x', ct: 'y' });
+  for (let i = 0; i < 3; i++) {
+    const w = makeService({ chrome });
+    await w.call(MSG.VAULT_GET_ALL);
+    await settle(w.svc);
+  }
+  assert.equal(listings, 0, 'restarts in the same session neither list nor read storage');
+  assert.ok(local.map.has(keyOf(stray)));
+
+  await call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: NEVER_LOCK }, masterPassword: PW });
+  chrome.storage.session.map.clear();
+  const fresh = makeService({ chrome });
+  assert.equal(await fresh.svc.isLocked(), false, 'reopens from the kept key');
+  await settle(fresh.svc);
+  assert.equal(listings, 1, 'the first reopen of a new browser session sweeps once');
+  assert.equal(local.map.has(keyOf(stray)), false);
+  for (let i = 0; i < 2; i++) {
+    const w = makeService({ chrome });
+    await w.call(MSG.VAULT_GET_ALL);
+    await settle(w.svc);
+  }
+  assert.equal(listings, 1);
+  await fresh.call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle(fresh.svc);
+  assert.equal(listings, 2, 'an explicit unlock sweeps');
+});
+
+test('attachments: with storage.local.getKeys, restarts in the same session do not call it again', async () => {
+  const { svc, chrome } = await withItem();
+  const local = chrome.storage.local;
+  let listings = 0;
+  local.getKeys = async () => {
+    listings++;
+    return [...local.map.keys()];
+  };
+  await settle(svc);
+  for (let i = 0; i < 3; i++) {
+    const w = makeService({ chrome });
+    await w.call(MSG.VAULT_GET_ALL);
+    await settle(w.svc);
+  }
+  assert.equal(listings, 0);
+  chrome.storage.session.map.clear();
+  const again = makeService({ chrome });
+  await again.call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle(again.svc);
+  assert.equal(listings, 1);
+});
+
+test('default email: set, replace and clear; getAll returns it; writes count as activity', async () => {
+  const { call, svc, chrome, clock } = await setupUnlocked();
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '  me@example.com ' }), { defaultEmail: 'me@example.com' });
+  assert.equal((await svc.readData()).defaultEmail, 'me@example.com');
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+  assert.ok(!JSON.stringify(chrome.storage.local.map.get(VAULT_KEY)).includes('me@example.com'), 'stored encrypted');
+
+  chrome.alarms.map.clear();
+  clock.t += 60_000;
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'work+akari@mail.example.co.jp' }), { defaultEmail: 'work+akari@mail.example.co.jp' });
+  assert.ok(chrome.alarms.map.has(AUTOLOCK_ALARM), 'setting the default re-arms auto-lock');
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'work+akari@mail.example.co.jp');
+
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '   ' }), { defaultEmail: '' });
+  assert.equal('defaultEmail' in (await svc.readData()), false);
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '' }), { defaultEmail: '' });
+});
+
+test('default email: invalid input is INVALID and stores nothing; locked is LOCKED', async () => {
+  const { call, svc, chrome } = await setupUnlocked();
+  await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'me@example.com' });
+  const stored = chrome.storage.local.map.get(VAULT_KEY);
+  for (const email of [undefined, null, 42, ['me@example.com'], 'not-an-email', 'a@b@c', 'me @example.com', 'me@exa​mple.com', 'a'.repeat(250) + '@x.jp']) {
+    await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email }), { code: 'INVALID' }, String(email));
+  }
+  assert.equal(chrome.storage.local.map.get(VAULT_KEY), stored, 'nothing written');
+  assert.equal((await svc.readData()).defaultEmail, 'me@example.com');
+
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'other@example.com' }), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '' }), { code: 'LOCKED' });
+});
+
+test('default email: survives lock + unlock and a master-password change', async () => {
+  const { call } = await setupUnlocked();
+  await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'me@example.com' });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+  await call(MSG.VAULT_CHANGE_PASSWORD, { current: PW, next: 'next-password-2' });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: 'next-password-2' });
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+});
+
+test('default email: a backup brings its default only into a vault that has none, and a malformed one is ignored', async () => {
+  const a = await setupUnlocked();
+  await a.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'From A' } });
+  await a.call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'a@example.com' });
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  assert.ok(!json.includes('a@example.com'));
+
+  const empty = await setupUnlocked();
+  assert.deepEqual(await empty.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await empty.call(MSG.VAULT_GET_ALL)).defaultEmail, 'a@example.com');
+
+  const owned = await setupUnlocked();
+  await owned.call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'b@example.com' });
+  assert.deepEqual(await owned.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await owned.call(MSG.VAULT_GET_ALL)).defaultEmail, 'b@example.com');
+
+  await a.svc.mutateData((d) => { d.defaultEmail = 'bad address@@'; });
+  const { json: malformed } = await a.call(MSG.VAULT_EXPORT);
+  const fresh = await setupUnlocked();
+  assert.deepEqual(await fresh.call(MSG.VAULT_IMPORT, { json: malformed, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await fresh.call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.equal('defaultEmail' in (await fresh.svc.readData()), false);
 });

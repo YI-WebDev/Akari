@@ -21,6 +21,7 @@ export const MSG = Object.freeze({
   VAULT_DELETE_VAULT: 'vault/deleteVault',
   VAULT_ADD_ATTACHMENT: 'vault/addAttachment',
   VAULT_GET_ATTACHMENT: 'vault/getAttachment',
+  VAULT_SET_DEFAULT_EMAIL: 'vault/setDefaultEmail',
 
   BACKUP_STATUS: 'backup/status',
   BACKUP_SNOOZE: 'backup/snooze',
@@ -45,6 +46,8 @@ export const MSG = Object.freeze({
   AUTOFILL_REQUEST_IDENTITY: 'autofill/requestIdentity',
   AUTOFILL_PAGE_TOTP: 'autofill/pageTotp',
   AUTOFILL_REQUEST_TOTP: 'autofill/requestTotp',
+  AUTOFILL_EMAILS: 'autofill/emails',
+  AUTOFILL_REQUEST_EMAIL: 'autofill/requestEmail',
   AUTOFILL_DO_FILL: 'autofill/doFill',
 
   PASSKEY_CREATE: 'passkey/create',

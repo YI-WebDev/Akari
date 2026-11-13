@@ -531,6 +531,183 @@ const scenarios = {
     expect(await page.locator('#neverForm').isHidden(), 'other choices need no password');
     await ctx.close();
   },
+  async 'default-email'() {
+    const openSettings = async (page) => {
+      await page.click('#menuBtn');
+      await page.click('#openSettings');
+      await page.waitForSelector('#setSheet.open');
+      await settle(page, 700);
+      await page.evaluate(() => document.getElementById('emailForm').closest('.set-group').scrollIntoView({ block: 'center' }));
+      await settle(page, 200);
+    };
+    for (const v of [{ tag: 'ja-dark', lang: 'ja', theme: 'dark' }, { tag: 'en-light', lang: 'en', theme: 'light' }]) {
+      const { page, ctx } = await open({ name: `default-email-${v.tag}`, lang: v.lang, theme: v.theme });
+      const eshot = (n) => shot(page, `email-${v.tag}-${n}`);
+      const input = page.locator('#emailInput');
+      const sent = () => page.evaluate(() => window.__AKARI_DB__.emailCalls);
+      const stored = () => page.evaluate(() => window.__AKARI_DB__.defaultEmail);
+      const err = () => page.locator('#emailErr').textContent();
+      const cmd = () => page.locator('#setCmd').textContent();
+      const idle = () => page.waitForFunction(() => !document.getElementById('emailInput').readOnly);
+      const focused = () => page.evaluate(() => document.activeElement?.id);
+      await page.waitForSelector('.row');
+      await openSettings(page);
+      expect(await page.locator('#setFillHead').isVisible(), 'autofill group shown');
+      expect(await input.inputValue() === '', 'empty at first');
+      expect(await input.getAttribute('autocomplete') === 'off' && await input.getAttribute('spellcheck') === 'false' && !(await input.getAttribute('name')), 'no browser autofill on the field');
+      expect(await page.locator('#emailSave').isDisabled(), 'nothing to save yet');
+      expect(await page.locator('#emailClear').isHidden(), 'no remove control without a value');
+      expect(/ID/.test(await page.locator('#emailHint').textContent()), 'hint mentions ID items');
+      const order = await page.evaluate(() => [...document.querySelectorAll('#emailForm input, #emailForm button:not([hidden])')].map((el) => el.id));
+      expect(order.join() === 'emailInput,emailSave', `tab order follows the layout (${order})`);
+      await eshot('empty');
+
+      await input.fill('haruka@');
+      await input.press('Enter');
+      await page.waitForTimeout(150);
+      expect((await err()).length > 0, 'malformed address shows an error');
+      expect(await sent() === 0, 'malformed address is not sent');
+      expect(await focused() === 'emailInput', 'focus stays in the field');
+      expect(await page.locator('#emailForm .field.invalid').count() === 1, 'field marked invalid');
+      await settle(page, 300);
+      await eshot('invalid');
+      await input.fill(`${'a'.repeat(251)}@b.c`);
+      await input.press('Enter');
+      await page.waitForTimeout(150);
+      expect((await err()).includes('254') && await sent() === 0, 'too long is refused locally');
+      await input.press('Escape');
+      expect(await input.inputValue() === '' && await err() === '', 'esc clears the unsaved edit and the error');
+      expect(await page.locator('#setSheet.open').count() === 1, 'first esc keeps the sheet open');
+
+      await input.fill(' haruka.sato@example.com ');
+      expect(!(await page.locator('#emailSave').isDisabled()), 'save enabled once changed');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === 'haruka.sato@example.com');
+      await idle();
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'saved value shown trimmed');
+      expect(await cmd() === 'akari config set default-email haruka.sato@example.com', 'command echoed');
+      expect(await page.locator('#emailClear').isVisible(), 'remove control appears');
+      expect(await focused() === 'emailInput', 'focus stays after save');
+      expect(await sent() === 1, 'one save');
+      await input.press('Enter');
+      await page.click('#emailSave', { force: true });
+      await page.waitForTimeout(400);
+      expect(await sent() === 1, 'unchanged value is not sent again');
+      await page.mouse.move(2, 2);
+      await settle(page, 300);
+      await eshot('saved');
+
+      await input.fill('other@example.com');
+      await input.press('Escape');
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'esc restores the saved value');
+      expect(await page.locator('#setSheet.open').count() === 1, 'sheet still open after the first esc');
+      await input.press('Escape');
+      await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+      await openSettings(page);
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'saved value is there after reopening');
+      await input.fill('scratch@example.com');
+      await page.click('#setSheet [data-close]');
+      await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+      await openSettings(page);
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'unsaved edit dropped on close');
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.failEmail = 'INTERNAL'; });
+      await input.fill('work@studio-mori.jp');
+      await input.press('Enter');
+      await page.waitForFunction(() => document.getElementById('emailErr').textContent !== '');
+      await idle();
+      expect(await input.inputValue() === 'work@studio-mori.jp', 'typed value kept after a failed save');
+      expect(await stored() === 'haruka.sato@example.com', 'stored value unchanged');
+      expect(!(await cmd()).includes('work@'), 'command not echoed on failure');
+      expect(!(await page.locator('#emailSave').isDisabled()), 'save can be retried');
+      expect(await page.locator('#emailForm .field.invalid').count() === 0, 'a failed save does not mark the address invalid');
+      await settle(page, 300);
+      await eshot('failed');
+      await page.evaluate(() => { window.__AKARI_MOCK__.failEmail = null; });
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.delay = 4; });
+      const n0 = await sent();
+      await input.press('Enter');
+      await input.press('Enter');
+      await page.click('#emailSave', { force: true });
+      await idle();
+      expect(await sent() === n0 + 1, 'no double submit while saving');
+      expect(await stored() === 'work@studio-mori.jp' && await err() === '', 'retry saved');
+      await page.evaluate(() => { window.__AKARI_MOCK__.delay = 1; });
+
+      const long = `${'haruka.sato.long-mailbox-name'.repeat(7)}@example.com`.slice(-254);
+      await input.fill(long);
+      await input.press('Enter');
+      await page.waitForFunction((x) => window.__AKARI_DB__.defaultEmail === x, long);
+      await idle();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth) <= 680, 'long address does not widen the frame');
+      const box = await page.locator('#emailForm').boundingBox();
+      expect(box.x + box.width <= 680, 'form stays inside the frame');
+      await page.mouse.move(2, 2);
+      await settle(page, 300);
+      await eshot('long');
+
+      await page.click('#emailClear');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === '');
+      await idle();
+      expect(await input.inputValue() === '' && await page.locator('#emailClear').isHidden(), 'removed with the remove control');
+      expect(await cmd() === 'akari config unset default-email', 'unset echoed');
+      expect(await focused() === 'emailInput', 'focus returns to the field after removing');
+
+      await input.fill('haruka@studio-mori.jp');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === 'haruka@studio-mori.jp');
+      await idle();
+      await input.fill('');
+      expect((await page.locator('#emailHint').textContent()).length > 0 && !(await page.locator('#emailSave').isDisabled()), 'clearing the field offers removal');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === '');
+      await idle();
+      expect(await cmd() === 'akari config unset default-email', 'removed by saving an empty field');
+      await ctx.close();
+    }
+    const { page, ctx } = await open({ name: 'default-email-seeded', defaultEmail: 'seed@example.com' });
+    await page.waitForSelector('.row');
+    await openSettings(page);
+    expect(await page.locator('#emailInput').inputValue() === 'seed@example.com', 'value from vault/getAll shown');
+    expect(await page.locator('#emailClear').isVisible() && await page.locator('#emailSave').isDisabled(), 'saved state on open');
+    await page.evaluate(() => document.getElementById('lockBtn').click());
+    await page.waitForFunction(() => document.getElementById('app').dataset.phase === 'locked' && !document.getElementById('setSheet').classList.contains('open'));
+    expect(await page.locator('#emailInput').inputValue() === '', 'cleared when the vault locks');
+    await ctx.close();
+
+    const imp = await open({ name: 'default-email-import', importEmail: 'from-backup@example.com' });
+    const importBackup = async () => {
+      await imp.page.click('#importOpen');
+      await imp.page.click('.src[data-id="akari"]');
+      await imp.page.waitForSelector('#impPw');
+      const backup = JSON.stringify({ format: 'akari-backup', version: 1, exportedAt: new Date().toISOString(), vault: {} }, null, 2);
+      await imp.page.setInputFiles('#impFile', { name: 'akari-backup-20261101.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
+      await imp.page.fill('#impPw', 'backup-pass');
+      await imp.page.keyboard.press('Enter');
+      await imp.page.waitForSelector('.io-log .boot-k:has-text("2 件を読み込みました")');
+      for (let i = 0; i < 3 && await imp.page.locator('#setMain').isHidden(); i++) await imp.page.click('#setBack');
+      await imp.page.waitForSelector('#setMain:not([hidden])');
+    };
+    const mail = imp.page.locator('#emailInput');
+    await imp.page.waitForSelector('.row');
+    await openSettings(imp.page);
+    expect(await mail.inputValue() === '' && await imp.page.locator('#emailClear').isHidden(), 'no default before the import');
+    await importBackup();
+    const followed = await imp.page.waitForFunction(() => document.getElementById('emailInput').value === 'from-backup@example.com', null, { timeout: 5000 }).then(() => true, () => false);
+    expect(followed, 'the field follows a default adopted by an import made from the open sheet');
+    expect(await imp.page.locator('#emailClear').isVisible() && await imp.page.locator('#emailSave').isDisabled(), 'and shows it as saved');
+    expect(await imp.page.locator('#setSheet').evaluate((n) => n.classList.contains('open')), 'the sheet stayed open');
+    await mail.fill('draft@example.com');
+    await imp.page.evaluate(() => { window.__AKARI_DB__.defaultEmail = 'other@example.com'; });
+    await importBackup();
+    await settle(imp.page, 1000);
+    expect(await mail.inputValue() === 'draft@example.com' && !(await imp.page.locator('#emailSave').isDisabled()), 'an unsaved edit survives a reload');
+    await mail.focus();
+    await imp.page.keyboard.press('Escape');
+    expect(await mail.inputValue() === 'other@example.com', 'Esc puts back the default as it is now');
+    await imp.ctx.close();
+  },
   async vaults() {
     const { page, ctx } = await open({ name: 'vaults' });
     await page.waitForSelector('.row');
@@ -1497,6 +1674,30 @@ async function dragOverAttachments(page, on) {
   }, on);
   await page.waitForTimeout(250);
 }
+async function dragThroughWindow(page, sel, type) {
+  return page.evaluate(([s, type]) => {
+    if (!window.__dragSeen) {
+      const own = new WeakMap();
+      const real = Object.getOwnPropertyDescriptor(DataTransfer.prototype, 'dropEffect');
+      Object.defineProperty(DataTransfer.prototype, 'dropEffect', {
+        configurable: true,
+        get() { return own.has(this) ? own.get(this) : real.get.call(this); },
+        set(v) { own.set(this, v); },
+      });
+      for (const k of ['dragover', 'drop']) {
+        window.addEventListener(k, (e) => { window.__dragSeen = { effect: e.dataTransfer.dropEffect, prevented: e.defaultPrevented }; });
+      }
+      window.__dragSeen = {};
+    }
+    window.__dragSeen = {};
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x'], 'drag.txt', { type: 'text/plain' }));
+    dt.dropEffect = 'move';
+    const ev = new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+    document.querySelector(s).dispatchEvent(ev);
+    return { ...window.__dragSeen, prevented: ev.defaultPrevented, url: location.href };
+  }, [sel, type]);
+}
 
 function featureScenarios() {
   const out = {};
@@ -1571,9 +1772,34 @@ function featureScenarios() {
       await page.waitForTimeout(200);
       await scrollEditorTo(page, '.xf-box');
       await fshot('editor-filled');
+      const codes = 'rc-1111-aaaa\nrc-2222-bbbb\nrc-3333-cccc';
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', codes);
+      for (const key of ['4', '2', '3', '2']) {
+        await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+        await page.waitForTimeout(200);
+        await page.keyboard.press(key);
+        await page.waitForTimeout(200);
+        if (key !== '2') expect(await page.locator('.xf-row:nth-child(2) .field-err:not(:empty)').count() === 1, 'a multi-line value is an error under date and 2FA code');
+      }
+      expect(await page.inputValue('.xf-row:nth-child(2) textarea.xf-value') === codes, 'line breaks survive kind changes');
+      const split = 'JBSW\nY3DP\nEHPK\n3PXP';
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', split);
+      await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+      await page.waitForTimeout(200);
+      await page.keyboard.press('3');
+      await page.waitForTimeout(250);
+      expect(/改行|Line breaks/.test(await page.locator('.xf-row:nth-child(2) .field-err').textContent()), 'a multi-line Base32 value under 2FA code shows the line-break error');
+      expect(await page.locator('.xf-row:nth-child(2) .xf-totp').count() === 0, 'no live code from a multi-line value');
+      await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+      await page.waitForTimeout(200);
+      await page.keyboard.press('2');
+      await page.waitForTimeout(200);
+      expect(await page.inputValue('.xf-row:nth-child(2) textarea.xf-value') === split, 'back to secret gives the four lines back');
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', codes);
       await page.click('.ed-foot .btn-primary');
       await page.waitForSelector('#editor[hidden]', { state: 'attached' });
       const ex = await page.evaluate(() => window.__AKARI_DB__.items.find((x) => x.id === 'fields-login').extra);
+      expect(ex[1].kind === 'hidden' && ex[1].value === codes, 'multi-line secret saved with its line breaks after secret -> date -> secret -> 2FA code -> secret');
       expect(ex[0].kind === 'hidden' && ex[0].secret === true && ex[0].value === '9f2c4a7e81b3d605', 'text -> hidden keeps the value');
       expect(ex[2].value === 'JBSWY3DPEHPK3PXP' && ex[2].kind === 'totp', 'untouched TOTP round-trips');
       expect(ex.some((x) => x.kind === 'date' && x.value === '2026-03-01'), 'new date saved');
@@ -1694,6 +1920,111 @@ function featureScenarios() {
       await page.waitForSelector('#editor[hidden]', { state: 'attached', timeout: 15000 });
       const made = await page.evaluate(() => window.__AKARI_DB__.items.at(-1));
       expect(made.type === 'note' && made.attachments?.length === 1 && made.attachments[0].name === 'レシート.pdf', 'a new item gets its file after the first save');
+      await ctx.close();
+    }
+  };
+
+  out['attach-guards'] = async () => {
+    for (const v of [FEATURE_VARIANTS[0], FEATURE_VARIANTS[3]]) {
+      const ja = v.lang === 'ja';
+      const { page, ctx } = await openFeature(`attach-guards-${v.tag}`, v);
+      const gshot = (n) => shot(page, `attach-${v.tag}-${n}`);
+
+      await pickItem(page, '名前の長い', 'att-names');
+      await gshot('detail-names');
+      const rows = page.locator('#detail .at-dbox .at-ditem');
+      expect(await rows.count() === 3, 'three odd names listed');
+      for (let i = 0; i < 3; i++) {
+        const row = rows.nth(i);
+        const shown = await row.locator('.pk-user').textContent();
+        const ext = (await row.locator('.at-dmeta').textContent()).split(' · ')[0];
+        const [dl] = await Promise.all([page.waitForEvent('download'), row.locator('.at-btn:not([aria-expanded])').click()]);
+        const saved = dl.suggestedFilename();
+        expect(saved === shown, `row ${i}: shown name is the saved name (${saved.slice(-24)} vs ${shown.slice(-24)})`);
+        expect(saved.endsWith(ext) && saved.length <= 120, `row ${i}: shown kind ${ext} is the saved extension (${saved.slice(-12)})`);
+        expect(!/[​-‏‪-‮⁦-⁩]/.test(saved), `row ${i}: no direction controls`);
+      }
+      expect((await rows.nth(0).locator('.at-dmeta').textContent()).startsWith('.txt'), '116 × A + .exe.txt stays a .txt');
+      expect((await rows.nth(1).locator('.at-dmeta').textContent()).startsWith('.exe'), 'a right-to-left override cannot hide .exe');
+      expect((await rows.nth(2).locator('.at-dmeta').textContent()).startsWith('.pdf'), 'a long .pdf keeps .pdf');
+      await quiet(page);
+
+      await pickItem(page, '確定申告', 'att-docs');
+      await editItem(page);
+      const url0 = page.url();
+      const inBox = await dragThroughWindow(page, '.at-slot', 'dragover');
+      expect(inBox.effect === 'copy', `dragover in the attachments box is still 'copy' at window (${inBox.effect})`);
+      const outside = await dragThroughWindow(page, '#edTitle', 'dragover');
+      expect(outside.effect === 'none', `dragover elsewhere in the editor is 'none' at window (${outside.effect})`);
+      const dropOut = await dragThroughWindow(page, '#edTitle', 'drop');
+      expect(dropOut.prevented && dropOut.url === url0, 'a drop outside the box is prevented and the page stays');
+
+      const settled = () => page.waitForFunction(() => !document.querySelector('.ed-form[aria-busy]') && !document.querySelector('.ed-scroll')?.inert);
+      await page.evaluate(() => { window.__AKARI_MOCK__.failSave = 'INVALID'; });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#toast.on.err');
+      await settled();
+      expect(await page.evaluate(() => document.activeElement?.id) === 'edTitle', 'a failed save started with Enter gives focus back to the title');
+      await page.evaluate(() => { window.__AKARI_MOCK__.failSave = null; });
+      await quiet(page);
+      await page.locator('.at-input').setInputFiles([fakeFile('unreadable.txt', 50, 'text/plain')]);
+      await page.evaluate(() => { window.__realAB = Blob.prototype.arrayBuffer; Blob.prototype.arrayBuffer = () => Promise.reject(new Error('gone')); });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.at-item[data-state="fail"]');
+      await settled();
+      expect(await page.evaluate(() => document.activeElement?.id) === 'edTitle', 'a prepare failure gives focus back to the title');
+      await page.evaluate(() => { Blob.prototype.arrayBuffer = window.__realAB; });
+      await page.click('.at-item.queued .ibtn');
+
+      const title = await page.inputValue('#edTitle');
+      await page.locator('.at-input').setInputFiles([fakeFile('scan-a.png', 2000, 'image/png'), fakeFile('memo-b.txt', 300, 'text/plain')]);
+      await page.evaluate(() => { window.__AKARI_MOCK__.uploadDelay = 1500; window.__AKARI_MOCK__.failUpload = 'scan'; });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.ed-foot-note[data-kind="run"]:not([hidden])');
+      expect(await page.evaluate(() => document.activeElement?.matches('.ed-foot .btn-primary')), 'while files are saved, focus waits on 保存 in the foot, not on body');
+      expect(await page.evaluate(() => document.querySelector('.ed-scroll').inert), 'the form is locked while files are saved');
+      expect(await page.locator('.ed-foot .btn-text.danger').count() === 0, '削除 is not offered while saving');
+      await page.click('#edNote', { force: true, timeout: 1000 }).catch(() => {});
+      await page.keyboard.type('typed while saving');
+      expect(await page.locator('.ed-foot-note[data-kind="run"]:not([hidden])').count() === 1, 'the progress line stays');
+      await gshot('editor-locked');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])', { timeout: 15000 });
+      expect(!(await page.inputValue('#edNote')).includes('typed while saving'), 'nothing typed during the save went into the form');
+      expect(!(await page.evaluate(() => document.querySelector('.ed-scroll').inert)), 'usable again after a partial failure');
+      expect(await page.locator('.ed-foot .btn-text.danger').count() === 1, '削除 is back');
+
+      await page.click('.at-item.queued .ibtn');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      expect(await page.locator('#editor[hidden]').count() === 1 && await page.locator('.ed-foot .ed-confirm').count() === 0,
+        'failed file removed and nothing else changed: closes without a question');
+
+      await editItem(page);
+      await page.locator('.at-input').setInputFiles([fakeFile('scan-c.png', 2000, 'image/png')]);
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])', { timeout: 15000 });
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(/外して閉じ|Close without/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'only not-added files: the "remove and close" question');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+      await page.fill('#edTitle', title + ' 2');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      const ask = await page.locator('.ed-foot .ed-confirm').textContent();
+      expect(ja ? /保存後/.test(ask) && /アイテムは保存済み/.test(ask) : /Discard edits/.test(ask) && /saved/.test(ask), `edits after a partial failure: the question says the item is saved (${ask})`);
+      await page.waitForTimeout(300);
+      await gshot('editor-discard-since');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+      await page.click('.at-item.queued .ibtn');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(ja ? /保存後/.test(await page.locator('.ed-foot .ed-confirm').textContent()) : /Discard edits/.test(await page.locator('.ed-foot .ed-confirm').textContent()),
+        'removing the failed file does not hide a real edit');
+      await page.click('.ed-foot .ed-confirm .btn-mini.danger');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached' });
       await ctx.close();
     }
   };

@@ -25,6 +25,7 @@ export const S = {
   picking: false,
   picked: new Set(),
   af: null,
+  defaultEmail: '',
 };
 
 const UI_KEY = 'akari.ui';
@@ -48,6 +49,11 @@ export function setPhase(phase) {
 export function endEpoch() {
   S.phase = 'locked';
   S.epoch++;
+  S.defaultEmail = '';
+}
+
+export function setDefaultEmail(email) {
+  S.defaultEmail = typeof email === 'string' ? email : '';
 }
 
 export function setSettings(settings) {
@@ -141,7 +147,7 @@ export const live = (token) => S.phase === 'main' && S.epoch === token;
 const WRITES = new Set([
   MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
   MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_ADD_ATTACHMENT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_CHANGE_PASSWORD,
-  MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT,
+  MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.VAULT_SET_DEFAULT_EMAIL,
 ]);
 let writesInFlight = 0;
 
