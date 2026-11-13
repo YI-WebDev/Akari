@@ -13,7 +13,7 @@ import { siteOf } from './views/format.js';
 import { toast, toastError, hideToast, initToast } from './views/toast.js';
 import { renderList, renderCounts, scrollToRow, renderViewButton, resetListCache } from './views/list.js';
 import { buildPlusMenu } from './views/type-menu.js';
-import { renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
+import { initDetail, renderDetail, stopDetail, showPasswordUpdated } from './views/detail.js';
 import { renderPicker, resetPicker } from './views/picker.js';
 import { openEditor, closeEditor, editorOpen, requestClose } from './views/editor.js';
 import { initGenerator, openGenerator, closeGenerator, resetGenerator } from './views/generator.js';
@@ -423,6 +423,7 @@ function wire() {
   });
 
   initToast();
+  initDetail();
   initGenerator();
   initSettings();
   initHealth();

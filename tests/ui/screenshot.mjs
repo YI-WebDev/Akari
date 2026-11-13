@@ -86,10 +86,10 @@ const scenarios = {
     expect(await page.locator('#vaultLabel').textContent() === 'すべて', 'vault label');
     expect(await page.locator('.ticks span').count() === 30, '30 TOTP ticks');
     expect(await page.locator('.pw-col .segs span').count() === 12, '12 meter segments');
-    await page.click('.pw-btns .ibtn');
+    await page.click('.pw-btns .ibtn[aria-pressed]');
     await settle(page, 700);
     await shot(page, 'revealed');
-    await page.click('.pw-btns .ibtn:nth-child(2)');
+    await page.click('.f-row:has(.pw-btns) .f-label');
     await settle(page, 500);
     await shot(page, 'copied');
     await ctx.close();
@@ -141,7 +141,7 @@ const scenarios = {
     await quiet(page);
     await page.locator('.sect-btn').scrollIntoViewIfNeeded();
     await page.click('.sect-btn');
-    await page.locator('.hist-row').first().locator('.ibtn').first().click();
+    await page.locator('.hist-row').first().locator('.ibtn:not([data-copy])').click();
     expect(await page.locator('.hist-row').first().locator('.hist-pw').textContent() === 'amz2024', 'revealed');
     await settle(page, 400);
     await shot(page, 'history');
@@ -1239,6 +1239,98 @@ const scenarios = {
     expect(saved.type === 'passport' && saved.title === 'パスポート' && saved.fields.expiry === '2031-02-28', 'stored ISO date + type name as title');
     await ctx.close();
   },
+  async 'detail-row-copy'() {
+    const { page, ctx } = await open({ name: 'detail-row-copy', tabUrl: NEW_TAB });
+    await page.waitForSelector('.row');
+    await page.evaluate(() => {
+      window.__copies = 0;
+      const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = (v) => { window.__copies++; return write(v); };
+    });
+    const opened = [];
+    page.on('console', (m) => { if (m.text().startsWith('[mock] tabs.create')) opened.push(m.text()); });
+    const copies = () => page.evaluate(() => window.__copies);
+    const clip = () => page.evaluate(() => navigator.clipboard.readText());
+    const pick = async (id) => { await page.click(`.row[data-id="${id}"]`); await settle(page, 900); };
+    const row = (label) => page.locator(`#detail .f-row:has(.f-label:text-is("${label}"))`);
+    const cursorOf = (loc) => loc.evaluate((n) => getComputedStyle(n).cursor);
+
+    await pick('card-jcb');
+    expect(await cursorOf(row('名義')) === 'pointer' && await cursorOf(row('名義').locator('.f-value')) === 'pointer', 'a row that can be copied shows the pointer, over its text too');
+    await row('名義').locator('.f-label').click();
+    await settle(page, 300);
+    expect(await clip() === 'HARUKA SATO' && await copies() === 1, 'a click on the label copies the row');
+    expect(await page.locator('#toastMsg').textContent() === '名義をコピーしました', 'same toast as the button');
+    const opacityOf = (loc) => loc.evaluate((n) => getComputedStyle(n).opacity);
+    expect(await row('名義').locator('[data-copy] .copied-ico').count() === 1 && await opacityOf(row('名義').locator('[data-copy]')) === '1', 'a tick shows where the copy was made');
+    expect(await opacityOf(row('有効期限').locator('[data-copy]')) === '0', 'no copy icon is shown on the other rows');
+    await row('名義').hover();
+    await settle(page, 300);
+    await shot(page, 'detail-row-copy');
+
+    await page.locator('#detail .f-row:has(.card-num) .card-num').click();
+    await settle(page, 300);
+    expect(await clip() === '3540618291742302' && await copies() === 2, 'a click on a masked value copies the secret');
+    expect(await page.locator('.card-num').textContent() === '•••• •••• •••• 2302', 'and does not reveal it');
+    expect(/自動で消去/.test(await page.locator('#toastSub').textContent()), 'the clipboard clear is scheduled as for the button');
+
+    await page.locator('#detail .f-row:has(.card-num) .ibtn[aria-pressed]').click();
+    await settle(page, 800);
+    expect(await page.locator('.card-num').textContent() === '3540 6182 9174 2302' && await copies() === 2, 'the eye button reveals and copies nothing');
+
+    await row('名義').locator('.f-value').dblclick();
+    await settle(page, 300);
+    expect(await copies() === 3, 'a double click copies once');
+
+    const box = await row('名義').locator('.f-value').boundingBox();
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await settle(page, 300);
+    expect(await copies() === 3, 'dragging to select text copies nothing');
+    expect((await page.evaluate(() => String(getSelection()))).length > 0, 'and the text is selected');
+
+    await settle(page, 1700);
+    expect(await opacityOf(row('名義').locator('[data-copy]')) === '0', 'the tick goes away again');
+    await row('名義').locator('[data-copy]').focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-copy')) && await opacityOf(row('名義').locator('[data-copy]')) === '1', 'the copy control appears when the keyboard reaches it');
+    await page.keyboard.press('Enter');
+    await settle(page, 300);
+    expect(await copies() === 4, 'and Enter on it copies, once');
+
+    await pick('amazon');
+    const sites = page.locator('#detail .f-row.w-row');
+    expect(await cursorOf(sites) !== 'pointer', 'a row with nothing to copy is not a pointer target');
+    const before = await copies();
+    await sites.locator('.f-label').click();
+    await sites.locator('a.w-url').first().click();
+    await settle(page, 300);
+    expect(await copies() === before, 'the websites row copies nothing');
+    expect(opened.length === 1, 'its link still opens the site: ' + opened.join());
+
+    await row('ユーザー名').locator('.f-value').click();
+    await settle(page, 300);
+    expect(await clip() === 'haruka.sato@example.com', 'a click on the username copies it');
+    expect(await page.locator('#toastSub').textContent() === '', 'the username is not cleared from the clipboard');
+    await row('パスワード').locator('.pw-text').click();
+    await settle(page, 300);
+    expect(await clip() === 'amz2024' && await page.locator('#detail .f-row .pw-text').first().textContent() !== 'amz2024', 'the password is copied and stays masked');
+
+    await page.locator('.sect-btn').scrollIntoViewIfNeeded();
+    await page.click('.sect-btn');
+    const old = page.locator('.hist-row').first();
+    expect(await cursorOf(old) === 'pointer', 'history rows are pointer targets');
+    await old.locator('.hist-date').click();
+    await settle(page, 300);
+    expect(await clip() === 'amazon2016', 'a click on a history row copies that password');
+    const histCopies = await copies();
+    await old.locator('.btn-mini').hover();
+    expect(await copies() === histCopies, 'hovering the restore button copies nothing');
+    await ctx.close();
+  },
   async 'detail-types'() {
     const { page, ctx } = await open({ name: 'detail-types', tabUrl: NEW_TAB });
     await page.waitForSelector('.row');
@@ -1258,12 +1350,12 @@ const scenarios = {
     await settle(page, 800);
     await shot(page, 'detail-card-revealed');
     expect(await page.locator('.card-num').textContent() === '3540 6182 9174 2302', 'grouped in 4s');
-    await page.click('.f-row:has(.card-num) .ibtn[title="コピー"]');
+    await page.click('.f-row:has(.card-num) .f-label');
     await settle(page, 300);
     expect(await page.locator('#toastMsg').textContent() === 'カード番号をコピーしました', 'copy toast');
     expect(/自動で消去/.test(await page.locator('#toastSub').textContent()), 'secret copy schedules the clipboard clear');
     expect(await page.evaluate(() => navigator.clipboard.readText()) === '3540618291742302', 'digits only on the clipboard');
-    await page.click('.f-row:has-text("名義") .ibtn[title="コピー"]');
+    await page.click('.f-row:has-text("名義") .f-label');
     await settle(page, 300);
     expect(await page.locator('#toastSub').textContent() === '', 'non-secret copy: no clear');
     await pick('card-visa-old');

@@ -108,7 +108,7 @@ try {
   assert.equal(await page.locator('.weak').count(), 0);
 
   step('copy schedules clipboard clear');
-  await page.click('.pw-btns .ibtn:nth-child(2)');
+  await page.click('.f-row:has(.pw-btns) .f-label');
   await page.waitForTimeout(300);
   assert.equal(await toastText(), 'パスワードをコピーしました');
   assert.equal(await page.locator('#toastSub').textContent(), '30秒後にクリップボードから自動で消去します');
@@ -143,7 +143,7 @@ try {
     assert.equal(await page.locator('.card-num').textContent(), '•••• •••• •••• 0000');
     await page.click('.f-row:has(.card-num) .ibtn[aria-pressed]');
     await page.waitForFunction(() => document.querySelector('.card-num')?.textContent === '3530 1113 3330 0000');
-    await page.click('.f-row:has(.card-num) .ibtn[title="コピー"]');
+    await page.click('.f-row:has(.card-num) .f-label');
     await page.waitForTimeout(300);
     assert.equal(await toastText(), 'カード番号をコピーしました');
     assert.equal(await page.locator('#toastSub').textContent(), '30秒後にクリップボードから自動で消去します');

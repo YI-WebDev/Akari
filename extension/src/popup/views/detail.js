@@ -44,7 +44,7 @@ const masked = (pw) => '•'.repeat(Math.min(pw.length, MAX_MASK_LENGTH));
 
 function copyButton(field, getValue, label, opts) {
   const aria = t('detail.copyField', { label }, '{label}をコピー');
-  const btn = h('button', { class: 'ibtn', type: 'button', title: t('detail.copy', null, 'コピー'), 'aria-label': aria }, copyGlyph(false));
+  const btn = h('button', { class: 'ibtn', type: 'button', title: t('detail.copy', null, 'コピー'), 'aria-label': aria, 'data-copy': true }, copyGlyph(false));
   btn.addEventListener('click', async () => {
     const v = getValue();
     if (!v) return;
@@ -54,6 +54,31 @@ function copyButton(field, getValue, label, opts) {
     view?.timers.push(tm);
   });
   return btn;
+}
+
+const COPY_ROW = '.f-row, .hist-row';
+const OWN_CONTROL = 'button, a, input, textarea, select, summary, label';
+const DRAG_SLOP_PX = 4;
+let pressedAt = null;
+
+function notePress(e) {
+  pressedAt = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+}
+
+function copyFromRow(e) {
+  const press = pressedAt;
+  pressedAt = null;
+  if (e.defaultPrevented || e.button !== 0 || e.detail > 1) return;
+  const row = e.target.closest(COPY_ROW);
+  if (!row || e.target.closest(OWN_CONTROL)) return;
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_SLOP_PX) return;
+  row.querySelector('[data-copy]')?.click();
+}
+
+export function initDetail() {
+  const D = document.getElementById('detail');
+  D.addEventListener('mousedown', notePress);
+  D.addEventListener('click', copyFromRow);
 }
 
 function openUrl(e, href) {
@@ -224,7 +249,7 @@ function historyRow(it, entry) {
   back.addEventListener('click', () => restorePassword(it.id, entry.password, back));
   return h('div', { class: 'hist-row', role: 'listitem' },
     h('div', { class: 'hist-text' }, text, h('span', { class: 'hist-date' }, t('{date} まで使用', { date: formatDate(entry.changedAt) }))),
-    h('span', { class: 'f-btns' }, eye, copyButton('history', () => entry.password, t('以前のパスワード'), { label: t('以前のパスワード'), secret: true }), back));
+    h('span', { class: 'f-btns' }, copyButton('history', () => entry.password, t('以前のパスワード'), { label: t('以前のパスワード'), secret: true }), eye, back));
 }
 
 async function restorePassword(id, password, btn) {
@@ -291,7 +316,7 @@ function passwordRow(it, animate) {
   return h('div', { class: 'f-row top' },
     h('span', { class: 'f-label' }, t('パスワード')),
     h('div', { class: 'pw-col' }, pwText, meter),
-    h('div', { class: 'f-btns pw-btns' }, eye, copyButton('pass', () => itemById(it.id)?.password, t('パスワード'))));
+    h('div', { class: 'f-btns pw-btns' }, copyButton('pass', () => itemById(it.id)?.password, t('パスワード')), eye));
 }
 
 function totpRow(it) {
@@ -411,7 +436,7 @@ function secretRow({ key, label, get, multiline = false, card = false, sub = '',
   });
   paint(view.shown.has(key), false);
   const copy = copyButton(key, () => (card ? digitsOnly(get()) : get()), label, { label, secret: true });
-  const btns = h('div', { class: 'f-btns' }, eye, copy);
+  const btns = h('div', { class: 'f-btns' }, copy, eye);
   if (multiline) return h('div', { class: 'f-row top' }, labelEl(label, sub), h('div', { class: 'ml-col' }, text, secretHiddenHint), btns);
   return h('div', { class: 'f-row' }, labelEl(label, sub), text, btns);
 }
