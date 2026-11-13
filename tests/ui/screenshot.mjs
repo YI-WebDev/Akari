@@ -531,6 +531,183 @@ const scenarios = {
     expect(await page.locator('#neverForm').isHidden(), 'other choices need no password');
     await ctx.close();
   },
+  async 'default-email'() {
+    const openSettings = async (page) => {
+      await page.click('#menuBtn');
+      await page.click('#openSettings');
+      await page.waitForSelector('#setSheet.open');
+      await settle(page, 700);
+      await page.evaluate(() => document.getElementById('emailForm').closest('.set-group').scrollIntoView({ block: 'center' }));
+      await settle(page, 200);
+    };
+    for (const v of [{ tag: 'ja-dark', lang: 'ja', theme: 'dark' }, { tag: 'en-light', lang: 'en', theme: 'light' }]) {
+      const { page, ctx } = await open({ name: `default-email-${v.tag}`, lang: v.lang, theme: v.theme });
+      const eshot = (n) => shot(page, `email-${v.tag}-${n}`);
+      const input = page.locator('#emailInput');
+      const sent = () => page.evaluate(() => window.__AKARI_DB__.emailCalls);
+      const stored = () => page.evaluate(() => window.__AKARI_DB__.defaultEmail);
+      const err = () => page.locator('#emailErr').textContent();
+      const cmd = () => page.locator('#setCmd').textContent();
+      const idle = () => page.waitForFunction(() => !document.getElementById('emailInput').readOnly);
+      const focused = () => page.evaluate(() => document.activeElement?.id);
+      await page.waitForSelector('.row');
+      await openSettings(page);
+      expect(await page.locator('#setFillHead').isVisible(), 'autofill group shown');
+      expect(await input.inputValue() === '', 'empty at first');
+      expect(await input.getAttribute('autocomplete') === 'off' && await input.getAttribute('spellcheck') === 'false' && !(await input.getAttribute('name')), 'no browser autofill on the field');
+      expect(await page.locator('#emailSave').isDisabled(), 'nothing to save yet');
+      expect(await page.locator('#emailClear').isHidden(), 'no remove control without a value');
+      expect(/ID/.test(await page.locator('#emailHint').textContent()), 'hint mentions ID items');
+      const order = await page.evaluate(() => [...document.querySelectorAll('#emailForm input, #emailForm button:not([hidden])')].map((el) => el.id));
+      expect(order.join() === 'emailInput,emailSave', `tab order follows the layout (${order})`);
+      await eshot('empty');
+
+      await input.fill('haruka@');
+      await input.press('Enter');
+      await page.waitForTimeout(150);
+      expect((await err()).length > 0, 'malformed address shows an error');
+      expect(await sent() === 0, 'malformed address is not sent');
+      expect(await focused() === 'emailInput', 'focus stays in the field');
+      expect(await page.locator('#emailForm .field.invalid').count() === 1, 'field marked invalid');
+      await settle(page, 300);
+      await eshot('invalid');
+      await input.fill(`${'a'.repeat(251)}@b.c`);
+      await input.press('Enter');
+      await page.waitForTimeout(150);
+      expect((await err()).includes('254') && await sent() === 0, 'too long is refused locally');
+      await input.press('Escape');
+      expect(await input.inputValue() === '' && await err() === '', 'esc clears the unsaved edit and the error');
+      expect(await page.locator('#setSheet.open').count() === 1, 'first esc keeps the sheet open');
+
+      await input.fill(' haruka.sato@example.com ');
+      expect(!(await page.locator('#emailSave').isDisabled()), 'save enabled once changed');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === 'haruka.sato@example.com');
+      await idle();
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'saved value shown trimmed');
+      expect(await cmd() === 'akari config set default-email haruka.sato@example.com', 'command echoed');
+      expect(await page.locator('#emailClear').isVisible(), 'remove control appears');
+      expect(await focused() === 'emailInput', 'focus stays after save');
+      expect(await sent() === 1, 'one save');
+      await input.press('Enter');
+      await page.click('#emailSave', { force: true });
+      await page.waitForTimeout(400);
+      expect(await sent() === 1, 'unchanged value is not sent again');
+      await page.mouse.move(2, 2);
+      await settle(page, 300);
+      await eshot('saved');
+
+      await input.fill('other@example.com');
+      await input.press('Escape');
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'esc restores the saved value');
+      expect(await page.locator('#setSheet.open').count() === 1, 'sheet still open after the first esc');
+      await input.press('Escape');
+      await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+      await openSettings(page);
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'saved value is there after reopening');
+      await input.fill('scratch@example.com');
+      await page.click('#setSheet [data-close]');
+      await page.waitForSelector('#setSheet:not(.open)', { state: 'attached' });
+      await openSettings(page);
+      expect(await input.inputValue() === 'haruka.sato@example.com', 'unsaved edit dropped on close');
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.failEmail = 'INTERNAL'; });
+      await input.fill('work@studio-mori.jp');
+      await input.press('Enter');
+      await page.waitForFunction(() => document.getElementById('emailErr').textContent !== '');
+      await idle();
+      expect(await input.inputValue() === 'work@studio-mori.jp', 'typed value kept after a failed save');
+      expect(await stored() === 'haruka.sato@example.com', 'stored value unchanged');
+      expect(!(await cmd()).includes('work@'), 'command not echoed on failure');
+      expect(!(await page.locator('#emailSave').isDisabled()), 'save can be retried');
+      expect(await page.locator('#emailForm .field.invalid').count() === 0, 'a failed save does not mark the address invalid');
+      await settle(page, 300);
+      await eshot('failed');
+      await page.evaluate(() => { window.__AKARI_MOCK__.failEmail = null; });
+
+      await page.evaluate(() => { window.__AKARI_MOCK__.delay = 4; });
+      const n0 = await sent();
+      await input.press('Enter');
+      await input.press('Enter');
+      await page.click('#emailSave', { force: true });
+      await idle();
+      expect(await sent() === n0 + 1, 'no double submit while saving');
+      expect(await stored() === 'work@studio-mori.jp' && await err() === '', 'retry saved');
+      await page.evaluate(() => { window.__AKARI_MOCK__.delay = 1; });
+
+      const long = `${'haruka.sato.long-mailbox-name'.repeat(7)}@example.com`.slice(-254);
+      await input.fill(long);
+      await input.press('Enter');
+      await page.waitForFunction((x) => window.__AKARI_DB__.defaultEmail === x, long);
+      await idle();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth) <= 680, 'long address does not widen the frame');
+      const box = await page.locator('#emailForm').boundingBox();
+      expect(box.x + box.width <= 680, 'form stays inside the frame');
+      await page.mouse.move(2, 2);
+      await settle(page, 300);
+      await eshot('long');
+
+      await page.click('#emailClear');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === '');
+      await idle();
+      expect(await input.inputValue() === '' && await page.locator('#emailClear').isHidden(), 'removed with the remove control');
+      expect(await cmd() === 'akari config unset default-email', 'unset echoed');
+      expect(await focused() === 'emailInput', 'focus returns to the field after removing');
+
+      await input.fill('haruka@studio-mori.jp');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === 'haruka@studio-mori.jp');
+      await idle();
+      await input.fill('');
+      expect((await page.locator('#emailHint').textContent()).length > 0 && !(await page.locator('#emailSave').isDisabled()), 'clearing the field offers removal');
+      await input.press('Enter');
+      await page.waitForFunction(() => window.__AKARI_DB__.defaultEmail === '');
+      await idle();
+      expect(await cmd() === 'akari config unset default-email', 'removed by saving an empty field');
+      await ctx.close();
+    }
+    const { page, ctx } = await open({ name: 'default-email-seeded', defaultEmail: 'seed@example.com' });
+    await page.waitForSelector('.row');
+    await openSettings(page);
+    expect(await page.locator('#emailInput').inputValue() === 'seed@example.com', 'value from vault/getAll shown');
+    expect(await page.locator('#emailClear').isVisible() && await page.locator('#emailSave').isDisabled(), 'saved state on open');
+    await page.evaluate(() => document.getElementById('lockBtn').click());
+    await page.waitForFunction(() => document.getElementById('app').dataset.phase === 'locked' && !document.getElementById('setSheet').classList.contains('open'));
+    expect(await page.locator('#emailInput').inputValue() === '', 'cleared when the vault locks');
+    await ctx.close();
+
+    const imp = await open({ name: 'default-email-import', importEmail: 'from-backup@example.com' });
+    const importBackup = async () => {
+      await imp.page.click('#importOpen');
+      await imp.page.click('.src[data-id="akari"]');
+      await imp.page.waitForSelector('#impPw');
+      const backup = JSON.stringify({ format: 'akari-backup', version: 1, exportedAt: new Date().toISOString(), vault: {} }, null, 2);
+      await imp.page.setInputFiles('#impFile', { name: 'akari-backup-20261101.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
+      await imp.page.fill('#impPw', 'backup-pass');
+      await imp.page.keyboard.press('Enter');
+      await imp.page.waitForSelector('.io-log .boot-k:has-text("2 件を読み込みました")');
+      for (let i = 0; i < 3 && await imp.page.locator('#setMain').isHidden(); i++) await imp.page.click('#setBack');
+      await imp.page.waitForSelector('#setMain:not([hidden])');
+    };
+    const mail = imp.page.locator('#emailInput');
+    await imp.page.waitForSelector('.row');
+    await openSettings(imp.page);
+    expect(await mail.inputValue() === '' && await imp.page.locator('#emailClear').isHidden(), 'no default before the import');
+    await importBackup();
+    const followed = await imp.page.waitForFunction(() => document.getElementById('emailInput').value === 'from-backup@example.com', null, { timeout: 5000 }).then(() => true, () => false);
+    expect(followed, 'the field follows a default adopted by an import made from the open sheet');
+    expect(await imp.page.locator('#emailClear').isVisible() && await imp.page.locator('#emailSave').isDisabled(), 'and shows it as saved');
+    expect(await imp.page.locator('#setSheet').evaluate((n) => n.classList.contains('open')), 'the sheet stayed open');
+    await mail.fill('draft@example.com');
+    await imp.page.evaluate(() => { window.__AKARI_DB__.defaultEmail = 'other@example.com'; });
+    await importBackup();
+    await settle(imp.page, 1000);
+    expect(await mail.inputValue() === 'draft@example.com' && !(await imp.page.locator('#emailSave').isDisabled()), 'an unsaved edit survives a reload');
+    await mail.focus();
+    await imp.page.keyboard.press('Escape');
+    expect(await mail.inputValue() === 'other@example.com', 'Esc puts back the default as it is now');
+    await imp.ctx.close();
+  },
   async vaults() {
     const { page, ctx } = await open({ name: 'vaults' });
     await page.waitForSelector('.row');

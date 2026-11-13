@@ -1508,3 +1508,74 @@ test('attachments: with storage.local.getKeys, restarts in the same session do n
   await settle(again.svc);
   assert.equal(listings, 1);
 });
+
+test('default email: set, replace and clear; getAll returns it; writes count as activity', async () => {
+  const { call, svc, chrome, clock } = await setupUnlocked();
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '  me@example.com ' }), { defaultEmail: 'me@example.com' });
+  assert.equal((await svc.readData()).defaultEmail, 'me@example.com');
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+  assert.ok(!JSON.stringify(chrome.storage.local.map.get(VAULT_KEY)).includes('me@example.com'), 'stored encrypted');
+
+  chrome.alarms.map.clear();
+  clock.t += 60_000;
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'work+akari@mail.example.co.jp' }), { defaultEmail: 'work+akari@mail.example.co.jp' });
+  assert.ok(chrome.alarms.map.has(AUTOLOCK_ALARM), 'setting the default re-arms auto-lock');
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'work+akari@mail.example.co.jp');
+
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '   ' }), { defaultEmail: '' });
+  assert.equal('defaultEmail' in (await svc.readData()), false);
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.deepEqual(await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '' }), { defaultEmail: '' });
+});
+
+test('default email: invalid input is INVALID and stores nothing; locked is LOCKED', async () => {
+  const { call, svc, chrome } = await setupUnlocked();
+  await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'me@example.com' });
+  const stored = chrome.storage.local.map.get(VAULT_KEY);
+  for (const email of [undefined, null, 42, ['me@example.com'], 'not-an-email', 'a@b@c', 'me @example.com', 'me@exa​mple.com', 'a'.repeat(250) + '@x.jp']) {
+    await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email }), { code: 'INVALID' }, String(email));
+  }
+  assert.equal(chrome.storage.local.map.get(VAULT_KEY), stored, 'nothing written');
+  assert.equal((await svc.readData()).defaultEmail, 'me@example.com');
+
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'other@example.com' }), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: '' }), { code: 'LOCKED' });
+});
+
+test('default email: survives lock + unlock and a master-password change', async () => {
+  const { call } = await setupUnlocked();
+  await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'me@example.com' });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+  await call(MSG.VAULT_CHANGE_PASSWORD, { current: PW, next: 'next-password-2' });
+  await call(MSG.VAULT_LOCK);
+  await call(MSG.VAULT_UNLOCK, { masterPassword: 'next-password-2' });
+  assert.equal((await call(MSG.VAULT_GET_ALL)).defaultEmail, 'me@example.com');
+});
+
+test('default email: a backup brings its default only into a vault that has none, and a malformed one is ignored', async () => {
+  const a = await setupUnlocked();
+  await a.call(MSG.VAULT_SAVE_ITEM, { item: { title: 'From A' } });
+  await a.call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'a@example.com' });
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  assert.ok(!json.includes('a@example.com'));
+
+  const empty = await setupUnlocked();
+  assert.deepEqual(await empty.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await empty.call(MSG.VAULT_GET_ALL)).defaultEmail, 'a@example.com');
+
+  const owned = await setupUnlocked();
+  await owned.call(MSG.VAULT_SET_DEFAULT_EMAIL, { email: 'b@example.com' });
+  assert.deepEqual(await owned.call(MSG.VAULT_IMPORT, { json, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await owned.call(MSG.VAULT_GET_ALL)).defaultEmail, 'b@example.com');
+
+  await a.svc.mutateData((d) => { d.defaultEmail = 'bad address@@'; });
+  const { json: malformed } = await a.call(MSG.VAULT_EXPORT);
+  const fresh = await setupUnlocked();
+  assert.deepEqual(await fresh.call(MSG.VAULT_IMPORT, { json: malformed, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
+  assert.equal((await fresh.call(MSG.VAULT_GET_ALL)).defaultEmail, '');
+  assert.equal('defaultEmail' in (await fresh.svc.readData()), false);
+});

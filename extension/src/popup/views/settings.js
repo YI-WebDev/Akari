@@ -1,5 +1,5 @@
 import { MSG, ERR, DEFAULT_SETTINGS, NEVER_LOCK } from '../../shared/messages.js';
-import { S, emit, call, strengthOf, errText, liveToken, live, setSettings, putSetting } from '../state.js';
+import { S, on, emit, call, strengthOf, errText, liveToken, live, setSettings, putSetting, setDefaultEmail } from '../state.js';
 import { syncInert, keepFocus, isComposing } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
@@ -9,6 +9,7 @@ import { initImport, openImport, resetImport, importBack, importDone } from './i
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
+import { cleanEmail, EMAIL_MAX_LENGTH } from '../../shared/email.js';
 
 export const REOPEN_KEY = 'akari.reopen';
 
@@ -62,6 +63,7 @@ function back() {
 
 export function escapeSettings() {
   if (page === 'main') {
+    if ($('emailForm').contains(document.activeElement) && revertEmail()) return;
     if (!$('neverForm').hidden) { showNeverForm(false); chipOf('autoLockMinutes', NEVER_LOCK)?.focus(); return; }
     if ($('pwToggle').getAttribute('aria-expanded') === 'true') {
       setExpanded($('pwToggle'), $('pwForm'), false);
@@ -69,6 +71,7 @@ export function escapeSettings() {
       $('pwToggle').focus();
       return;
     }
+    if (revertEmail()) return;
     closeSettings();
     return;
   }
@@ -240,6 +243,111 @@ async function changePassword(e) {
   }
 }
 
+let emailSaving = false;
+let emailShown = '';
+
+function emailHint(value) {
+  if (value.trim() !== S.defaultEmail) {
+    return value.trim()
+      ? t('settings.emailHintDirty', null, 'Enter で保存します。Esc で元に戻します')
+      : t('settings.emailHintUnset', null, 'Enter で既定のメールを外します。Esc で元に戻します');
+  }
+  return S.defaultEmail
+    ? t('settings.emailHintSet', null, 'ページのメール欄を選ぶと、このアドレスを候補の先頭に出します。ID アイテムのメールも続けて出ます')
+    : t('settings.emailHintNone', null, 'ここに入れたアドレスを、ページのメール欄からクリック 1 回で入力できます。ID アイテムのメールも候補に出ます');
+}
+
+function renderEmail() {
+  const value = $('emailInput').value;
+  $('emailSave').disabled = emailSaving || value.trim() === S.defaultEmail;
+  $('emailClear').hidden = !S.defaultEmail;
+  $('emailClear').disabled = emailSaving;
+  $('emailHint').textContent = emailHint(value);
+}
+
+function showEmailErr(msg, { invalid = !!msg } = {}) {
+  $('emailErr').textContent = msg;
+  $('emailInput').closest('.field').classList.toggle('invalid', invalid);
+  $('emailInput').setAttribute('aria-invalid', String(invalid));
+}
+
+function resetEmail() {
+  if (emailSaving) return;
+  emailShown = S.defaultEmail;
+  $('emailInput').value = emailShown;
+  showEmailErr('');
+  renderEmail();
+}
+
+function followEmail() {
+  const edited = $('emailInput').value !== emailShown || !!$('emailErr').textContent;
+  if (emailSaving || edited) renderEmail();
+  else resetEmail();
+}
+
+function revertEmail() {
+  if (emailSaving || ($('emailInput').value === S.defaultEmail && !$('emailErr').textContent)) return false;
+  resetEmail();
+  $('emailInput').focus();
+  return true;
+}
+
+function failEmail(msg) {
+  const input = $('emailInput');
+  showEmailErr(msg);
+  shake(input.closest('.field'));
+  input.focus();
+}
+
+const badEmailText = (raw) => (raw.length > EMAIL_MAX_LENGTH
+  ? t('settings.emailTooLong', { n: EMAIL_MAX_LENGTH }, 'メールアドレスが長すぎます（{n} 文字まで）')
+  : t('settings.emailBad', null, 'メールアドレスの形式ではありません（例: you@example.com）'));
+
+function submitEmail(e) {
+  e.preventDefault();
+  if (emailSaving) return;
+  const raw = $('emailInput').value.trim();
+  if (raw === S.defaultEmail) return;
+  const email = raw && cleanEmail(raw);
+  if (raw && !email) return failEmail(badEmailText(raw));
+  saveEmail(email, $('emailSave'));
+}
+
+async function saveEmail(email, btn) {
+  const input = $('emailInput');
+  emailSaving = true;
+  input.readOnly = true;
+  showEmailErr('');
+  setBusy(btn, true);
+  renderEmail();
+  const token = liveToken();
+  try {
+    const res = await call(MSG.VAULT_SET_DEFAULT_EMAIL, { email });
+    if (!live(token)) return;
+    setDefaultEmail(typeof res?.defaultEmail === 'string' ? res.defaultEmail : email);
+    emailShown = S.defaultEmail;
+    input.value = emailShown;
+    setCmd(S.defaultEmail ? `akari config set default-email ${S.defaultEmail}` : 'akari config unset default-email');
+  } catch (e2) {
+    if (!live(token)) return;
+    if (e2?.code === ERR.INVALID) failEmail(badEmailText(input.value.trim()));
+    else showEmailErr(t('settings.emailFailed', { why: errText(e2) }, '保存できませんでした（{why}）'), { invalid: false });
+  } finally {
+    emailSaving = false;
+    input.readOnly = false;
+    setBusy(btn, false);
+    renderEmail();
+    const ae = document.activeElement;
+    if (!live(token)) resetEmail();
+    else if (isSettingsOpen() && (!ae || ae === document.body || $('emailForm').contains(ae))) input.focus();
+  }
+}
+
+function clearEmail() {
+  if (emailSaving || !S.defaultEmail) return;
+  saveEmail('', $('emailClear'));
+}
+
 let restoreFocus = null;
 
 export function openSettings({ page: start = 'main' } = {}) {
@@ -249,6 +357,7 @@ export function openSettings({ page: start = 'main' } = {}) {
   showNeverForm(false);
   resetPwForm();
   setExpanded($('pwToggle'), $('pwForm'), false);
+  resetEmail();
   showPage('main', { focus: false });
   restoreFocus = keepFocus();
   $('scrim').classList.add('on');
@@ -273,6 +382,7 @@ export function closeSettings() {
   if (!$('genSheet').classList.contains('open')) $('scrim').classList.remove('on');
   showNeverForm(false);
   resetPwForm();
+  resetEmail();
   showPage('main', { focus: false });
   syncInert();
   restoreFocus?.();
@@ -318,6 +428,10 @@ export function initSettings() {
   $('pwNext').addEventListener('input', updatePwMeter);
   $('pwConfirm').addEventListener('input', updatePwMeter);
   $('pwForm').addEventListener('submit', changePassword);
+  $('emailForm').addEventListener('submit', submitEmail);
+  $('emailInput').addEventListener('input', () => { showEmailErr(''); renderEmail(); });
+  $('emailClear').addEventListener('click', clearEmail);
+  on('reloaded', followEmail);
   $('vaultsOpen').addEventListener('click', () => showPage('vaults'));
   $('importOpen').addEventListener('click', () => showPage('import'));
   $('exportOpen').addEventListener('click', () => showPage('export'));

@@ -17,6 +17,7 @@ import {
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
+import { cleanEmail } from '../shared/email.js';
 
 import {
   VAULT_KEY, SETTINGS_KEY, SESSION_KEY, KEEP_KEY, BACKUP_KEY, ATTACHMENT_KEY_PREFIX, SWEPT_KEY,
@@ -436,6 +437,7 @@ export function createVaultService({
       vaults: structuredClone(c.data.vaults),
       items: c.data.items.map(sanitizeItem),
       trash: trashOut(c.data),
+      defaultEmail: cleanEmail(c.data.defaultEmail),
     };
   }
 
@@ -551,6 +553,17 @@ export function createVaultService({
     return mutateData((draft) => {
       const vault = createVaultIn(draft, { name, hue });
       return { vault, vaults: structuredClone(draft.vaults) };
+    });
+  }
+
+  async function setDefaultEmail(email) {
+    if (typeof email !== 'string') throw fail(ERR.INVALID, 'email must be a string');
+    const clean = email.trim() ? cleanEmail(email) : '';
+    if (email.trim() && !clean) throw fail(ERR.INVALID, 'Invalid email address');
+    return mutateData((draft) => {
+      if (clean) draft.defaultEmail = clean;
+      else delete draft.defaultEmail;
+      return { defaultEmail: clean };
     });
   }
 
@@ -703,6 +716,7 @@ export function createVaultService({
         const merged = mergeData(draft, incoming);
         draft.vaults = merged.data.vaults;
         draft.items = merged.data.items;
+        if (merged.data.defaultEmail) draft.defaultEmail = merged.data.defaultEmail;
         const malformed = merged.ids.reduce((n, id) => n + (incoming.skippedAttachments?.get(id) ?? 0), merged.skippedAttachments);
         const skippedAttachments = malformed + await takeAttachments(draft, known, incoming.attachments, written);
         return { count: merged.count, skippedAttachments };
@@ -764,6 +778,7 @@ export function createVaultService({
     [MSG.VAULT_CREATE_VAULT]: (m) => addVault(m.name, m.hue),
     [MSG.VAULT_UPDATE_VAULT]: (m) => updateVault(m.id, m.name, m.hue),
     [MSG.VAULT_DELETE_VAULT]: (m) => deleteVault(m.id, m.moveTo ?? null, m.deleteItems ?? false),
+    [MSG.VAULT_SET_DEFAULT_EMAIL]: (m) => setDefaultEmail(m.email),
     [MSG.SETTINGS_GET]: () => getSettings(),
     [MSG.SETTINGS_SET]: (m) => setSettings(m.patch, m.masterPassword),
     [MSG.ACTIVITY_PING]: () => ({}),
@@ -772,7 +787,7 @@ export function createVaultService({
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
     MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD, MSG.VAULT_ADD_ATTACHMENT,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
-    MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
+    MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.VAULT_SET_DEFAULT_EMAIL, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
     MSG.BACKUP_SNOOZE, MSG.BACKUP_RECORD,
   ]);
   const handlers = {};

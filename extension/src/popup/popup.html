@@ -251,6 +251,25 @@
         </div>
         </div>
       </section>
+      <section class="set-group" aria-labelledby="setFillHead">
+        <h2 id="setFillHead" class="set-head">自動入力</h2>
+        <div class="set-box">
+        <div class="set-row">
+          <label id="emailLabel" class="set-label" for="emailInput">既定のメール</label>
+          <div class="set-body">
+            <form id="emailForm" class="set-form email-form" novalidate>
+              <div class="email-line">
+                <div class="field"><input id="emailInput" type="text" inputmode="email" placeholder="you@example.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="emailErr emailHint"></div>
+                <button id="emailSave" class="btn-line" type="submit" disabled><span class="go-label">保存</span><span class="spinner" aria-hidden="true"></span></button>
+                <button id="emailClear" class="btn-text" type="button" aria-label="既定のメールを外す" hidden>外す</button>
+              </div>
+              <span id="emailErr" class="field-err" role="alert"></span>
+            </form>
+            <p id="emailHint" class="set-hint"></p>
+          </div>
+        </div>
+        </div>
+      </section>
       <section class="set-group" aria-labelledby="setDataHead">
         <h2 id="setDataHead" class="set-head">データ</h2>
         <div class="set-box set-cmds">

@@ -5,7 +5,7 @@ import { t } from '../shared/i18n.js';
 import { useLanguage } from '../shared/locale.js';
 import {
   S, on, emit, call, errText, saveUi, setItems, replaceItem, removeItems, addItems, clearSecrets, itemById, visibleItems, ensureSel,
-  liveToken, live, setPhase, endEpoch, setSettings, setVaults, setVaultFilter, setListView, setSort, setSearch,
+  liveToken, live, setPhase, endEpoch, setSettings, setVaults, setDefaultEmail, setVaultFilter, setListView, setSort, setSearch,
   setSiteQuery, setAutofill, setSel, setTrash, vaultById, defaultVaults,
 } from './state.js';
 import { clear } from './views/dom.js';
@@ -59,6 +59,7 @@ async function loadData(onDecrypted) {
 
 function applyData(data) {
   setVaults(data?.vaults);
+  setDefaultEmail(data?.defaultEmail);
   setItems(data?.items || []);
   setTrash(data?.trash);
   if (!itemById(S.sel)) setSel(null);

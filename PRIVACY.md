@@ -21,7 +21,7 @@
 
 | データ | 保存先 | 内容 |
 | --- | --- | --- |
-| 保管庫 | `chrome.storage.local` | ログイン、メモ、カードなどのアイテムとパスキー。マスターパスワードから作った鍵で暗号化（PBKDF2-SHA256 600,000 回 → AES-256-GCM） |
+| 保管庫 | `chrome.storage.local` | ログイン、メモ、カードなどのアイテムとパスキー、設定した既定のメールアドレス。マスターパスワードから作った鍵で暗号化（PBKDF2-SHA256 600,000 回 → AES-256-GCM） |
 | ゴミ箱 | 保管庫の中（暗号化済み） | 削除したアイテム。30 日間残り、その後は消える |
 | 添付ファイル | `chrome.storage.local`（`akari.att.<id>`） | 添付したファイルの中身。ファイルごとの鍵で暗号化（AES-256-GCM）。鍵・ファイル名・種類・サイズは保管庫の中（暗号化済み）。アイテムから外すか、ゴミ箱から消えると削除（消し残しは次のロック解除時に削除） |
 | ロック解除中の鍵 | `chrome.storage.session` | メモリ上だけ。ロックするか、ブラウザを閉じると消える。自動ロックを「しない」にしたときだけ、`chrome.storage.local` にも置く（手動でロックすると消える） |
@@ -57,7 +57,7 @@
 - `http://*/*` と `https://*/*` のすべてのページ（iframe を含む）: 入力欄のボタンと、自動入力・保存の提案（`autofill.js`、`shadow-ui.js`、`i18n-page.js`）。
 - `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*` の最上位のページ: パスキーの作成・サインインを受け取る（`webauthn-page.js`、`webauthn-bridge.js`）。
 
-Akari がページから読むのは、そのページの URL、ログイン・登録・住所・認証コードの入力欄の様子、そして保存の提案のために入力された ID とパスワードです。サイトの照合も保存の提案も端末の中で行い、外へは出しません。キーボードショートカット `Ctrl+Shift+L`（Mac は `Command+Shift+L`）でも自動入力できます。
+Akari がページから読むのは、そのページの URL、ログイン・登録・住所・メールアドレス・認証コードの入力欄の様子、そして保存の提案のために入力された ID とパスワードです。サイトの照合も保存の提案も端末の中で行い、外へは出しません。キーボードショートカット `Ctrl+Shift+L`（Mac は `Command+Shift+L`）でも自動入力できます。
 
 ## クリップボード
 
@@ -70,6 +70,7 @@ Akari がページから読むのは、そのページの URL、ログイン・�
 - ロック解除中の鍵は `chrome.storage.session` にあり、ページ側からは読めません。
 - 自動入力すると、入力欄に値が入ります。入力欄の値はそのページが読めます。自動入力は、あなたが操作したとき（または、パスキーのカードで選んだとき）だけ行います。例外は認証コード（TOTP）です。Akari でログインを入力してから 3 分以内に、同じタブの同じオリジンのページでコード欄にフォーカスが当たると、そのログインのコードを 1 回だけ自動で入力します。それ以外のときは、メニューで選んだときだけ入力します。
 - 登録フォームで提案する強いパスワードと、住所の欄で選ぶアイデンティティ（種類「ID」のアイテム）の住所も同じです。ページ上のメニューであなたが選ぶまで、ページの入力欄には入りません。選ぶ前に Akari のメニューへ渡るのは、そのアイテムのタイトルと氏名だけです。選んだときにページへ入るのは住所（郵便番号・都道府県・市区町村・番地・建物・国）だけで、氏名・メールアドレス・電話番号・生年月日は入れません。入る先は、いま入力している欄と、同じフォームの中でしばらく画面にはっきり見えていた住所の欄です。画面の外にある欄、ほかの要素に隠れた欄、半透明の欄には入れません。ただし、文字を背景と同じ色にするような細工までは見分けられません。
+- メールアドレスの欄では、設定で決めた既定のメールアドレスと、種類「ID」のアイテムに保存したメールアドレスを選べます。ロックを解除しているあいだ、最上位のページでメールアドレスの欄にフォーカスが当たると、これらのアドレス（合わせて 5 件まで）と、そのアイテムのタイトルまたは氏名が Akari のメニューへ渡ります。住所とちがい、選ぶ前にアドレスそのものがメニューに出ます。メニューは閉じた Shadow DOM の中にあり、ページのスクリプトからは読めません。ページの入力欄に入るのは、あなたがメニューで選んだアドレス 1 件だけで、入る先はいま入力している欄だけです。iframe の中の欄には出しません。ロック中は、メールアドレスの候補を出しません。
 
 ## バックアップとエクスポート
 
@@ -111,7 +112,7 @@ Everything is stored in your Chrome (or Brave) profile on your device.
 
 | Data | Where | What it holds |
 | --- | --- | --- |
-| Vault | `chrome.storage.local` | Logins, notes, cards, other items, and passkeys. Encrypted with a key derived from your master password (PBKDF2-SHA256, 600,000 iterations, then AES-256-GCM) |
+| Vault | `chrome.storage.local` | Logins, notes, cards, other items, passkeys, and the default email address you set. Encrypted with a key derived from your master password (PBKDF2-SHA256, 600,000 iterations, then AES-256-GCM) |
 | Trash | Inside the vault (encrypted) | Deleted items. Kept for 30 days, then removed |
 | Attachments | `chrome.storage.local` (`akari.att.<id>`) | The contents of attached files. Each file is encrypted with its own key (AES-256-GCM). The keys, file names, types, and sizes are inside the vault (encrypted). Deleted when you remove the file from its item or when the item leaves the trash (anything left over is removed at the next unlock) |
 | Unlocked key | `chrome.storage.session` | In memory only. Removed when you lock or close the browser. Also written to `chrome.storage.local` only if you set auto-lock to "Never" (removed when you lock manually) |
@@ -147,7 +148,7 @@ It also declares these content scripts:
 - All `http://*/*` and `https://*/*` pages, including iframes: the field button, autofill, and save prompts (`autofill.js`, `shadow-ui.js`, `i18n-page.js`).
 - Top-level pages on `https://*/*`, `http://localhost/*`, and `http://127.0.0.1/*`: receive passkey create and sign-in requests (`webauthn-page.js`, `webauthn-bridge.js`).
 
-From a page, Akari reads its URL, the layout of its login, sign-up, address, and verification-code fields, and the username and password you enter so it can offer to save them. Matching and save prompts happen on your device, and nothing leaves it. You can also autofill with the shortcut `Ctrl+Shift+L` (`Command+Shift+L` on Mac).
+From a page, Akari reads its URL, the layout of its login, sign-up, address, email, and verification-code fields, and the username and password you enter so it can offer to save them. Matching and save prompts happen on your device, and nothing leaves it. You can also autofill with the shortcut `Ctrl+Shift+L` (`Command+Shift+L` on Mac).
 
 ## Clipboard
 
@@ -160,6 +161,7 @@ Copied passwords and similar values are cleared after the number of seconds you 
 - The unlocked key lives in `chrome.storage.session`, which pages cannot read.
 - When Akari autofills, the values appear in the page's fields, and the page can read the contents of its own fields. Akari fills only when you ask it to, or when you pick an entry on the passkey card. The one exception is the authenticator code (TOTP): within 3 minutes after Akari filled a login, when a code field has the focus on a page of the same origin in the same tab, Akari fills that login's code once by itself. At any other time it fills a code only when you pick it from the menu.
 - The same holds for the strong password suggested on sign-up forms and for the address of an identity (an item of the type "Identity") offered on address fields. Nothing enters the page's fields until you choose it in Akari's menu on the page. Before you choose, only the item's title and name reach that menu. When you choose, only the address (postal code, state or prefecture, city, street, building, country) goes to the page; the name, email address, phone number, and date of birth do not. It goes into the field you are in and into address fields of the same form that have been plainly visible on screen for a moment. Fields outside the screen, covered by other elements, or translucent get nothing. Akari cannot tell, however, when a page uses tricks such as giving a field's text the same colour as its background.
+- On email fields you can choose the default email address you set in the settings, or an address saved in an item of the type "Identity". While Akari is unlocked, when an email field in a top-level page has the focus, these addresses (five at most) and the title or name of their items reach Akari's menu. Unlike addresses, the email addresses themselves are shown in the menu before you choose. The menu is inside a closed Shadow DOM, and scripts on the page cannot read it. Only the one address you choose goes to the page, and only into the field you are in. Fields inside iframes get no offer. While Akari is locked, no email address is offered.
 
 ## Backups and exports
 

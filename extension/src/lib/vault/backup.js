@@ -6,6 +6,7 @@ import { normalizeAttachments } from './attachments.js';
 import { ATTACHMENT_LIMITS } from '../../shared/messages.js';
 import { normalizePasskeys } from './passkeys.js';
 import { passwordKeys, mergedHistory } from './passwords.js';
+import { cleanEmail } from '../../shared/email.js';
 
 export const BACKUP_FORMAT = 'akari-backup';
 export const BACKUP_VERSION = 1;
@@ -82,6 +83,7 @@ export function normalizeData(data, nowMs = Date.now()) {
   }
   return {
     vaults: [...vaults.values()], items: [...items.values()], updatedAt: clampTs(data.updatedAt, nowMs, nowMs), skippedAttachments,
+    defaultEmail: cleanEmail(data.defaultEmail),
   };
 }
 
@@ -91,6 +93,8 @@ function isSameTypeAndNewer(incoming, stored) {
 
 export function mergeData(current, incoming) {
   const data = structuredClone(current);
+  const incomingEmail = cleanEmail(incoming.defaultEmail);
+  if (!cleanEmail(data.defaultEmail) && incomingEmail) data.defaultEmail = incomingEmail;
   for (const v of incoming.vaults) {
     if (!data.vaults.some((x) => x.id === v.id)) data.vaults.push(structuredClone(v));
   }

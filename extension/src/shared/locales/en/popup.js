@@ -76,6 +76,10 @@ export default {
   '忘れると、だれにも復元できません。前に書き出した Akari バックアップは、書き出したときのパスワードで開きます。':
     'If you forget it, no one can recover it. Akari backups you exported earlier open with the password you had when you exported them.',
   'パスワードを変更': 'Change password',
+  '自動入力': 'Autofill',
+  '既定のメール': 'Default email',
+  '既定のメールを外す': 'Remove the default email',
+  '外す': 'Remove',
   'データ': 'Data',
   '作成・名前と色の変更・削除': 'Create, rename, recolor, delete',
   'インポート': 'Import',

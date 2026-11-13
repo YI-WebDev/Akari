@@ -736,3 +736,99 @@ test('autofill/requestTotp: the current code of a login of this site, as user ac
   await rejectsWith(svc.requestTotp({ itemId: 'nope' }, sender(TWO_FACTOR)), 'NOT_FOUND');
   await rejectsWith(setup({ locked: true, items: [login({ totp: TOTP })] }).svc.requestTotp({ itemId: 'i1' }, sender(TWO_FACTOR)), 'LOCKED');
 });
+
+function withDefault(setupResult, email) {
+  setupResult.vault.state.data.defaultEmail = email;
+  return setupResult;
+}
+
+test('autofill/emails: the default first, then identity addresses most recently used first, as a page activity that is not user activity', async () => {
+  const { svc, vault } = withDefault(setup({
+    items: [
+      login(),
+      identity(),
+      identity({ id: 'id2', title: '', lastUsedAt: T0 + 5, fields: { fullName: 'Kumano Mero', email: ' work@example.com ' } }),
+      identity({ id: 'id3', title: '', hue: undefined, lastUsedAt: T0 + 1, fields: { email: 'x@example.org' } }),
+    ],
+  }), 'me@example.com');
+  const before = structuredClone(vault.state.data);
+  const res = await svc.emails({}, sender('https://shop.example/signup'));
+  assert.deepEqual(res, {
+    locked: false,
+    items: [
+      { itemId: null, email: 'me@example.com', title: '', hue: null },
+      { itemId: 'id2', email: 'work@example.com', title: 'Kumano Mero', hue: 200 },
+      { itemId: 'id3', email: 'x@example.org', title: '', hue: 0 },
+      { itemId: 'id1', email: 'kumamero@example.jp', title: '自宅', hue: 200 },
+    ],
+  });
+  assert.equal(vault.state.touches, 0, 'focusing an email field is not user activity');
+  assert.deepEqual(vault.state.data, before, 'no item is marked used');
+});
+
+test('autofill/emails: duplicates dropped case-insensitively, invalid addresses skipped, at most 5 choices', async () => {
+  const many = Array.from({ length: 8 }, (_, n) => identity({ id: 'm' + n, title: 'M' + n, updatedAt: T0 - n, fields: { email: `m${n}@example.com` } }));
+  const { svc } = withDefault(setup({
+    items: [
+      identity({ id: 'dup', lastUsedAt: T0 + 9, fields: { email: 'ME@Example.com' } }),
+      identity({ id: 'bad1', lastUsedAt: T0 + 8, fields: { email: 'not an email' } }),
+      identity({ id: 'bad2', lastUsedAt: T0 + 7, fields: { email: 'a@b@c' } }),
+      identity({ id: 'bad3', lastUsedAt: T0 + 6, fields: {} }),
+      identity({ id: 'twin', lastUsedAt: T0 + 5, fields: { email: 'M0@example.com' } }),
+      ...many,
+    ],
+  }), 'me@example.com');
+  const res = await svc.emails({}, sender('https://shop.example/'));
+  assert.deepEqual(res.items.map((c) => c.itemId), [null, 'twin', 'm1', 'm2', 'm3']);
+  assert.equal(res.items[0].email, 'me@example.com');
+});
+
+test('autofill/emails: without a default only identities, and nothing at all when none is saved', async () => {
+  const { svc } = setup({ items: [identity()] });
+  assert.deepEqual((await svc.emails({}, sender('https://shop.example/'))).items.map((c) => c.itemId), ['id1']);
+  const bad = withDefault(setup({ items: [login()] }), 'broken');
+  assert.deepEqual(await bad.svc.emails({}, sender('https://shop.example/')), { locked: false, items: [] });
+});
+
+test('autofill/emails: locked, framed and non-web senders get nothing', async () => {
+  const locked = withDefault(setup({ locked: true, items: [identity()] }), 'me@example.com');
+  assert.deepEqual(await locked.svc.emails({}, sender('https://shop.example/')), { locked: true, items: [] });
+  const { svc } = withDefault(setup({ items: [identity()] }), 'me@example.com');
+  assert.deepEqual(await svc.emails({}, sender('https://shop.example/f', 'https://shop.example/', { frameId: 3 })), { locked: false, items: [] });
+  await rejectsWith(svc.emails({}, { id: 'ext', url: 'about:blank', frameId: 0, tab: { id: 1, url: 'https://shop.example/' } }), 'FORBIDDEN');
+  await rejectsWith(svc.emails({}, { id: 'ext', url: 'https://shop.example/' }), 'FORBIDDEN');
+});
+
+test('autofill/requestEmail: the default address counts as activity but marks no item used', async () => {
+  const { svc, vault } = withDefault(setup({ items: [identity()] }), 'me@example.com');
+  assert.deepEqual(await svc.requestEmail({}, sender('https://shop.example/')), { email: 'me@example.com' });
+  assert.deepEqual(await svc.requestEmail({ itemId: null }, sender('https://shop.example/')), { email: 'me@example.com' });
+  assert.equal(vault.state.touches, 2);
+  assert.equal(vault.state.data.items[0].lastUsedAt, null);
+});
+
+test('autofill/requestEmail: an identity address counts as activity and marks the identity used', async () => {
+  const { svc, vault, clock } = setup({ items: [login(), identity({ fields: { email: '  kumamero@example.jp ' } })] });
+  clock.t += 1000;
+  assert.deepEqual(await svc.requestEmail({ itemId: 'id1' }, sender('https://shop.example/')), { email: 'kumamero@example.jp' });
+  assert.equal(vault.state.touches, 1);
+  assert.equal(vault.state.data.items.find((i) => i.id === 'id1').lastUsedAt, clock.t);
+});
+
+test('autofill/requestEmail: missing default, unknown, non-identity or address-less items, wrong id type, framed, non-web and locked', async () => {
+  const page = sender('https://shop.example/');
+  const { svc, vault } = setup({ items: [login(), identity(), identity({ id: 'id2', fields: { email: 'nope' } })] });
+  await rejectsWith(svc.requestEmail({}, page), 'NOT_FOUND');
+  await rejectsWith(svc.requestEmail({ itemId: 'missing' }, page), 'NOT_FOUND');
+  await rejectsWith(svc.requestEmail({ itemId: 'i1' }, page), 'NOT_FOUND');
+  await rejectsWith(svc.requestEmail({ itemId: 'id2' }, page), 'NOT_FOUND');
+  await rejectsWith(svc.requestEmail({ itemId: 7 }, page), 'INVALID');
+  await rejectsWith(svc.requestEmail({ itemId: { id: 'id1' } }, page), 'INVALID');
+  await rejectsWith(svc.requestEmail({ itemId: 'id1' }, sender('https://shop.example/f', 'https://shop.example/', { frameId: 3 })), 'FORBIDDEN');
+  await rejectsWith(svc.requestEmail({ itemId: 'id1' }, { id: 'ext', url: 'https://shop.example/' }), 'FORBIDDEN');
+  assert.equal(vault.state.touches, 0);
+  assert.ok(vault.state.data.items.every((i) => i.lastUsedAt === null));
+  const locked = withDefault(setup({ locked: true, items: [identity()] }), 'me@example.com');
+  await rejectsWith(locked.svc.requestEmail({}, page), 'LOCKED');
+  await rejectsWith(locked.svc.requestEmail({ itemId: 'id1' }, page), 'LOCKED');
+});

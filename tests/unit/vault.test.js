@@ -811,3 +811,27 @@ test('backup import keeps every item; malformed attachment entries are removed a
   assert.deepEqual([ids, count], [imported.items.map((i) => i.id), 4]);
   assert.deepEqual(mergeData(structuredClone({ ...defaultData(1), items: imported.items }), imported).ids, [], 'nothing newer, nothing merged');
 });
+
+test('normalizeData carries a cleaned default email, empty when missing or malformed', () => {
+  assert.equal(normalizeData({ vaults: [], items: [], defaultEmail: ' me@example.com ' }, 5000).defaultEmail, 'me@example.com');
+  assert.equal(normalizeData({ vaults: [], items: [] }, 5000).defaultEmail, '');
+  for (const defaultEmail of ['nope', 'a@b@c', 'a b@c.jp', 42, null, { x: 1 }]) {
+    assert.equal(normalizeData({ vaults: [], items: [], defaultEmail }, 5000).defaultEmail, '', String(defaultEmail));
+  }
+});
+
+test('mergeData adopts the incoming default email only when the vault has none', () => {
+  const incoming = { vaults: [], items: [], defaultEmail: 'in@example.com' };
+  const none = defaultData(1);
+  const adopted = mergeData(none, incoming);
+  assert.equal(adopted.data.defaultEmail, 'in@example.com');
+  assert.equal('defaultEmail' in none, false, 'input untouched');
+  assert.equal(adopted.count, 0);
+
+  const owned = { ...defaultData(1), defaultEmail: 'mine@example.com' };
+  assert.equal(mergeData(owned, incoming).data.defaultEmail, 'mine@example.com');
+  assert.equal(mergeData({ ...defaultData(1), defaultEmail: 'broken' }, incoming).data.defaultEmail, 'in@example.com');
+  assert.equal('defaultEmail' in mergeData(defaultData(1), { vaults: [], items: [], defaultEmail: '' }).data, false);
+  assert.equal('defaultEmail' in mergeData(defaultData(1), { vaults: [], items: [], defaultEmail: 'bad@@x' }).data, false);
+  assert.equal(mergeData(owned, { vaults: [], items: [] }).data.defaultEmail, 'mine@example.com');
+});

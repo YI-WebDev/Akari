@@ -228,6 +228,8 @@
     trash: [],
     settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
     backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
+    defaultEmail: cfg.defaultEmail || '',
+    emailCalls: 0,
   };
   if (cfg.backup) {
     db.backup.lastAt = cfg.backup.lastAt == null ? null : cfg.backup.lastAt;
@@ -258,6 +260,11 @@
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms * cfg.delay); }); };
   function needUnlocked() { if (db.locked) throw AkErr('LOCKED', 'Vault is locked'); }
+  function cleanEmail(v) {
+    if (typeof v !== 'string') return '';
+    v = v.trim();
+    return v.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(v) && !/[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(v) ? v : '';
+  }
   function toTrash(ids) {
     var gone = {};
     ids.forEach(function (id) { gone[id] = true; });
@@ -333,7 +340,18 @@
       return {};
     },
     'vault/lock': function () { db.locked = true; return {}; },
-    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items), trash: clone(db.trash) }; },
+    'vault/getAll': async function () { needUnlocked(); await sleep(200); return { vaults: clone(db.vaults), items: clone(db.items), trash: clone(db.trash), defaultEmail: db.defaultEmail }; },
+    'vault/setDefaultEmail': async function (m) {
+      needUnlocked();
+      db.emailCalls++;
+      await sleep(300);
+      if (cfg.failEmail) throw AkErr(cfg.failEmail === true ? 'INTERNAL' : cfg.failEmail, 'mock: default email not saved');
+      var raw = typeof m.email === 'string' ? m.email.trim() : '';
+      var email = raw && cleanEmail(raw);
+      if (raw && !email) throw AkErr('INVALID', 'Malformed email');
+      db.defaultEmail = email;
+      return { defaultEmail: email };
+    },
     'vault/saveItem': async function (m) {
       needUnlocked();
       var it = m.item || {};
@@ -498,6 +516,7 @@
       var t = Date.now();
       db.items.push(L('imp1-' + t, 'personal', 'booking.com', 'haruka.sato@example.com', 'Tabi!Kyoto#2026', 200, { createdAt: t, updatedAt: t }));
       db.items.push(L('imp2-' + t, 'work', 'linear.app', 'haruka@studio-mori.jp', 'L1near-Issue-Board', 260, { createdAt: t, updatedAt: t }));
+      if (cfg.importEmail && !db.defaultEmail) db.defaultEmail = cfg.importEmail;
       return { count: 2, skippedAttachments: cfg.importSkipped || 0 };
     },
     'vault/importItems': async function (m) {

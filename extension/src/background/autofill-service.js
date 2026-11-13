@@ -6,6 +6,7 @@ import { setLoginPassword } from '../lib/vault.js';
 import { generatePassword } from '../lib/generator.js';
 import { generateTotp } from '../lib/totp.js';
 import { personName } from '../shared/item-types.js';
+import { cleanEmail } from '../shared/email.js';
 import * as vaultService from './vault-service.js';
 
 const PENDING_TTL_MS = 2 * 60 * 1000;
@@ -15,6 +16,7 @@ const MAX_FIELD_LEN = 4096;
 const SUGGESTED_LENGTH = 20;
 const SUGGESTED_MIN_LENGTH = 8;
 const SUGGESTED_MAX_LENGTH = 48;
+const MAX_EMAIL_CHOICES = 5;
 
 const isWebUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
 const isLoopback = (host) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
@@ -291,6 +293,53 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
     return { values };
   }
 
+  async function emails(msg, sender) {
+    senderPage(sender);
+    if (sender.frameId !== 0) return { locked: false, items: [] };
+    if (await vault.isLocked()) return { locked: true, items: [] };
+    const data = await vault.readData();
+    const choices = [];
+    const seen = new Set();
+    const offer = (choice) => {
+      const key = choice.email.toLowerCase();
+      if (!choice.email || seen.has(key) || choices.length >= MAX_EMAIL_CHOICES) return;
+      seen.add(key);
+      choices.push(choice);
+    };
+    offer({ itemId: null, email: cleanEmail(data.defaultEmail), title: '', hue: null });
+    for (const it of data.items.filter((i) => i.type === 'identity').sort(byRecent)) {
+      const fields = it.fields || {};
+      offer({
+        itemId: it.id,
+        email: cleanEmail(fields.email),
+        title: it.title || identityName(fields) || '',
+        hue: Number.isFinite(it.hue) ? it.hue : 0,
+      });
+    }
+    return { locked: false, items: choices };
+  }
+
+  async function requestEmail(msg, sender) {
+    senderPage(sender);
+    if (sender.frameId !== 0) throw new AkariError(ERR.FORBIDDEN, 'Only the top frame can ask for an email address');
+    await requireUnlocked();
+    const itemId = msg.itemId;
+    if (itemId != null && typeof itemId !== 'string') throw new AkariError(ERR.INVALID, 'itemId must be a string');
+    const data = await vault.readData();
+    if (itemId == null) {
+      const email = cleanEmail(data.defaultEmail);
+      if (!email) throw new AkariError(ERR.NOT_FOUND, 'No default email address');
+      await vault.touchActivity();
+      return { email };
+    }
+    const item = data.items.find((it) => it.type === 'identity' && it.id === itemId);
+    const email = item ? cleanEmail(item.fields?.email) : '';
+    if (!email) throw new AkariError(ERR.NOT_FOUND, 'Email address not found');
+    await vault.touchActivity();
+    await markUsed(item.id);
+    return { email };
+  }
+
   async function offerSave(msg, sender) {
     const { tabId, tabUrl, frameUrl } = senderPage(sender);
     const username = typeof msg.username === 'string' ? msg.username.trim() : '';
@@ -404,7 +453,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
 
   return {
     matches, fill, pageMatches, requestFill, noteUsername, suggestPassword, identities, requestIdentity,
-    pageTotp, requestTotp, offerSave, confirmSave, onCommand, forgetTab,
+    emails, requestEmail, pageTotp, requestTotp, offerSave, confirmSave, onCommand, forgetTab,
   };
 }
 
@@ -419,6 +468,8 @@ if (globalThis.chrome?.runtime?.id) {
   register(MSG.AUTOFILL_SUGGEST_PASSWORD, svc.suggestPassword, { from: 'content' });
   register(MSG.AUTOFILL_IDENTITIES, svc.identities, { from: 'content' });
   register(MSG.AUTOFILL_REQUEST_IDENTITY, svc.requestIdentity, { from: 'content' });
+  register(MSG.AUTOFILL_EMAILS, svc.emails, { from: 'content' });
+  register(MSG.AUTOFILL_REQUEST_EMAIL, svc.requestEmail, { from: 'content' });
   register(MSG.AUTOFILL_PAGE_TOTP, svc.pageTotp, { from: 'content' });
   register(MSG.AUTOFILL_REQUEST_TOTP, svc.requestTotp, { from: 'content' });
   register(MSG.AUTOFILL_OFFER_SAVE, svc.offerSave, { from: 'content' });
