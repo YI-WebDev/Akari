@@ -19,11 +19,15 @@ export const attachmentStorageKey = (id) => ATTACHMENT_KEY_PREFIX + id;
 export const maxAttachmentB64Length = () => Math.ceil(ATTACHMENT_LIMITS.fileBytes / 3) * 4;
 
 export function cleanAttachmentName(name) {
-  if (typeof name !== 'string' || name.length > MAX_RAW_NAME_LENGTH) return null;
-  const v = name.replace(NAME_DROP_RE, '').replace(/[/\\]/g, '_').trim();
-  const n = [...v].length;
-  return n >= 1 && n <= ATTACHMENT_LIMITS.name ? v : null;
+  if (typeof name !== 'string') return '';
+  if (name.length > MAX_RAW_NAME_LENGTH) return name;
+  return name.replace(NAME_DROP_RE, '').replace(/[/\\]/g, '_').trim();
 }
+
+export const attachmentNameFits = (v) => v.length <= MAX_RAW_NAME_LENGTH && [...v].length <= ATTACHMENT_LIMITS.name;
+
+const IV_B64_LENGTH = Math.ceil(IV_BYTES / 3) * 4;
+export const pickBox = (box) => ({ v: box.v, iv: box.iv, ct: box.ct });
 
 export function cleanMime(mime) {
   if (typeof mime !== 'string' || mime.length > MAX_MIME_LENGTH) return '';
@@ -52,8 +56,8 @@ export async function encryptAttachment(keyB64, id, bytes) {
 }
 
 export async function decryptAttachment(keyB64, id, box) {
-  if (!isObject(box) || box.v !== BOX_VERSION || typeof box.ct !== 'string'
-    || box.ct.length > maxAttachmentB64Length() + 32) throw invalid('Malformed attachment');
+  if (!isObject(box) || box.v !== BOX_VERSION || typeof box.iv !== 'string' || box.iv.length !== IV_B64_LENGTH
+    || typeof box.ct !== 'string' || box.ct.length > maxAttachmentB64Length() + 32) throw invalid('Malformed attachment');
   const { iv, ct } = decodeBox(box);
   if (iv.length !== IV_BYTES || ct.length < GCM_TAG_BYTES + 1) throw invalid('Malformed attachment');
   try {
@@ -64,7 +68,8 @@ export async function decryptAttachment(keyB64, id, box) {
 }
 
 const isValidMeta = (a) => isObject(a) && isAttachmentId(a.id)
-  && cleanAttachmentName(a.name) === a.name && typeof a.mime === 'string' && cleanMime(a.mime) === a.mime
+  && typeof a.name === 'string' && a.name !== '' && cleanAttachmentName(a.name) === a.name && attachmentNameFits(a.name)
+  && typeof a.mime === 'string' && cleanMime(a.mime) === a.mime
   && Number.isInteger(a.size) && a.size >= 1 && a.size <= ATTACHMENT_LIMITS.fileBytes && isKey(a.key);
 
 export function normalizeAttachments(list, nowMs = Date.now()) {

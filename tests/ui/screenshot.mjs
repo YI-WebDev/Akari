@@ -1497,6 +1497,30 @@ async function dragOverAttachments(page, on) {
   }, on);
   await page.waitForTimeout(250);
 }
+async function dragThroughWindow(page, sel, type) {
+  return page.evaluate(([s, type]) => {
+    if (!window.__dragSeen) {
+      const own = new WeakMap();
+      const real = Object.getOwnPropertyDescriptor(DataTransfer.prototype, 'dropEffect');
+      Object.defineProperty(DataTransfer.prototype, 'dropEffect', {
+        configurable: true,
+        get() { return own.has(this) ? own.get(this) : real.get.call(this); },
+        set(v) { own.set(this, v); },
+      });
+      for (const k of ['dragover', 'drop']) {
+        window.addEventListener(k, (e) => { window.__dragSeen = { effect: e.dataTransfer.dropEffect, prevented: e.defaultPrevented }; });
+      }
+      window.__dragSeen = {};
+    }
+    window.__dragSeen = {};
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x'], 'drag.txt', { type: 'text/plain' }));
+    dt.dropEffect = 'move';
+    const ev = new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+    document.querySelector(s).dispatchEvent(ev);
+    return { ...window.__dragSeen, prevented: ev.defaultPrevented, url: location.href };
+  }, [sel, type]);
+}
 
 function featureScenarios() {
   const out = {};
@@ -1571,9 +1595,34 @@ function featureScenarios() {
       await page.waitForTimeout(200);
       await scrollEditorTo(page, '.xf-box');
       await fshot('editor-filled');
+      const codes = 'rc-1111-aaaa\nrc-2222-bbbb\nrc-3333-cccc';
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', codes);
+      for (const key of ['4', '2', '3', '2']) {
+        await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+        await page.waitForTimeout(200);
+        await page.keyboard.press(key);
+        await page.waitForTimeout(200);
+        if (key !== '2') expect(await page.locator('.xf-row:nth-child(2) .field-err:not(:empty)').count() === 1, 'a multi-line value is an error under date and 2FA code');
+      }
+      expect(await page.inputValue('.xf-row:nth-child(2) textarea.xf-value') === codes, 'line breaks survive kind changes');
+      const split = 'JBSW\nY3DP\nEHPK\n3PXP';
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', split);
+      await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+      await page.waitForTimeout(200);
+      await page.keyboard.press('3');
+      await page.waitForTimeout(250);
+      expect(/改行|Line breaks/.test(await page.locator('.xf-row:nth-child(2) .field-err').textContent()), 'a multi-line Base32 value under 2FA code shows the line-break error');
+      expect(await page.locator('.xf-row:nth-child(2) .xf-totp').count() === 0, 'no live code from a multi-line value');
+      await page.click('.xf-row:nth-child(2) .xf-kind', { delay: 120 });
+      await page.waitForTimeout(200);
+      await page.keyboard.press('2');
+      await page.waitForTimeout(200);
+      expect(await page.inputValue('.xf-row:nth-child(2) textarea.xf-value') === split, 'back to secret gives the four lines back');
+      await page.fill('.xf-row:nth-child(2) textarea.xf-value', codes);
       await page.click('.ed-foot .btn-primary');
       await page.waitForSelector('#editor[hidden]', { state: 'attached' });
       const ex = await page.evaluate(() => window.__AKARI_DB__.items.find((x) => x.id === 'fields-login').extra);
+      expect(ex[1].kind === 'hidden' && ex[1].value === codes, 'multi-line secret saved with its line breaks after secret -> date -> secret -> 2FA code -> secret');
       expect(ex[0].kind === 'hidden' && ex[0].secret === true && ex[0].value === '9f2c4a7e81b3d605', 'text -> hidden keeps the value');
       expect(ex[2].value === 'JBSWY3DPEHPK3PXP' && ex[2].kind === 'totp', 'untouched TOTP round-trips');
       expect(ex.some((x) => x.kind === 'date' && x.value === '2026-03-01'), 'new date saved');
@@ -1694,6 +1743,111 @@ function featureScenarios() {
       await page.waitForSelector('#editor[hidden]', { state: 'attached', timeout: 15000 });
       const made = await page.evaluate(() => window.__AKARI_DB__.items.at(-1));
       expect(made.type === 'note' && made.attachments?.length === 1 && made.attachments[0].name === 'レシート.pdf', 'a new item gets its file after the first save');
+      await ctx.close();
+    }
+  };
+
+  out['attach-guards'] = async () => {
+    for (const v of [FEATURE_VARIANTS[0], FEATURE_VARIANTS[3]]) {
+      const ja = v.lang === 'ja';
+      const { page, ctx } = await openFeature(`attach-guards-${v.tag}`, v);
+      const gshot = (n) => shot(page, `attach-${v.tag}-${n}`);
+
+      await pickItem(page, '名前の長い', 'att-names');
+      await gshot('detail-names');
+      const rows = page.locator('#detail .at-dbox .at-ditem');
+      expect(await rows.count() === 3, 'three odd names listed');
+      for (let i = 0; i < 3; i++) {
+        const row = rows.nth(i);
+        const shown = await row.locator('.pk-user').textContent();
+        const ext = (await row.locator('.at-dmeta').textContent()).split(' · ')[0];
+        const [dl] = await Promise.all([page.waitForEvent('download'), row.locator('.at-btn:not([aria-expanded])').click()]);
+        const saved = dl.suggestedFilename();
+        expect(saved === shown, `row ${i}: shown name is the saved name (${saved.slice(-24)} vs ${shown.slice(-24)})`);
+        expect(saved.endsWith(ext) && saved.length <= 120, `row ${i}: shown kind ${ext} is the saved extension (${saved.slice(-12)})`);
+        expect(!/[​-‏‪-‮⁦-⁩]/.test(saved), `row ${i}: no direction controls`);
+      }
+      expect((await rows.nth(0).locator('.at-dmeta').textContent()).startsWith('.txt'), '116 × A + .exe.txt stays a .txt');
+      expect((await rows.nth(1).locator('.at-dmeta').textContent()).startsWith('.exe'), 'a right-to-left override cannot hide .exe');
+      expect((await rows.nth(2).locator('.at-dmeta').textContent()).startsWith('.pdf'), 'a long .pdf keeps .pdf');
+      await quiet(page);
+
+      await pickItem(page, '確定申告', 'att-docs');
+      await editItem(page);
+      const url0 = page.url();
+      const inBox = await dragThroughWindow(page, '.at-slot', 'dragover');
+      expect(inBox.effect === 'copy', `dragover in the attachments box is still 'copy' at window (${inBox.effect})`);
+      const outside = await dragThroughWindow(page, '#edTitle', 'dragover');
+      expect(outside.effect === 'none', `dragover elsewhere in the editor is 'none' at window (${outside.effect})`);
+      const dropOut = await dragThroughWindow(page, '#edTitle', 'drop');
+      expect(dropOut.prevented && dropOut.url === url0, 'a drop outside the box is prevented and the page stays');
+
+      const settled = () => page.waitForFunction(() => !document.querySelector('.ed-form[aria-busy]') && !document.querySelector('.ed-scroll')?.inert);
+      await page.evaluate(() => { window.__AKARI_MOCK__.failSave = 'INVALID'; });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#toast.on.err');
+      await settled();
+      expect(await page.evaluate(() => document.activeElement?.id) === 'edTitle', 'a failed save started with Enter gives focus back to the title');
+      await page.evaluate(() => { window.__AKARI_MOCK__.failSave = null; });
+      await quiet(page);
+      await page.locator('.at-input').setInputFiles([fakeFile('unreadable.txt', 50, 'text/plain')]);
+      await page.evaluate(() => { window.__realAB = Blob.prototype.arrayBuffer; Blob.prototype.arrayBuffer = () => Promise.reject(new Error('gone')); });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.at-item[data-state="fail"]');
+      await settled();
+      expect(await page.evaluate(() => document.activeElement?.id) === 'edTitle', 'a prepare failure gives focus back to the title');
+      await page.evaluate(() => { Blob.prototype.arrayBuffer = window.__realAB; });
+      await page.click('.at-item.queued .ibtn');
+
+      const title = await page.inputValue('#edTitle');
+      await page.locator('.at-input').setInputFiles([fakeFile('scan-a.png', 2000, 'image/png'), fakeFile('memo-b.txt', 300, 'text/plain')]);
+      await page.evaluate(() => { window.__AKARI_MOCK__.uploadDelay = 1500; window.__AKARI_MOCK__.failUpload = 'scan'; });
+      await page.focus('#edTitle');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('.ed-foot-note[data-kind="run"]:not([hidden])');
+      expect(await page.evaluate(() => document.activeElement?.matches('.ed-foot .btn-primary')), 'while files are saved, focus waits on 保存 in the foot, not on body');
+      expect(await page.evaluate(() => document.querySelector('.ed-scroll').inert), 'the form is locked while files are saved');
+      expect(await page.locator('.ed-foot .btn-text.danger').count() === 0, '削除 is not offered while saving');
+      await page.click('#edNote', { force: true, timeout: 1000 }).catch(() => {});
+      await page.keyboard.type('typed while saving');
+      expect(await page.locator('.ed-foot-note[data-kind="run"]:not([hidden])').count() === 1, 'the progress line stays');
+      await gshot('editor-locked');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])', { timeout: 15000 });
+      expect(!(await page.inputValue('#edNote')).includes('typed while saving'), 'nothing typed during the save went into the form');
+      expect(!(await page.evaluate(() => document.querySelector('.ed-scroll').inert)), 'usable again after a partial failure');
+      expect(await page.locator('.ed-foot .btn-text.danger').count() === 1, '削除 is back');
+
+      await page.click('.at-item.queued .ibtn');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      expect(await page.locator('#editor[hidden]').count() === 1 && await page.locator('.ed-foot .ed-confirm').count() === 0,
+        'failed file removed and nothing else changed: closes without a question');
+
+      await editItem(page);
+      await page.locator('.at-input').setInputFiles([fakeFile('scan-c.png', 2000, 'image/png')]);
+      await page.click('.ed-foot .btn-primary');
+      await page.waitForSelector('.ed-foot-note[data-kind="err"]:not([hidden])', { timeout: 15000 });
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(/外して閉じ|Close without/.test(await page.locator('.ed-foot .ed-confirm').textContent()), 'only not-added files: the "remove and close" question');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+      await page.fill('#edTitle', title + ' 2');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      const ask = await page.locator('.ed-foot .ed-confirm').textContent();
+      expect(ja ? /保存後/.test(ask) && /アイテムは保存済み/.test(ask) : /Discard edits/.test(ask) && /saved/.test(ask), `edits after a partial failure: the question says the item is saved (${ask})`);
+      await page.waitForTimeout(300);
+      await gshot('editor-discard-since');
+      await page.click('.ed-foot .ed-confirm .btn-mini:not(.danger)');
+      await page.click('.at-item.queued .ibtn');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ed-foot .ed-confirm');
+      expect(ja ? /保存後/.test(await page.locator('.ed-foot .ed-confirm').textContent()) : /Discard edits/.test(await page.locator('.ed-foot .ed-confirm').textContent()),
+        'removing the failed file does not hide a real edit');
+      await page.click('.ed-foot .ed-confirm .btn-mini.danger');
+      await page.waitForSelector('#editor[hidden]', { state: 'attached' });
       await ctx.close();
     }
   };

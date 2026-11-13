@@ -78,6 +78,14 @@
         putFile('令和七年分所得税及び復興特別所得税の確定申告書の控え（税務署受付印あり）スキャン版_最終.pdf', 'application/pdf', PDF_B64, date('2025/10/05')),
       ];
     }
+    var names = byId('att-names');
+    if (names) {
+      names.attachments = [
+        putFile(new Array(117).join('A') + '.exe.txt', 'text/plain', b64('not an executable\n'), date('2025/10/06')),
+        putFile('invoice‮txt.exe', 'application/octet-stream', b64('bidi\n'), date('2025/10/07')),
+        putFile(new Array(201).join('長') + '.pdf', 'application/pdf', PDF_B64, date('2025/10/08')),
+      ];
+    }
     var full = byId('att-full');
     if (full) {
       full.attachments = [];
@@ -113,6 +121,7 @@
         ],
       }),
       { id: 'att-docs', type: 'note', vault: 'personal', title: '確定申告の書類', url: '', username: '', password: '', totp: null, note: '2025 年分。原本は書斎の青いファイル。', fav: false, hue: 35, passkeys: [], extra: [], createdAt: date('2025/10/02'), updatedAt: date('2025/10/05'), passwordUpdatedAt: null, lastUsedAt: now - 2 * DAY },
+      { id: 'att-names', type: 'note', vault: 'personal', title: '名前の長い添付', url: '', username: '', password: '', totp: null, note: '', fav: false, hue: 95, passkeys: [], extra: [], createdAt: date('2025/10/06'), updatedAt: date('2025/10/08'), passwordUpdatedAt: null, lastUsedAt: now - 5 * DAY },
       { id: 'att-full', type: 'note', vault: 'family', title: '家の書類スキャン', url: '', username: '', password: '', totp: null, note: '保険証券・保証書・契約書のスキャン。', fav: false, hue: 320, passkeys: [], extra: [], createdAt: date('2025/09/01'), updatedAt: date('2025/09/10'), passwordUpdatedAt: null, lastUsedAt: now - 3 * DAY },
     ];
   }
@@ -329,6 +338,7 @@
       needUnlocked();
       var it = m.item || {};
       if (it.passkeys) throw AkErr('INVALID', 'popup must not send passkeys');
+      if (cfg.failSave) throw AkErr(cfg.failSave === true ? 'INTERNAL' : cfg.failSave, 'mock: save failed');
       await sleep(250);
       var t = Date.now();
       var cur = it.id && db.items.find(function (x) { return x.id === it.id; });

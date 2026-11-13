@@ -397,7 +397,7 @@ function kindLabel() {
 function footIdle() {
   const foot = E.els.foot;
   clear(foot);
-  if (E.original) {
+  if (E.original && !E.busy) {
     foot.append(h('button', { class: 'btn-text danger', type: 'button', onclick: confirmDelete }, t('削除')));
   }
   foot.append(E.els.footNote, h('span', { class: 'grow' }),
@@ -452,17 +452,28 @@ export function requestClose(then) {
     if (then) then();
     else emit('editorClosed');
   };
-  const n = E.attach.pendingCount();
-  if (!E.dirty && !n) { done(); return; }
+  const a = E.attach.changes();
+  const notAdded = E.savedOnce ? a.failed : 0;
+  const queued = a.queued + (E.savedOnce ? 0 : a.failed);
+  const edits = E.dirty || a.removed > 0 || queued > 0;
+  const n = queued + notAdded;
+  if (!edits && !notAdded) { done(); return; }
   shake(E.els.foot);
-  if (!E.dirty) {
+  if (!edits) {
     footConfirm(t('editor.dropFailed', { n }, '追加できなかった {n} ファイルを外して閉じますか？（アイテムは保存済み）'),
       t('editor.dropFailedYes', null, '外して閉じる'), done, t('編集を続ける'));
     return;
   }
-  const ask = n
-    ? t('editor.discardFiles', { n }, '変更を破棄しますか？ 追加待ちの {n} ファイルも破棄されます')
-    : t('変更を破棄しますか？');
+  let ask;
+  if (E.savedOnce) {
+    ask = n
+      ? t('editor.discardSinceFiles', { n }, '保存後の変更と追加待ちの {n} ファイルを破棄しますか？ アイテムは保存済みです')
+      : t('editor.discardSince', null, '保存後の変更を破棄しますか？ アイテムは保存済みです');
+  } else {
+    ask = n
+      ? t('editor.discardFiles', { n }, '変更を破棄しますか？ 追加待ちの {n} ファイルも破棄されます')
+      : t('変更を破棄しますか？');
+  }
   footConfirm(ask, t('破棄する'), done, t('編集を続ける'));
 }
 
@@ -522,12 +533,24 @@ async function save(e) {
     return;
   }
   const mine = E;
+  const back = document.activeElement;
   mine.busy = true;
   mine.els.save.classList.add('busy');
+  footIdle();
+  mine.els.save.focus({ preventScroll: true });
+  mine.els.scroll.inert = true;
+  mine.els.form.setAttribute('aria-busy', 'true');
   setFootNote(null);
   const idle = () => {
     mine.busy = false;
     mine.els.save.classList.remove('busy');
+    mine.els.scroll.inert = false;
+    mine.els.form.removeAttribute('aria-busy');
+    footIdle();
+  };
+  const refocus = () => {
+    const ok = back && back !== document.body && back.isConnected && !back.disabled && !back.closest('[inert], [hidden]');
+    (ok ? back : mine.els.save).focus({ preventScroll: true });
   };
   const queued = mine.attach.pendingCount();
   if (queued) {
@@ -536,6 +559,7 @@ async function save(e) {
     if (E !== mine) return;
     if (!ready) {
       idle();
+      refocus();
       mine.attach.el.scrollIntoView({ block: 'nearest' });
       shake(mine.attach.el);
       return;
@@ -553,6 +577,7 @@ async function save(e) {
   } catch (err) {
     if (E !== mine) return;
     idle();
+    refocus();
     toastError(t('保存できませんでした'), errText(err));
     return;
   }
@@ -570,18 +595,20 @@ async function save(e) {
       failed = [{ name: '', message: errText(err) }];
     }
   }
+  const added = isNew || !!mine.addedHere;
   if (E !== mine || !failed.length) {
     if (E === mine) closeEditor();
-    emit('saved', saved, isNew);
+    emit('saved', saved, added);
     return;
   }
   mine.original = saved;
   mine.dirty = false;
+  mine.savedOnce = true;
+  mine.addedHere = added;
   idle();
   retitle();
-  footIdle();
   setFootNote(t('editor.savedButFiles', { n: failed.length }, 'アイテムは保存済み · {n} ファイルを追加できませんでした'), 'err');
-  emit('saved', saved, isNew, { keepEditor: true });
+  emit('saved', saved, added, { keepEditor: true });
   mine.els.save.focus({ preventScroll: true });
 }
 
@@ -682,11 +709,11 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   }
 
   E.extras = createExtrasEditor({ list: Array.isArray(original?.extra) ? original.extra : [], errs: errsAdapter(), onDirty: markDirty, type: kind });
-  E.attach = createAttachmentsEditor({ item: original, onDirty: markDirty });
+  E.attach = createAttachmentsEditor({ item: original, onDirty: () => {} });
 
   els.heading = h('div', { class: 'ed-heading' }, heading);
   els.footNote = h('span', { class: 'ed-foot-note', role: 'status', hidden: true });
-  const scroll = h('div', { class: 'ed-scroll' },
+  const scroll = els.scroll = h('div', { class: 'ed-scroll' },
     h('div', { class: 'd-head ed-head', dataset: { f: '' } }, els.tile,
       h('div', { class: 'd-titles' }, els.heading, els.sub), fav),
     main, E.extras.el, E.attach.el, meta);
@@ -695,7 +722,8 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
   els.foot = h('div', { class: 'ed-foot' });
   const form = els.form = h('form', { class: 'ed-form', novalidate: true, 'aria-label': heading, dataset: { type: kind } }, scroll, els.foot);
   form.addEventListener('submit', save);
-  form.addEventListener('input', () => {
+  form.addEventListener('input', (e) => {
+    if (E?.attach?.el.contains(e.target)) return;
     markDirty();
     if (E?.templated) updateHead();
   });

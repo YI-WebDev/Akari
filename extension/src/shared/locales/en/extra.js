@@ -16,6 +16,7 @@ export default {
   '値が表示されます': 'The value is now shown',
   '2026-04-01 または 2026/4/1': '2026-04-01 or 2026/4/1',
   '日付として読めません（例: 2026-04-01）': 'Not a date (e.g. 2026-04-01)',
+  '改行を含む値は使えません（1 行で入力してください）': 'Line breaks are not allowed here (use one line)',
   '秘密鍵を編集': 'Edit the secret',
   '秘密鍵 または otpauth:// URI': 'Secret or otpauth:// URI',
   '秘密鍵の形式が正しくありません（Base32 の英字と 2〜7 の数字）': 'Invalid secret (Base32: letters and digits 2–7)',

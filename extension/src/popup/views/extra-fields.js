@@ -23,6 +23,9 @@ const str = (v) => (v == null ? '' : String(v));
 const fieldName = () => t('editor.extraLabel', null, '項目名');
 const dateError = () => t('日付として読めません（例: 2026-04-01）');
 const totpFallbackError = () => t('秘密鍵または URI の形式が正しくありません');
+const lineError = () => t('改行を含む値は使えません（1 行で入力してください）');
+const multiLine = (s) => str(s).trim().includes('\n');
+const oneLine = (s) => str(s).replace(/\r\n?|\n/g, ' ');
 
 function parseTotpValue(text) {
   const s = str(text).trim();
@@ -117,8 +120,10 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     return eye;
   }
 
+  const srcText = (entry, input) => (entry.carry ?? input.value);
+
   function guardMask(entry, input, valid, kids) {
-    if (!entry.maskUntilValid || valid(input.value)) { entry.maskUntilValid = false; return kids; }
+    if (!entry.maskUntilValid || valid(srcText(entry, input))) { entry.maskUntilValid = false; return kids; }
     input.type = 'password';
     input.autocomplete = 'new-password';
     const eye = eyeButton(entry);
@@ -151,16 +156,18 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
       class: 'xf-value', type: 'text', maxlength: 32, autocomplete: 'off', spellcheck: 'false',
       placeholder: t('2026-04-01 または 2026/4/1'), 'aria-label': valueName(entry),
     });
-    input.value = initial;
+    input.value = oneLine(initial);
     input.addEventListener('input', () => touch(entry));
     input.addEventListener('blur', () => {
       if (!entry.touched || entry.valueEl !== input) return;
-      const v = parseDateInput(input.value);
+      const src = srcText(entry, input);
+      if (multiLine(src)) { setErr(entry, lineError()); return; }
+      const v = parseDateInput(src);
       if (v) input.value = v;
       else if (v == null) setErr(entry, dateError());
     });
     entry.valueEl = input;
-    return guardMask(entry, input, (v) => parseDateInput(v) != null, [input]);
+    return guardMask(entry, input, (v) => !multiLine(v) && parseDateInput(v) != null, [input]);
   }
 
   function totpLive(entry) {
@@ -173,7 +180,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     const editLabel = t('秘密鍵を編集');
     const edit = h('button', { class: 'ibtn xf-totp-edit', type: 'button', title: editLabel, 'aria-label': editLabel }, icon('pencil', 13));
     edit.addEventListener('click', () => {
-      const prev = entry.totp.value;
+      const prev = entry.carry ?? entry.totp.value;
       entry.totp = null;
       touch(entry);
       renderControl(entry, prev);
@@ -191,11 +198,12 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
       class: 'xf-value', type: 'text', autocomplete: 'off', spellcheck: 'false', maxlength: LIMITS.extraValue,
       placeholder: t('秘密鍵 または otpauth:// URI'), 'aria-label': valueName(entry),
     });
-    input.value = initial;
+    input.value = oneLine(initial);
     const accept = () => {
       if (entry.valueEl !== input) return;
-      const v = input.value.trim();
+      const v = srcText(entry, input).trim();
       if (!v) { setErr(entry, ''); return; }
+      if (multiLine(v)) { setErr(entry, lineError()); return; }
       const parsed = tryTotp(v);
       if (!parsed) { setErr(entry, totpError(v)); return; }
       entry.totp = parsed;
@@ -214,7 +222,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     input.addEventListener('paste', () => setTimeout(accept, 0));
     input.addEventListener('blur', () => { if (entry.touched) accept(); });
     entry.valueEl = input;
-    return guardMask(entry, input, (v) => !v.trim() || !!tryTotp(v), [input]);
+    return guardMask(entry, input, (v) => !v.trim() || (!multiLine(v) && !!tryTotp(v)), [input]);
   }
 
   function renderControl(entry, initial) {
@@ -248,6 +256,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
   }
 
   function currentText(entry) {
+    if (entry.carry != null) return entry.carry;
     if (entry.kind === 'totp' && entry.totp) return entry.totp.value;
     return entry.valueEl ? entry.valueEl.value : entry.stored;
   }
@@ -264,15 +273,19 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     let shown = text;
     let err = '';
     if (kind === 'date') {
-      const d = parseDateInput(text);
-      if (d == null) err = dateError();
+      const d = multiLine(text) ? null : parseDateInput(text);
+      if (multiLine(text)) err = lineError();
+      else if (d == null) err = dateError();
       else shown = d;
+    } else if (kind === 'totp' && multiLine(text)) {
+      err = lineError();
     } else if (kind === 'totp' && text.trim()) {
       entry.totp = tryTotp(text);
       if (entry.totp) shown = '';
       else err = totpError(text);
     }
     entry.maskUntilValid = wasSecret && !!err;
+    entry.carry = text;
     renderControl(entry, shown);
     setErr(entry, err);
     if (wasSecret && kind === 'text' && text.trim()) announce(t('値が表示されます'));
@@ -283,7 +296,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     const uid = ++seq;
     const entry = {
       uid, kind: kind || extraKind(x), stored: str(x?.value), touched: fresh, totp: null, tv: null,
-      valueEl: null, focusTarget: null, noteLogin: fresh,
+      valueEl: null, focusTarget: null, noteLogin: fresh, carry: null,
     };
     entry.errKey = 'x:' + uid;
     const labelIn = h('input', {
@@ -316,6 +329,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
       });
     });
     entry.field = h('div', { class: 'field xf-field' });
+    entry.field.addEventListener('input', () => { entry.carry = null; });
     const err = errs ? errs.add(entry.errKey) : h('div', { class: 'field-err', role: 'alert' });
     entry.note = h('div', { class: 'xf-note' }, t('ここに足したコードは自動入力されません。自動入力するなら上の「認証コード」欄へ'));
     entry.row = h('div', { class: 'ed-row xf-row', dataset: { x: String(uid) } },
@@ -450,18 +464,21 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
 
   function readValue(entry) {
     if (!entry.touched) return { value: entry.stored };
+    const src = str(entry.carry ?? entry.valueEl?.value);
     if (entry.kind === 'totp') {
       if (entry.totp) return { value: entry.totp.value };
-      const v = str(entry.valueEl?.value).trim();
+      const v = src.trim();
       if (!v) return { value: '' };
+      if (multiLine(v)) return { error: lineError() };
       const parsed = tryTotp(v);
       return parsed ? { value: parsed.value } : { error: totpError(v) };
     }
     if (entry.kind === 'date') {
-      const d = parseDateInput(entry.valueEl?.value);
+      if (multiLine(src)) return { error: lineError() };
+      const d = parseDateInput(src);
       return d == null ? { error: dateError() } : { value: d };
     }
-    return { value: str(entry.valueEl?.value).replace(/\r\n?/g, '\n') };
+    return { value: src.replace(/\r\n?/g, '\n') };
   }
 
   function collect(bad) {
@@ -469,7 +486,7 @@ export function createExtrasEditor({ list = [], errs, onDirty = () => {}, type =
     for (const entry of entries) {
       const label = entry.labelIn.value.trim();
       const r = readValue(entry);
-      const raw = r.error ? str(entry.valueEl?.value) : r.value;
+      const raw = r.error ? str(entry.carry ?? entry.valueEl?.value) : r.value;
       if (!label && !raw.trim()) continue;
       if (!label && entry.touched) { bad(entry.errKey, t('editor.err.extraLabel', null, '項目名を入力してください'), entry.labelIn); continue; }
       if (r.error) { bad(entry.errKey, r.error, entry.valueEl || entry.labelIn); continue; }

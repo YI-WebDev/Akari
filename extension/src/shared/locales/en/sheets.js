@@ -286,6 +286,8 @@ export default {
   'editor.storing': 'Saving files {done}/{total} · Keep this open',
   'editor.savedButFiles': 'Item saved · files not added: {n}',
   'editor.discardFiles': 'Discard changes? Queued files go too: {n}',
+  'editor.discardSince': 'Discard edits since saving? The item is saved.',
+  'editor.discardSinceFiles': 'Discard edits and queued files ({n})? Item is saved.',
   'err.quota': 'Over the attachment limit (5 MB a file · 10 files · 32 MB in all)',
   'editor.dropFailed': 'Close without the files not added ({n})? The item is saved.',
   'editor.dropFailedYes': 'Close without them',
