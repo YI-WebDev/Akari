@@ -33,7 +33,7 @@ async function expectBadge(tabId, text, what) {
 }
 
 const saveLogin = async (username) => (await send('vault/saveItem', {
-  item: { type: 'login', title: 'localhost', url: site.origin + '/', username, password: 'S0ra-Kumo!42', vault: 'personal' },
+  item: { type: 'login', title: 'localhost', url: site.origin + '/', username, vault: 'personal' },
 })).data.item;
 
 test('the toolbar badge counts the logins saved for each tab', async () => {
