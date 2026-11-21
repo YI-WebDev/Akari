@@ -80,7 +80,7 @@ async function setupUnlocked(opts) {
 
 test('every §3.1 API function and handler exists', () => {
   const { svc } = makeService();
-  for (const name of ['isLocked', 'readData', 'mutateData', 'onUnlocked', 'getSettings', 'touchActivity', 'sanitizeItem', 'makeItem']) {
+  for (const name of ['isLocked', 'readData', 'mutateData', 'onUnlocked', 'onChanged', 'getSettings', 'touchActivity', 'sanitizeItem', 'makeItem']) {
     assert.equal(typeof svc[name], 'function', name);
   }
   for (const type of [
@@ -92,7 +92,7 @@ test('every §3.1 API function and handler exists', () => {
 
 test('module exports the live API names', async () => {
   const mod = await import('../../extension/src/background/vault-service.js');
-  for (const name of ['isLocked', 'readData', 'mutateData', 'onUnlocked', 'getSettings', 'touchActivity', 'sanitizeItem', 'makeItem']) {
+  for (const name of ['isLocked', 'readData', 'mutateData', 'onUnlocked', 'onChanged', 'getSettings', 'touchActivity', 'sanitizeItem', 'makeItem']) {
     assert.equal(typeof mod[name], 'function', name);
   }
   assert.equal(typeof mod.makeItem({ title: 'x' }).id, 'string');
@@ -181,6 +181,60 @@ test('locked → LOCKED errors (as router AkariError); unlock with wrong/right p
   await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
   assert.equal(fired, 1);
   assert.equal(await svc.isLocked(), false);
+});
+
+test('onChanged fires after setup, unlock, lock, auto-lock and every write, and not on reads', async () => {
+  const { call, svc, chrome } = makeService();
+  const seen = [];
+  const stop = svc.onChanged(async () => { seen.push(await svc.isLocked()); });
+  const settle = () => new Promise((r) => setImmediate(r));
+  const expectFired = async (locked, what) => {
+    await settle();
+    assert.deepEqual(seen.splice(0), [locked], what);
+  };
+
+  await call(MSG.VAULT_SETUP, { masterPassword: PW });
+  await expectFired(false, 'setup');
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { type: 'login', title: 'A', url: 'https://a.example', vault: 'personal' } });
+  await expectFired(false, 'add');
+  await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, url: 'https://b.example' } });
+  await expectFired(false, 'edit');
+  await call(MSG.VAULT_GET_ALL);
+  await call(MSG.VAULT_STATUS);
+  await settle();
+  assert.deepEqual(seen, [], 'reads do not notify');
+  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  await expectFired(false, 'delete');
+  await call(MSG.VAULT_RESTORE_ITEMS, { ids: [item.id] });
+  await expectFired(false, 'restore');
+  await call(MSG.VAULT_LOCK);
+  await expectFired(true, 'lock');
+  await assert.rejects(call(MSG.VAULT_UNLOCK, { masterPassword: 'wrong-password' }));
+  await settle();
+  assert.deepEqual(seen, [], 'a failed unlock does not notify');
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await expectFired(false, 'unlock');
+  await chrome.alarms.fire(AUTOLOCK_ALARM);
+  await expectFired(true, 'auto-lock');
+
+  stop();
+  await call(MSG.VAULT_UNLOCK, { masterPassword: PW });
+  await settle();
+  assert.deepEqual(seen, [], 'unsubscribed');
+});
+
+test('onChanged still fires when unlocking succeeds but arming the auto-lock fails', async () => {
+  const { call, svc, chrome } = await setupUnlocked();
+  await call(MSG.VAULT_LOCK);
+  const seen = [];
+  svc.onChanged(async () => { seen.push(await svc.isLocked()); });
+  const create = chrome.alarms.create;
+  chrome.alarms.create = async () => { throw new Error('alarms unavailable'); };
+  await assert.rejects(call(MSG.VAULT_UNLOCK, { masterPassword: PW }), /alarms unavailable/);
+  chrome.alarms.create = create;
+  await new Promise((r) => setImmediate(r));
+  assert.equal(await svc.isLocked(), false);
+  assert.deepEqual(seen, [false]);
 });
 
 test('unlock before setup → NOT_INITIALIZED', async () => {
