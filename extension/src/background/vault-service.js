@@ -75,6 +75,7 @@ export function createVaultService({
   let consecutiveBadPasswords = 0;
   let lastAutoLockArmAt = 0;
   const unlockedListeners = new Set();
+  const changedListeners = new Set();
   const runWrite = serialQueue();
   const runAuth = serialQueue();
   const runSettings = serialQueue();
@@ -132,6 +133,16 @@ export function createVaultService({
     }
   }
 
+  function notifyChanged() {
+    for (const cb of changedListeners) {
+      try {
+        Promise.resolve(cb()).catch((e) => console.error('[akari] onChanged listener failed', e));
+      } catch (e) {
+        console.error('[akari] onChanged listener failed', e);
+      }
+    }
+  }
+
   async function lock() {
     sessionGeneration++;
     cache = null;
@@ -142,6 +153,7 @@ export function createVaultService({
       await done;
     } finally {
       if (lockInProgress === mine) lockInProgress = null;
+      notifyChanged();
     }
   }
 
@@ -172,8 +184,13 @@ export function createVaultService({
     cache = { dek, data };
     sweepOncePerSession(true);
     consecutiveBadPasswords = 0;
-    await keepIfNeverLock(dek);
-    await armAutoLock(true);
+    try {
+      await keepIfNeverLock(dek);
+      await armAutoLock(true);
+    } catch (e) {
+      notifyChanged();
+      throw e;
+    }
     for (const cb of unlockedListeners) {
       try {
         Promise.resolve(cb()).catch((e) => console.error('[akari] onUnlocked listener failed', e));
@@ -181,6 +198,7 @@ export function createVaultService({
         console.error('[akari] onUnlocked listener failed', e);
       }
     }
+    notifyChanged();
   }
 
   async function verifyPassword(record, password) {
@@ -236,6 +254,7 @@ export function createVaultService({
       draft.updatedAt = now();
       await local.set({ [VAULT_KEY]: await sealData(record, c.dek, draft) });
       if (cache) cache.data = draft;
+      notifyChanged();
       await dropUnreferenced(before, draft);
       return result;
     });
@@ -285,6 +304,11 @@ export function createVaultService({
   function onUnlocked(cb) {
     unlockedListeners.add(cb);
     return () => unlockedListeners.delete(cb);
+  }
+
+  function onChanged(cb) {
+    changedListeners.add(cb);
+    return () => changedListeners.delete(cb);
   }
 
   const makeItem = (partial) => makeItemAt(partial, now());
@@ -811,7 +835,7 @@ export function createVaultService({
   }
 
   return {
-    isLocked, readData, mutateData, onUnlocked, getSettings, touchActivity, sanitizeItem, makeItem,
+    isLocked, readData, mutateData, onUnlocked, onChanged, getSettings, touchActivity, sanitizeItem, makeItem,
     verifyMasterPassword, lock, install, handlers,
   };
 }
@@ -835,6 +859,7 @@ export async function isLocked() { return svc().isLocked(); }
 export async function readData() { return svc().readData(); }
 export async function mutateData(fn) { return svc().mutateData(fn); }
 export function onUnlocked(cb) { return svc().onUnlocked(cb); }
+export function onChanged(cb) { return svc().onChanged(cb); }
 export async function getSettings() { return svc().getSettings(); }
 export async function verifyMasterPassword(password) { return svc().verifyMasterPassword(password); }
 export async function touchActivity() { if (live) await live.touchActivity(); }

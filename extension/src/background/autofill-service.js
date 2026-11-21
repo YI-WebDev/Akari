@@ -50,6 +50,9 @@ export function suggestedLength({ minLength, maxLength } = {}) {
 const byRecent = (a, b) =>
   (b.lastUsedAt || 0) - (a.lastUsedAt || 0) || (b.updatedAt || 0) - (a.updatedAt || 0);
 
+export const matchingLogins = (items, ...pageUrls) =>
+  items.filter((it) => it.type === 'login' && pageUrls.every((u) => urlMatches(it.url, u)));
+
 const sameUser = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 const localPart = (s) => String(s || '').trim().toLowerCase().split('@')[0];
 const likelySameUser = (a, b) => sameUser(a, b)
@@ -87,9 +90,7 @@ export function createAutofillService({ chrome, vault, now = Date.now }) {
 
   async function loginsFor(...pageUrls) {
     const data = await vault.readData();
-    return data.items
-      .filter((it) => it.type === 'login' && pageUrls.every((u) => urlMatches(it.url, u)))
-      .sort(byRecent);
+    return matchingLogins(data.items, ...pageUrls).sort(byRecent);
   }
 
   async function findLogin(itemId) {

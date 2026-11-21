@@ -3,5 +3,6 @@ import './vault-service.js';
 import './clipboard.js';
 import './autofill-service.js';
 import './passkey-service.js';
+import './badge.js';
 
 installRouter();
