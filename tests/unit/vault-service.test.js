@@ -1174,7 +1174,8 @@ test('attachments: Akari backup carries the encrypted bytes and restores them; m
 
   const { json } = await a.call(MSG.VAULT_EXPORT);
   const backup = JSON.parse(json);
-  assert.deepEqual(Object.keys(backup.attachments).sort(), [one.id, two.id].sort(), 'live items only');
+  assert.deepEqual(Object.keys(backup.attachments).sort(), [one.id, two.id, trashed.id].sort(), 'items and trash');
+  assert.deepEqual(backup.attachments[trashed.id], a.chrome.storage.local.map.get(keyOf(trashed.id)));
   assert.deepEqual(backup.attachments[one.id], a.chrome.storage.local.map.get(keyOf(one.id)));
   assert.ok(!json.includes(fileB64('first')) && !json.includes('one.txt'));
 
@@ -1632,4 +1633,21 @@ test('default email: a backup brings its default only into a vault that has none
   assert.deepEqual(await fresh.call(MSG.VAULT_IMPORT, { json: malformed, masterPassword: PW }), { count: 1, skippedAttachments: 0 });
   assert.equal((await fresh.call(MSG.VAULT_GET_ALL)).defaultEmail, '');
   assert.equal('defaultEmail' in (await fresh.svc.readData()), false);
+});
+
+test('backup: vault/export carries the settings from settings/get; vault/import leaves the importing side\'s settings alone', async () => {
+  const a = await setupUnlocked();
+  await a.call(MSG.SETTINGS_SET, { patch: { autoLockMinutes: 30, clipboardClearSeconds: 10, language: 'en', theme: 'light' } });
+  a.chrome.storage.local.map.set('akari.settings', { ...a.chrome.storage.local.map.get('akari.settings'), stray: 'x' });
+  const { json } = await a.call(MSG.VAULT_EXPORT);
+  const backup = JSON.parse(json);
+  assert.deepEqual(backup.settings, await a.call(MSG.SETTINGS_GET));
+  assert.deepEqual(backup.settings, { autoLockMinutes: 30, clipboardClearSeconds: 10, language: 'en', theme: 'light' });
+  assert.equal(backup.version, 1);
+  for (const key of ['akari.backup', 'akari.keep', 'akari.session', 'akari.swept']) assert.ok(!(key in backup), key);
+
+  const b = await setupUnlocked();
+  const mine = await b.call(MSG.SETTINGS_GET);
+  await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW });
+  assert.deepEqual(await b.call(MSG.SETTINGS_GET), mine);
 });

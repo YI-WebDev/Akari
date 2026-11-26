@@ -4,7 +4,9 @@ import {
   createVault, createVaultRecord, openVaultRecord, sealData, exportBackup, importBackup, normalizeData,
   mergeData, makeItem, validateItem, sanitizeItem, defaultData, normalizeUrl, checkRecord,
   addImportedItems, passkeyFromImport, MAX_IMPORT_ITEMS, setLoginPassword, setPendingPassword, PASSWORD_HISTORY_MAX,
+  parseBackup, MAX_BACKUP_VERSION, MAX_BACKUP_CHARS, BACKUP_VERSION, cleanSettings,
 } from '../../extension/src/lib/vault.js';
+import { ATTACHMENT_LIMITS, DEFAULT_SETTINGS, NEVER_LOCK } from '../../extension/src/shared/messages.js';
 import { createCredential, getAssertion } from '../../extension/src/lib/webauthn.js';
 import { exportDek } from '../../extension/src/lib/crypto.js';
 import { fromB64, toB64, toB64url, randomBytes } from '../../extension/src/shared/bytes.js';
@@ -113,6 +115,79 @@ test('backup export/import with the backup password', async () => {
   await assert.rejects(importBackup(json, 'wrong'), { code: 'BAD_PASSWORD' });
   await assert.rejects(importBackup('not json', PW), { code: 'INVALID' });
   await assert.rejects(importBackup(JSON.stringify({ format: 'other', version: 1, vault: record }), PW), { code: 'INVALID' });
+});
+
+test('importBackup ignores unknown top-level fields such as settings', async () => {
+  const data = sampleData();
+  const record = await createVaultRecord(PW, data, OPTS);
+  const plain = exportBackup(record, Date.UTC(2026, 10, 2));
+  const json = JSON.stringify({ ...JSON.parse(plain), settings: { autoLockMinutes: 5, theme: 'light' }, foo: { bar: 1 } });
+  const imported = await importBackup(json, PW);
+  assert.deepEqual(imported, await importBackup(plain, PW));
+  assert.deepEqual(imported.items[0], data.items[0]);
+  assert.deepEqual(imported.attachments, {});
+});
+
+test('exportBackup writes settings (cleaned) and a version only when asked', async () => {
+  const record = await createVaultRecord(PW, sampleData(), OPTS);
+  const plain = JSON.parse(exportBackup(record, 0));
+  assert.deepEqual(Object.keys(plain), ['format', 'version', 'exportedAt', 'vault']);
+  const withSettings = JSON.parse(exportBackup(record, 0, { 'a-b': { iv: 'i', ct: 'c' } }, {
+    settings: { autoLockMinutes: NEVER_LOCK, clipboardClearSeconds: 10, language: 'en', theme: 'bogus', extra: 1 },
+  }));
+  assert.deepEqual(Object.keys(withSettings), ['format', 'version', 'exportedAt', 'vault', 'attachments', 'settings']);
+  assert.deepEqual(withSettings.settings, { autoLockMinutes: NEVER_LOCK, clipboardClearSeconds: 10, language: 'en', theme: 'dark' });
+  assert.equal(withSettings.version, BACKUP_VERSION);
+  for (const version of [0, 1.5, '1', MAX_BACKUP_VERSION + 1]) {
+    assert.throws(() => exportBackup(record, 0, null, { version }), { code: 'INVALID' }, String(version));
+  }
+});
+
+test('parseBackup: accepted and rejected shapes; no decryption', async () => {
+  const record = await createVaultRecord(PW, sampleData(), OPTS);
+  const base = JSON.parse(exportBackup(record, 0));
+  const ok = parseBackup(JSON.stringify(base));
+  assert.deepEqual(ok, { version: 1, record, attachments: {}, settings: null });
+
+  const full = parseBackup(JSON.stringify({ ...base, attachments: { x: { iv: 'a', ct: 'b' } }, settings: { theme: 'light', language: 'xx' } }));
+  assert.deepEqual(full.attachments, { x: { iv: 'a', ct: 'b' } });
+  assert.deepEqual(full.settings, { ...DEFAULT_SETTINGS, theme: 'light' });
+  for (const settings of [null, 'x', [], 3]) {
+    assert.equal(parseBackup(JSON.stringify({ ...base, settings })).settings, null, JSON.stringify(settings));
+  }
+  assert.equal(parseBackup(JSON.stringify({ ...base, vault: 'not checked here' })).record, 'not checked here');
+
+  const bad = [
+    'not json', 'null', '[]', '"akari-backup"',
+    JSON.stringify({ ...base, format: 'other' }),
+    JSON.stringify({ ...base, version: undefined }),
+    JSON.stringify({ ...base, version: 0 }),
+    JSON.stringify({ ...base, version: '1' }),
+    JSON.stringify({ ...base, version: 1.5 }),
+    JSON.stringify({ ...base, attachments: [] }),
+    JSON.stringify({ ...base, attachments: 'x' }),
+    JSON.stringify({ ...base, attachments: null }),
+  ];
+  for (const json of bad) {
+    assert.throws(() => parseBackup(json), (e) => e.code === 'INVALID' && !e.newer, json.slice(0, 60));
+  }
+  const newer = JSON.stringify({ ...base, version: MAX_BACKUP_VERSION + 1 });
+  assert.throws(() => parseBackup(newer), (e) => e.code === 'INVALID' && e.newer === true);
+  await assert.rejects(importBackup(newer, PW), { code: 'INVALID' });
+});
+
+test('cleanSettings keeps only valid values of the four settings', () => {
+  assert.deepEqual(cleanSettings(undefined), { ...DEFAULT_SETTINGS });
+  assert.deepEqual(cleanSettings([]), { ...DEFAULT_SETTINGS });
+  assert.deepEqual(cleanSettings({ autoLockMinutes: 0, clipboardClearSeconds: 60, language: 'ja', theme: 'auto', x: 1 }),
+    { autoLockMinutes: 0, clipboardClearSeconds: 60, language: 'ja', theme: 'auto' });
+  assert.deepEqual(cleanSettings({ autoLockMinutes: 7, clipboardClearSeconds: '30', language: 'fr', theme: null }), { ...DEFAULT_SETTINGS });
+});
+
+test('the largest backup fits the import limit with room for the vault record', () => {
+  const boxChars = Math.ceil(ATTACHMENT_LIMITS.totalBytes / 3) * 4;
+  assert.equal(MAX_BACKUP_CHARS, 60 * 1024 * 1024);
+  assert.ok(MAX_BACKUP_CHARS - boxChars >= 16 * 1024 * 1024, `only ${MAX_BACKUP_CHARS - boxChars} chars left`);
 });
 
 test('importBackup drops invalid items', async () => {

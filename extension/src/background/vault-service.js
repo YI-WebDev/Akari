@@ -1,7 +1,7 @@
 import { register } from './router.js';
 import { AkariError } from '../shared/errors.js';
 import {
-  ERR, MSG, DEFAULT_SETTINGS, NEVER_LOCK, BACKUP_REMIND_DAYS, BACKUP_SNOOZE_DAYS, ATTACHMENT_LIMITS,
+  ERR, MSG, NEVER_LOCK, BACKUP_REMIND_DAYS, BACKUP_SNOOZE_DAYS, ATTACHMENT_LIMITS,
 } from '../shared/messages.js';
 import { DAY_MS } from '../shared/time.js';
 import { applyLanguage } from './locale.js';
@@ -13,7 +13,7 @@ import {
   addImportedItems, stripLegacyLoginKeys, MAX_IMPORT_ITEMS, createVaultIn, updateVaultIn, deleteVaultIn,
   setLoginPassword, setPendingPassword, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash,
   isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, attachmentNameFits, pickBox, cleanMime, newAttachmentKey,
-  encryptAttachment, decryptAttachment, attachmentsIn, attachmentIdsIn, attachmentBytesIn,
+  encryptAttachment, decryptAttachment, attachmentsIn, attachmentIdsIn, attachmentBytesIn, MAX_BACKUP_CHARS, SETTING_RULES, cleanSettings,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -31,15 +31,7 @@ const FREE_UNLOCK_ATTEMPTS = 5;
 const MAX_UNLOCK_DELAY_MS = 30000;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 1024;
-const MAX_IMPORT_CHARS = 60 * 1024 * 1024;
 const MAX_ITEM_ID_LENGTH = 100;
-
-const SETTING_RULES = {
-  autoLockMinutes: (v) => [NEVER_LOCK, 0, 1, 5, 15, 30, 60].includes(v),
-  clipboardClearSeconds: (v) => [0, 10, 30, 60].includes(v),
-  language: (v) => ['auto', 'ja', 'en'].includes(v),
-  theme: (v) => ['dark', 'light', 'auto'].includes(v),
-};
 
 const fail = (code, message) => new AkariError(code, message);
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -314,12 +306,7 @@ export function createVaultService({
   const makeItem = (partial) => makeItemAt(partial, now());
 
   async function getSettings() {
-    const stored = (await local.get(SETTINGS_KEY))[SETTINGS_KEY];
-    const out = { ...DEFAULT_SETTINGS };
-    if (isObject(stored)) {
-      for (const [key, ok] of Object.entries(SETTING_RULES)) if (ok(stored[key])) out[key] = stored[key];
-    }
-    return out;
+    return cleanSettings((await local.get(SETTINGS_KEY))[SETTINGS_KEY]);
   }
 
   async function setSettings(patch, masterPassword) {
@@ -676,7 +663,7 @@ export function createVaultService({
     await ensureUnlocked();
     const { record, boxes } = await runWrite(async () => {
       const c = await ensureUnlocked();
-      const ids = attachmentsIn({ items: c.data.items }).map((a) => a.id).filter(isAttachmentId);
+      const ids = attachmentsIn(c.data).map((a) => a.id).filter(isAttachmentId);
       const keys = ids.map(attachmentStorageKey);
       const stored = keys.length ? await local.get(keys) : {};
       const out = {};
@@ -686,7 +673,7 @@ export function createVaultService({
       }
       return { record: await loadRecord(), boxes: out };
     });
-    const json = exportBackup(record, now(), boxes);
+    const json = exportBackup(record, now(), boxes, { settings: await getSettings() });
     return { json };
   }
 
@@ -730,7 +717,7 @@ export function createVaultService({
 
   async function importVault(json, password) {
     await ensureUnlocked();
-    if (typeof json !== 'string' || !json || json.length > MAX_IMPORT_CHARS) throw fail(ERR.INVALID, 'Invalid backup');
+    if (typeof json !== 'string' || !json || json.length > MAX_BACKUP_CHARS) throw fail(ERR.INVALID, 'Invalid backup');
     if (typeof password !== 'string') throw fail(ERR.INVALID, 'masterPassword must be a string');
     const incoming = await importBackup(json, password);
     const written = [];
