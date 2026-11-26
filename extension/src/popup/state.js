@@ -4,6 +4,7 @@ import { estimateStrength } from '../lib/strength.js';
 import { passwordHealth, ISSUES, ACTION_ISSUES } from '../lib/health.js';
 import { typeOf, searchTextOf } from '../shared/item-types.js';
 import { t } from '../shared/i18n.js';
+import { platform } from '../shared/platform.js';
 import { groupIndex, normMap } from './views/format.js';
 import { compileQuery } from './search.js';
 import { toast, toastError } from './views/toast.js';
@@ -364,14 +365,14 @@ export function mergeSaved(saved, prev) {
 const COPY_LABEL = { user: 'ユーザー名', pass: 'パスワード', totp: '認証コード', gen: '生成したパスワード' };
 
 export async function copyText(field, value, { label = null, secret = null } = {}) {
+  const sensitive = secret ?? field !== 'user';
   try {
-    await navigator.clipboard.writeText(value);
+    await platform.copy(value, { secret: sensitive });
   } catch {
     toastError(t('コピーできませんでした'));
     return false;
   }
   const secs = Number(S.settings.clipboardClearSeconds) || 0;
-  const sensitive = secret ?? field !== 'user';
   const done = t('copy.done', { label: label != null ? label : t(COPY_LABEL[field]) }, '{label}をコピーしました');
   let sub = null;
   if (sensitive && secs > 0) {

@@ -192,6 +192,10 @@ export default {
   'マスターパスワードが違います': 'Wrong master password',
   '書き出せませんでした（{why}）': "Could not export ({why})",
   'PGP で暗号化できませんでした。ファイルは保存していません': "Could not encrypt with PGP. No file was saved",
+  '保存しませんでした': "Not saved",
+  '保存できませんでした（{why}）': "Could not save ({why})",
+  'Akari のバックアップから始める': "Start from an Akari backup",
+  'バックアップから始められませんでした': "Could not start from the backup",
 
   'health.action': 'To fix',
   'health.weak': 'Weak',

@@ -3,6 +3,7 @@ import {
   typeOf, typeLabel, fieldLabel, optionLabel, hasTemplate, isSecretKind, cardBrand, personName, LIMITS,
 } from '../../shared/item-types.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { parseOtpauthUri, normalizeSecret, isValidSecret } from '../../lib/totp.js';
 import { decodeQrFromDataUrl } from '../../lib/qr.js';
 import { S, emit, call, itemById, strengthOf, forSave, mergeSaved, errText } from '../state.js';
@@ -203,7 +204,8 @@ function renderTotp() {
   const scan = h('button', { class: 'btn-line btn-sm', type: 'button', title: t('表示中のタブの QR コードを読み取る') },
     icon('qr', 12), t('QR を読み取る'), h('span', { class: 'spinner' }));
   scan.addEventListener('click', () => scanQr(scan));
-  box.append(wrap, h('div', { class: 'ed-totp-tools' }, scan));
+  box.append(wrap);
+  if (platform.can.captureQr) box.append(h('div', { class: 'ed-totp-tools' }, scan));
 }
 
 async function scanQr(btn) {
@@ -214,7 +216,7 @@ async function scanQr(btn) {
   try {
     let text = null;
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(undefined, { format: 'png' });
+      const dataUrl = await platform.captureQr();
       if (E !== mine) return;
       text = await decodeQrFromDataUrl(dataUrl);
     } catch {

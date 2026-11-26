@@ -3,7 +3,8 @@ import { t } from '../../shared/i18n.js';
 import { toB64, fromB64 } from '../../shared/bytes.js';
 import { call, errText, liveToken, live, attachmentUsage } from '../state.js';
 import { h, clear, icon } from './dom.js';
-import { downloadFile, safeFileName } from './io.js';
+import { safeFileName } from './io.js';
+import { platform } from '../../shared/platform.js';
 import { formatDate } from './format.js';
 import { rise } from './fx.js';
 import { toast, toastError } from './toast.js';
@@ -503,8 +504,9 @@ function detailRow(itemId, a, release, urls) {
     try {
       const res = await fetchBytes();
       if (!live(token) || !dl.isConnected) return;
-      downloadFile(fromB64(res.data), name, 'application/octet-stream');
-      toast(t('attach.downloaded', null, 'ダウンロードしました'), name);
+      const saved = await platform.saveFile(name, new Blob([fromB64(res.data)], { type: 'application/octet-stream' }));
+      if (!live(token) || !dl.isConnected) return;
+      if (saved) toast(t('attach.downloaded', null, 'ダウンロードしました'), name);
     } catch (e) {
       if (!live(token) || !dl.isConnected) return;
       toastError(t('attach.downloadFail', null, 'ダウンロードできませんでした'), errText(e));

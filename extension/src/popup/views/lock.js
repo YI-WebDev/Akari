@@ -1,6 +1,7 @@
 import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { S, strengthOf, setPhase } from '../state.js';
 import { h, clear, syncInert, icon } from './dom.js';
 import { shake, wait, reducedMotion } from './fx.js';
@@ -266,8 +267,10 @@ async function setup(e) {
 
 export function initGate({ load, enter }) {
   hooks = { load, enter };
+  const note = t('暗号化して、このブラウザの中だけに保存します');
+  $('gateVersion').textContent = note;
   try {
-    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
+    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
   $('lockForm').addEventListener('submit', unlock);
   $('lockReveal').addEventListener('pointerdown', (e) => e.preventDefault());
@@ -286,6 +289,18 @@ export function initGate({ load, enter }) {
     }
   });
   $('setupForm').addEventListener('submit', setup);
+  if (platform.can.startFromBackup) {
+    // gate-setup: hidden on the lock screen like the rest of the setup UI (popup.css).
+    const btn = h('button', { class: 'btn-text gate-setup', type: 'button' }, t('Akari のバックアップから始める'));
+    btn.addEventListener('click', async () => {
+      try {
+        await platform.startFromBackup();
+      } catch (err) {
+        status($('setupStatus'), t('バックアップから始められませんでした'), { err: true, detail: err?.message || '' });
+      }
+    });
+    $('setupForm').after(btn);
+  }
   $('setupPw').addEventListener('input', updateSetup);
   $('setupPw2').addEventListener('input', updateSetup);
 }

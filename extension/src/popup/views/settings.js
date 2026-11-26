@@ -4,11 +4,12 @@ import { syncInert, keepFocus, isComposing } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
 import { toast, toastError } from './toast.js';
-import { setTrail, revokeDownloads, arrowNav, setRoving, setBusy } from './io.js';
+import { setTrail, arrowNav, setRoving, setBusy } from './io.js';
 import { initImport, openImport, resetImport, importBack, importDone } from './import.js';
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
+import { revokeDownloads } from '../../shared/platform.js';
 import { cleanEmail, EMAIL_MAX_LENGTH } from '../../shared/email.js';
 
 export const REOPEN_KEY = 'akari.reopen';
@@ -391,9 +392,10 @@ export function closeSettings() {
 }
 
 export function initSettings() {
+  const note = t('暗号化して、このブラウザの中だけに保存します');
+  $('setVersion').textContent = `akari · ${note}`;
   try {
-    const m = chrome.runtime.getManifest();
-    $('setVersion').textContent = `akari v${m.version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
+    $('setVersion').textContent = `akari v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
