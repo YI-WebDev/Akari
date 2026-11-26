@@ -352,8 +352,9 @@ export function ensureSel() {
   return false;
 }
 
+// passkeys and apps change only through their own messages; a stale copy must not overwrite them.
 export function forSave(item) {
-  const { passkeys, ...rest } = item;
+  const { passkeys, apps, ...rest } = item;
   return rest;
 }
 

@@ -9,7 +9,9 @@ export { PASSWORD_HISTORY_MAX, setLoginPassword, setPendingPassword } from './va
 export { passkeyFromImport } from './vault/passkeys.js';
 export {
   BACKUP_FORMAT, BACKUP_VERSION, MAX_BACKUP_VERSION, MAX_BACKUP_CHARS, exportBackup, parseBackup, importBackup, normalizeData, mergeData,
+  backupVersionFor,
 } from './vault/backup.js';
+export { APP_LIMITS, cleanApp, sameApp, checkApps, normalizeApps, unionApps, hasApps } from './vault/apps.js';
 export { SETTING_RULES, cleanSettings } from './vault/settings.js';
 export { MAX_IMPORT_ITEMS, addImportedItems } from './vault/import-items.js';
 export { createVaultIn, updateVaultIn, deleteVaultIn } from './vault/vaults.js';

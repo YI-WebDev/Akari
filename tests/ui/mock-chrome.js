@@ -129,6 +129,20 @@
     ];
   }
 
+  // appsSeed: links to desktop apps on the GitHub login (Akari Desktop adds them; the popup shows and unlinks).
+  function withApps(items) {
+    if (!cfg.appsSeed) return items;
+    var gh = items.find(function (x) { return x.id === 'github'; });
+    if (gh) {
+      gh.apps = [
+        { exe: 'githubdesktop.exe', signer: 'GitHub, Inc.', title: 'GitHub Desktop' },
+        { exe: 'code.exe', signer: 'Microsoft Corporation', title: null },
+        { exe: 'portable-git-tool.exe', signer: null, title: null },
+      ];
+    }
+    return items;
+  }
+
   function seed() {
     return [
       L('github', 'work', 'github.com', 'haruka.dev@example.com', 'v8#Lq2!mTz9@rWk4pE', 285, { fav: true, totp: T('JBSWY3DPEHPK3PXP', 'GitHub', 'haruka.dev@example.com'), url: 'https://github.com/login', lastUsedAt: today(2 * HOUR), createdAt: date('2023/03/12'), updatedAt: date('2025/09/18') }),
@@ -227,7 +241,7 @@
     locked: cfg.state !== 'unlocked',
     master: 'akari-master',
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
-    items: cfg.empty || cfg.state === 'setup' ? [] : seed().concat(cfg.featureSeed ? featureItems() : []),
+    items: cfg.empty || cfg.state === 'setup' ? [] : withApps(seed().concat(cfg.featureSeed ? featureItems() : [])),
     trash: [],
     settings: { autoLockMinutes: cfg.autoLock ?? 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
     backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
@@ -359,6 +373,7 @@
       needUnlocked();
       var it = m.item || {};
       if (it.passkeys) throw AkErr('INVALID', 'popup must not send passkeys');
+      if (it.apps) throw AkErr('INVALID', 'popup must not send apps');
       if (cfg.failSave) throw AkErr(cfg.failSave === true ? 'INTERNAL' : cfg.failSave, 'mock: save failed');
       await sleep(250);
       var t = Date.now();
@@ -494,6 +509,27 @@
       if (!it) throw AkErr('NOT_FOUND');
       it.passkeys = it.passkeys.filter(function (p) { return p.credentialId !== m.credentialId; });
       return {};
+    },
+    'vault/linkApp': async function (m) {
+      needUnlocked(); await sleep(100);
+      var it = db.items.find(function (x) { return x.id === m.itemId; });
+      if (!it) throw AkErr('NOT_FOUND');
+      var app = { exe: String(m.app.exe).toLowerCase(), signer: m.app.signer || null, title: m.app.title || null };
+      it.apps = it.apps || [];
+      if (it.apps.some(function (a) { return a.exe === app.exe && a.signer === app.signer; })) return { added: false, item: clone(it) };
+      it.apps.push(app);
+      return { added: true, item: clone(it) };
+    },
+    'vault/unlinkApp': async function (m) {
+      needUnlocked(); await sleep(200);
+      if (cfg.failUnlink) throw AkErr(cfg.failUnlink);
+      var it = db.items.find(function (x) { return x.id === m.itemId; });
+      var before = (it && it.apps) || [];
+      var rest = before.filter(function (a) { return !(a.exe === String(m.exe).toLowerCase() && a.signer === (m.signer || null)); });
+      if (!it || rest.length === before.length) throw AkErr('NOT_FOUND');
+      if (rest.length) it.apps = rest; else delete it.apps;
+      window.__AKARI_UNLINKED__ = (window.__AKARI_UNLINKED__ || []).concat([m.exe]);
+      return { item: clone(it) };
     },
     'vault/changePassword': async function (m) {
       needUnlocked(); await sleep(900);

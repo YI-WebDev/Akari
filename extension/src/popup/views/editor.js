@@ -18,6 +18,7 @@ import { totpView } from './totp-view.js';
 import { toast, toastError } from './toast.js';
 import { createExtrasEditor } from './extra-fields.js';
 import { createAttachmentsEditor } from './attachments.js';
+import { createAppsEditor, unlinkMarked } from './apps.js';
 import { TEL_RE } from '../../lib/vault/items.js';
 
 let E = null;
@@ -585,6 +586,15 @@ async function save(e) {
     toastError(t('保存できませんでした'), errText(err));
     return;
   }
+  const unlink = isNew ? [] : mine.apps.marked();
+  let unlinkError = null;
+  if (unlink.length) {
+    const out = await unlinkMarked(saved, unlink);
+    saved = out.item;
+    unlinkError = out.error;
+  }
+  // After the "saved" toast, so it is not covered by it.
+  const reportUnlink = () => { if (unlinkError) toastError(t('紐付けを外せませんでした'), errText(unlinkError)); };
   let failed = [];
   if (queued) {
     const progress = (done, total) => {
@@ -603,6 +613,7 @@ async function save(e) {
   if (E !== mine || !failed.length) {
     if (E === mine) closeEditor();
     emit('saved', saved, added);
+    reportUnlink();
     return;
   }
   mine.original = saved;
@@ -613,6 +624,7 @@ async function save(e) {
   retitle();
   setFootNote(t('editor.savedButFiles', { n: failed.length }, 'アイテムは保存済み · {n} ファイルを追加できませんでした'), 'err');
   emit('saved', saved, added, { keepEditor: true });
+  reportUnlink();
   mine.els.save.focus({ preventScroll: true });
 }
 
@@ -640,7 +652,7 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
     original, type: kind, templated, dirty: false, busy: false, reveal: false,
     vault: original?.vault || (S.vault !== 'all' ? S.vault : S.vaults[0]?.id || 'personal'),
     fav: !!original?.fav, totp: original?.totp?.secret ? { ...original.totp } : null,
-    els: {}, errs: {}, totpView: null, fields: new Map(), extras: null, attach: null,
+    els: {}, errs: {}, totpView: null, fields: new Map(), extras: null, attach: null, apps: null,
   };
   const els = E.els;
 
@@ -714,13 +726,14 @@ export function openEditor({ id = null, type = 'login', prefill = {} } = {}) {
 
   E.extras = createExtrasEditor({ list: Array.isArray(original?.extra) ? original.extra : [], errs: errsAdapter(), onDirty: markDirty, type: kind });
   E.attach = createAttachmentsEditor({ item: original, onDirty: () => {} });
+  E.apps = createAppsEditor({ item: original, onDirty: markDirty });
 
   els.heading = h('div', { class: 'ed-heading' }, heading);
   els.footNote = h('span', { class: 'ed-foot-note', role: 'status', hidden: true });
   const scroll = els.scroll = h('div', { class: 'ed-scroll' },
     h('div', { class: 'd-head ed-head', dataset: { f: '' } }, els.tile,
       h('div', { class: 'd-titles' }, els.heading, els.sub), fav),
-    main, E.extras.el, E.attach.el, meta);
+    main, E.extras.el, E.attach.el, E.apps.el, meta);
 
   els.save = h('button', { class: 'btn-primary', type: 'submit' }, h('span', { class: 'go-label' }, t('保存')), h('span', { class: 'spinner' }));
   els.foot = h('div', { class: 'ed-foot' });

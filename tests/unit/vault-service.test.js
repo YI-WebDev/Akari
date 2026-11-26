@@ -1651,3 +1651,100 @@ test('backup: vault/export carries the settings from settings/get; vault/import 
   await b.call(MSG.VAULT_IMPORT, { json, masterPassword: PW });
   assert.deepEqual(await b.call(MSG.SETTINGS_GET), mine);
 });
+
+test('saveItem keeps stored fields it does not know about', async () => {
+  const { call, svc } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Keep', username: 'u' } });
+  await svc.mutateData((d) => { d.items.find((i) => i.id === item.id).futureField = { x: 1 }; });
+  await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, title: 'Keep 2' } });
+  const stored = (await svc.readData()).items.find((i) => i.id === item.id);
+  assert.equal(stored.title, 'Keep 2');
+  assert.deepEqual(stored.futureField, { x: 1 });
+});
+
+test('apps: linkApp adds a cleaned link once, bumps updatedAt, and caps the count', async () => {
+  const { call, svc, clock } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'Slack', username: 'u' } });
+  clock.t += 1000;
+  let r = await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'Slack.exe', signer: ' Slack Technologies, LLC ', title: '', junk: 1 } });
+  assert.equal(r.added, true);
+  const app = { exe: 'slack.exe', signer: 'Slack Technologies, LLC', title: null };
+  assert.deepEqual(r.item.apps, [app]);
+  assert.equal(r.item.updatedAt, clock.t);
+  clock.t += 1000;
+  r = await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'SLACK.EXE', signer: 'Slack Technologies, LLC', title: 'other' } });
+  assert.equal(r.added, false);
+  assert.notEqual(r.item.updatedAt, clock.t, 'nothing changed');
+  assert.deepEqual((await svc.readData()).items.find((i) => i.id === item.id).apps, [app]);
+  for (let i = 1; i < 20; i++) await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: `a${i}.exe` } });
+  await assert.rejects(call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'one-more.exe' } }), { code: 'QUOTA' });
+  assert.equal((await svc.readData()).items.find((i) => i.id === item.id).apps.length, 20);
+});
+
+test('apps: linkApp and unlinkApp refuse bad input, other types, unknown items, and a locked vault', async () => {
+  const { call } = await setupUnlocked();
+  const { item: login } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'L' } });
+  const { item: note } = await call(MSG.VAULT_SAVE_ITEM, { item: { type: 'note', title: 'N' } });
+  for (const app of [null, {}, { exe: 'a/b.exe' }, { exe: 'a.exe', signer: 3 }]) {
+    await assert.rejects(call(MSG.VAULT_LINK_APP, { itemId: login.id, app }), { code: 'INVALID' }, JSON.stringify(app));
+  }
+  await assert.rejects(call(MSG.VAULT_LINK_APP, { itemId: note.id, app: { exe: 'a.exe' } }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_LINK_APP, { itemId: 'nope', app: { exe: 'a.exe' } }), { code: 'NOT_FOUND' });
+  await assert.rejects(call(MSG.VAULT_UNLINK_APP, { itemId: login.id, exe: 'a.exe', signer: null }), { code: 'NOT_FOUND' });
+  await assert.rejects(call(MSG.VAULT_UNLINK_APP, { itemId: login.id, exe: '', signer: null }), { code: 'INVALID' });
+  await assert.rejects(call(MSG.VAULT_UNLINK_APP, { itemId: login.id, exe: 'a.exe', signer: 1 }), { code: 'INVALID' });
+  await call(MSG.VAULT_LOCK);
+  await assert.rejects(call(MSG.VAULT_LINK_APP, { itemId: login.id, app: { exe: 'a.exe' } }), { code: 'LOCKED' });
+  await assert.rejects(call(MSG.VAULT_UNLINK_APP, { itemId: login.id, exe: 'a.exe', signer: null }), { code: 'LOCKED' });
+});
+
+test('apps: unlinkApp removes the exe+signer pair, drops the key when empty, and bumps updatedAt', async () => {
+  const { call, svc, clock } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'L' } });
+  await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'a.exe', signer: 'S' } });
+  await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'a.exe' } });
+  clock.t += 5000;
+  let r = await call(MSG.VAULT_UNLINK_APP, { itemId: item.id, exe: 'A.EXE', signer: null });
+  assert.deepEqual(r.item.apps, [{ exe: 'a.exe', signer: 'S', title: null }]);
+  assert.equal(r.item.updatedAt, clock.t);
+  r = await call(MSG.VAULT_UNLINK_APP, { itemId: item.id, exe: 'a.exe', signer: ' S ' });
+  assert.equal('apps' in r.item, false);
+  assert.equal('apps' in (await svc.readData()).items.find((i) => i.id === item.id), false);
+});
+
+test('apps: a save shaped like the popup\'s (no apps) leaves links alone; apps:[] clears them; both touch activity', async () => {
+  const { call, svc } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'L', username: 'u' } });
+  await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'a.exe' } });
+  const { apps, passkeys, ...popupCopy } = (await call(MSG.VAULT_GET_ALL)).items.find((i) => i.id === item.id);
+  const saved = await call(MSG.VAULT_SAVE_ITEM, { item: { ...popupCopy, title: 'L2' } });
+  assert.deepEqual(saved.item.apps, [{ exe: 'a.exe', signer: null, title: null }]);
+  const cleared = await call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, apps: [] } });
+  assert.equal('apps' in cleared.item, false);
+  assert.equal('apps' in (await svc.readData()).items.find((i) => i.id === item.id), false);
+  await assert.rejects(call(MSG.VAULT_SAVE_ITEM, { item: { id: item.id, apps: [{ exe: 'x/y' }] } }), { code: 'INVALID' });
+});
+
+test('apps: linkApp and unlinkApp extend the auto-lock like other writes', async () => {
+  const { call, chrome, clock } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'L' } });
+  for (const [type, payload] of [
+    [MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'a.exe' } }],
+    [MSG.VAULT_UNLINK_APP, { itemId: item.id, exe: 'a.exe', signer: null }],
+  ]) {
+    chrome.alarms.map.delete(AUTOLOCK_ALARM);
+    clock.t += 31_000;
+    await call(type, payload);
+    assert.deepEqual(chrome.alarms.map.get(AUTOLOCK_ALARM), { delayInMinutes: 15 }, type);
+  }
+});
+
+test('apps: vault/export writes version 2 only while a live login has apps', async () => {
+  const { call } = await setupUnlocked();
+  const { item } = await call(MSG.VAULT_SAVE_ITEM, { item: { title: 'L' } });
+  assert.equal(JSON.parse((await call(MSG.VAULT_EXPORT)).json).version, 1);
+  await call(MSG.VAULT_LINK_APP, { itemId: item.id, app: { exe: 'a.exe' } });
+  assert.equal(JSON.parse((await call(MSG.VAULT_EXPORT)).json).version, 2);
+  await call(MSG.VAULT_DELETE_ITEM, { id: item.id });
+  assert.equal(JSON.parse((await call(MSG.VAULT_EXPORT)).json).version, 1, 'trashed links do not raise the version');
+});

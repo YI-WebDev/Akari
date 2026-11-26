@@ -8,10 +8,11 @@ import { normalizePasskeys } from './passkeys.js';
 import { passwordKeys, mergedHistory } from './passwords.js';
 import { cleanEmail } from '../../shared/email.js';
 import { cleanSettings } from './settings.js';
+import { hasApps, unionApps } from './apps.js';
 
 export const BACKUP_FORMAT = 'akari-backup';
 export const BACKUP_VERSION = 1;
-export const MAX_BACKUP_VERSION = 1;
+export const MAX_BACKUP_VERSION = 2;
 export const MAX_BACKUP_CHARS = 60 * 1024 * 1024;
 const MAX_VAULT_NAME_LENGTH = 100;
 const DEFAULT_VAULT_HUE = 55;
@@ -28,6 +29,10 @@ export function exportBackup(record, nowMs = Date.now(), attachments = null, { v
     ...(settings && { settings: cleanSettings(settings) }),
   }, null, 2);
 }
+
+// Raise the version when a backup carries something an older Akari would silently drop on import:
+// version 2 = logins linked to desktop apps (an older Akari refuses it instead of losing the links).
+export const backupVersionFor = (data) => ((data?.items || []).some(hasApps) ? 2 : BACKUP_VERSION);
 
 export function parseBackup(json) {
   let obj;
@@ -149,7 +154,10 @@ export function mergeData(current, incoming) {
       } else {
         delete item.passkeys;
       }
-      if (trashed.has(item.id)) skippedAttachments += keepStoredAttachments(item, trashed.get(item.id));
+      if (trashed.has(item.id)) {
+        skippedAttachments += keepStoredAttachments(item, trashed.get(item.id));
+        if (login) keepApps(item, trashed.get(item.id));
+      }
       index.set(item.id, data.items.length);
       data.items.push(item);
       ids.push(item.id);
@@ -163,11 +171,20 @@ export function mergeData(current, incoming) {
         delete item.passkeys;
       }
       skippedAttachments += keepStoredAttachments(item, data.items[i]);
+      if (login) keepApps(item, data.items[i]);
+      else delete item.apps;
       data.items[i] = item;
       ids.push(item.id);
     }
   }
   return { data, count: ids.length, ids, skippedAttachments };
+}
+
+// A merge only adds: links on our copy survive a newer copy without them.
+function keepApps(item, stored) {
+  const apps = unionApps(stored.apps, item.apps);
+  if (apps.length) item.apps = apps;
+  else delete item.apps;
 }
 
 function keepStoredAttachments(item, stored) {

@@ -910,3 +910,99 @@ test('mergeData adopts the incoming default email only when the vault has none',
   assert.equal('defaultEmail' in mergeData(defaultData(1), { vaults: [], items: [], defaultEmail: 'bad@@x' }).data, false);
   assert.equal(mergeData(owned, { vaults: [], items: [] }).data.defaultEmail, 'mine@example.com');
 });
+
+const APP = Object.freeze({ exe: 'slack.exe', signer: 'Slack Technologies, LLC', title: null });
+
+test('validateItem: apps on a login are cleaned (lower-case exe, trimmed, null for empty)', () => {
+  const out = validateItem({ type: 'login', apps: [{ exe: 'Slack.EXE', signer: '  Slack Technologies, LLC ', title: ' ', extra: 1 }, { exe: 'tool.exe' }] });
+  assert.deepEqual(out.apps, [APP, { exe: 'tool.exe', signer: null, title: null }]);
+  assert.equal('apps' in validateItem({ type: 'login', apps: [] }), false, 'a new item does not keep an empty list');
+  assert.deepEqual(validateItem({ apps: [] }, makeItem({ apps: [APP] }, 1)).apps, [], 'an edit may clear the list');
+  assert.deepEqual(validateItem({ type: 'login', apps: [{ exe: 'a.app' }] }).apps, [{ exe: 'a.app', signer: null, title: null }], '.exe is not required');
+});
+
+test('validateItem: saving rejects any app that breaks a rule', () => {
+  const bad = [
+    'x', [{}], [{ exe: '' }], [{ exe: 42 }], [{ exe: 'C:\\apps\\a.exe' }], [{ exe: 'a/b.exe' }], [{ exe: 'a:b' }],
+    [{ exe: 'a*.exe' }], [{ exe: 'a?.exe' }], [{ exe: 'a".exe' }], [{ exe: 'a<b' }], [{ exe: 'a>b' }], [{ exe: 'a|b' }],
+    [{ exe: 'a\u0001.exe' }], [{ exe: 'a\u007f.exe' }], [{ exe: '.' }], [{ exe: '..' }], [{ exe: 'a.exe.' }], [{ exe: ' a.exe' }], [{ exe: 'a.exe ' }],
+    [{ exe: 'a'.repeat(256) }], [{ exe: 'a.exe', signer: 's'.repeat(257) }], [{ exe: 'a.exe', signer: 'a\nb' }], [{ exe: 'a.exe', signer: 5 }],
+    [{ exe: 'a.exe', title: 't'.repeat(201) }], [{ exe: 'a.exe', title: 'a\tb' }], [{ exe: 'a.exe', title: {} }],
+    [APP, { ...APP, exe: 'SLACK.exe', title: 'other title' }],
+    Array.from({ length: 21 }, (_, i) => ({ exe: `a${i}.exe` })),
+  ];
+  for (const apps of bad) assert.throws(() => validateItem({ type: 'login', apps }), { code: 'INVALID' }, JSON.stringify(apps).slice(0, 80));
+  assert.equal(validateItem({ type: 'login', apps: [{ exe: 'a'.repeat(255) }] }).apps[0].exe.length, 255);
+  assert.equal(validateItem({ type: 'login', apps: [{ exe: 'a.exe', signer: 's'.repeat(256), title: 't'.repeat(200) }] }).apps.length, 1);
+  assert.equal(validateItem({ type: 'login', apps: Array.from({ length: 20 }, (_, i) => ({ exe: `a${i}.exe` })) }).apps.length, 20);
+  assert.equal(validateItem({ type: 'login', apps: [APP, { ...APP, signer: null }] }).apps.length, 2, 'the same exe with another signer is another app');
+});
+
+test('validateItem: apps are only for logins', () => {
+  assert.throws(() => validateItem({ type: 'note', apps: [APP] }), { code: 'INVALID' });
+  assert.equal('apps' in validateItem({ type: 'note', apps: [] }), false);
+  const imported = { id: 'n', type: 'note', title: 'n', apps: [APP] };
+  assert.equal('apps' in validateItem(imported, imported), false, 'importing drops them');
+});
+
+test('validateItem (importing): bad apps are dropped one by one, duplicates keep the first, the count is capped', () => {
+  const raw = {
+    id: 'l', type: 'login', title: 'L',
+    apps: [{ exe: 'bad/name.exe' }, { ...APP, title: 'first' }, { ...APP, exe: 'SLACK.EXE', title: 'second' }, 'x', null,
+      ...Array.from({ length: 25 }, (_, i) => ({ exe: `a${i}.exe` }))],
+  };
+  const out = validateItem(raw, raw);
+  assert.equal(out.apps.length, 20);
+  assert.deepEqual(out.apps[0], { ...APP, title: 'first' });
+  assert.equal(out.apps[19].exe, 'a18.exe');
+  const notList = { id: 'm', type: 'login', title: 'M', apps: 'slack.exe' };
+  assert.equal('apps' in validateItem(notList, notList), false);
+});
+
+test('importBackup keeps valid apps and the item when some apps are bad', async () => {
+  const data = defaultData(1000);
+  data.items.push({ ...makeItem({ title: 'A' }, 1000), apps: [APP, { exe: 'x\\y' }] });
+  const record = await createVaultRecord(PW, data, OPTS);
+  const imported = await importBackup(exportBackup(record, 0, null, { version: 2 }), PW);
+  assert.equal(imported.items.length, 1);
+  assert.deepEqual(imported.items[0].apps, [APP]);
+});
+
+test('mergeData: apps of the stored copy and a newer incoming copy are united (stored first)', () => {
+  const B = { exe: 'b.exe', signer: null, title: null };
+  const C = { exe: 'c.exe', signer: 'C', title: 'win' };
+  const stored = makeItem({ id: 'x', title: 'X', updatedAt: 100, apps: [APP, B] }, 50);
+  const current = { ...defaultData(1), items: [stored] };
+  let { data } = mergeData(current, { vaults: [], items: [{ ...stored, title: 'X2', updatedAt: 200, apps: [C, { ...B, title: 'dup' }] }] });
+  assert.equal(data.items[0].title, 'X2');
+  assert.deepEqual(data.items[0].apps, [APP, B, C]);
+  ({ data } = mergeData(current, { vaults: [], items: [{ ...stored, title: 'X3', updatedAt: 200, apps: undefined }] }));
+  assert.deepEqual(data.items[0].apps, [APP, B], 'a newer copy without apps does not drop the links');
+  const none = makeItem({ id: 'y', title: 'Y', updatedAt: 100 }, 50);
+  ({ data } = mergeData({ ...defaultData(1), items: [none] }, { vaults: [], items: [{ ...none, updatedAt: 200 }] }));
+  assert.equal('apps' in data.items[0], false, 'no empty list appears');
+  const many = Array.from({ length: 15 }, (_, i) => ({ exe: `m${i}.exe`, signer: null, title: null }));
+  const full = makeItem({ id: 'z', title: 'Z', updatedAt: 100, apps: many.slice(0, 12) }, 50);
+  ({ data } = mergeData({ ...defaultData(1), items: [full] }, { vaults: [], items: [{ ...full, updatedAt: 200, apps: many.slice(5) }] }));
+  assert.equal(data.items[0].apps.length, 15);
+  ({ data } = mergeData({ ...defaultData(1), items: [full] }, {
+    vaults: [], items: [{ ...full, updatedAt: 200, apps: Array.from({ length: 12 }, (_, i) => ({ exe: `n${i}.exe`, signer: null, title: null })) }],
+  }));
+  assert.equal(data.items[0].apps.length, 20, 'capped at 20, stored first');
+  assert.equal(data.items[0].apps[11].exe, 'm11.exe');
+});
+
+test('mergeData: an item coming back from our trash keeps the trashed copy apps too', () => {
+  const B = { exe: 'b.exe', signer: null, title: null };
+  const trashed = { ...makeItem({ id: 't', title: 'T', apps: [APP] }, 50), deletedAt: 60 };
+  const current = { ...defaultData(1), items: [], trash: [trashed] };
+  const { data } = mergeData(current, { vaults: [], items: [makeItem({ id: 't', title: 'T', updatedAt: 70, apps: [B] }, 50)] });
+  assert.deepEqual(data.items[0].apps, [APP, B]);
+});
+
+test('mergeData leaves a stored copy alone when the incoming one is not newer', () => {
+  const stored = makeItem({ id: 'x', title: 'X', updatedAt: 300, apps: [APP] }, 50);
+  const { data, count } = mergeData({ ...defaultData(1), items: [stored] }, { vaults: [], items: [{ ...stored, updatedAt: 200, apps: [] }] });
+  assert.equal(count, 0);
+  assert.deepEqual(data.items[0].apps, [APP]);
+});

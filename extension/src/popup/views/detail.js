@@ -19,6 +19,7 @@ import { renderPicker } from './picker.js';
 import { toast, toastError } from './toast.js';
 import { extraDetailRows } from './extra-fields.js';
 import { attachmentsDetail } from './attachments.js';
+import { appsDetail } from './apps.js';
 
 let view = null;
 
@@ -632,6 +633,7 @@ export function renderDetail({ animate = false, reveal = false } = {}) {
   D.append(box);
   D.append(...attachmentsDetail(it, { onStop: (fn) => view?.stops.push(fn) }));
   if (it.type === 'login' && it.passkeys?.length) D.append(...passkeysBlock(it));
+  D.append(...appsDetail(it));
   if (it.type === 'login') D.append(...historyBlock(it));
   D.append(stats(it));
   if (animate) rise(D);

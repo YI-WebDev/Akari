@@ -5,6 +5,7 @@ import {
 import { parseOtpauthUri } from '../totp.js';
 import { invalid, isObject, isHue, MAX_VAULT_ID_LENGTH } from './common.js';
 import { normalizeAttachments, keepAttachments } from './attachments.js';
+import { checkApps, normalizeApps } from './apps.js';
 
 export const FIELD_CAPS = Object.freeze({ title: 200, url: 2048, username: 512, password: 1024, note: 10000 });
 const LOGIN_ONLY = Object.freeze(['url', 'username', 'password', 'totp']);
@@ -237,6 +238,15 @@ export function validateItem(item, stored = null) {
   if (has('attachments')) {
     const list = stored === item ? normalizeAttachments(item.attachments).list : keepAttachments(item.attachments, stored);
     if (stored || list.length) out.attachments = list;
+  }
+  if (has('apps')) {
+    const importing = stored === item;
+    if (type !== 'login') {
+      if (!importing && !(Array.isArray(item.apps) && !item.apps.length)) throw invalid('apps are only for logins');
+    } else {
+      const list = importing ? normalizeApps(item.apps) : checkApps(item.apps);
+      if ((stored && !importing) || list.length) out.apps = list;
+    }
   }
   return out;
 }
