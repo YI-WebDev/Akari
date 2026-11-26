@@ -34,9 +34,42 @@ const extension = {
   },
   captureQr: () => chrome.tabs.captureVisibleTab(undefined, { format: 'png' }),
   startFromBackup: undefined,
+  settingsPage: null,
+  lockNote: () => null,
 };
 
 const METHODS = ['saveFile', 'copy', 'captureQr', 'startFromBackup'];
+
+// name and desc are read each time they are shown, so the host can follow the UI language.
+function settingsPageOf(page) {
+  if (!page || typeof page !== 'object' || typeof page.open !== 'function') return null;
+  const text = (key) => {
+    try {
+      const v = page[key];
+      return typeof v === 'string' ? v : '';
+    } catch {
+      return '';
+    }
+  };
+  return Object.freeze({
+    get name() { return text('name'); },
+    get desc() { return text('desc'); },
+    open: (container) => page.open(container),
+  });
+}
+
+function lockNoteOf(injected) {
+  const fn = injected.lockNote;
+  if (typeof fn !== 'function') return extension.lockNote;
+  return () => {
+    try {
+      const v = fn.call(injected);
+      return typeof v === 'string' && v.trim() ? v : null;
+    } catch {
+      return null;
+    }
+  };
+}
 
 function build(injected) {
   if (!injected || typeof injected !== 'object' || injected.kind !== 'desktop') return extension;
@@ -47,6 +80,8 @@ function build(injected) {
     const fn = injected[k];
     out[k] = typeof fn === 'function' ? (...args) => fn.apply(injected, args) : extension[k];
   }
+  out.settingsPage = settingsPageOf(injected.settingsPage);
+  out.lockNote = lockNoteOf(injected);
   Object.freeze(out.can);
   return out;
 }

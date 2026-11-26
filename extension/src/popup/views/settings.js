@@ -9,7 +9,8 @@ import { initImport, openImport, resetImport, importBack, importDone } from './i
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
-import { revokeDownloads } from '../../shared/platform.js';
+import { platform, revokeDownloads } from '../../shared/platform.js';
+import { h, clear } from './dom.js';
 import { cleanEmail, EMAIL_MAX_LENGTH } from '../../shared/email.js';
 
 export const REOPEN_KEY = 'akari.reopen';
@@ -41,17 +42,57 @@ function showPage(name, { focus = true } = {}) {
   if (prev === 'vaults' && name !== 'vaults') resetVaults();
   if (prev === 'import' && name !== 'import') resetImport();
   if (prev === 'export' && name !== 'export') resetExport();
+  if (prev === 'desktop' && name !== 'desktop') resetHostPage();
   if (name === 'main') {
     setTrail(null);
-    const from = { vaults: $('vaultsOpen'), import: $('importOpen'), export: $('exportOpen') }[prev];
+    const from = { vaults: $('vaultsOpen'), import: $('importOpen'), export: $('exportOpen'), desktop: $('hostOpen') }[prev];
     if (focus) (from || sheet.querySelector('[data-close]')).focus({ preventScroll: true });
   } else if (name === 'vaults') {
     openVaults({ focus });
   } else if (name === 'import') {
     openImport({ focus });
+  } else if (name === 'desktop') {
+    openHostPage({ focus });
   } else {
     openExport({ focus });
   }
+}
+
+// platform.settingsPage: a page inside this sheet whose content the desktop host draws.
+function addHostPage() {
+  const host = platform.settingsPage;
+  if (!host || !host.name) return;
+  const pageEl = h('div', { id: 'hostPage', class: 'set-page', role: 'region', 'aria-label': host.name, hidden: true });
+  $('exportPage').after(pageEl);
+  const row = h('button', { id: 'hostOpen', class: 'set-cmd-row', type: 'button' },
+    h('span', { class: 'sc-name' }, host.name),
+    h('span', { class: 'sc-desc' }, host.desc),
+    h('span', { class: 'sc-arrow', 'aria-hidden': 'true' }, '›'));
+  $('exportOpen').after(row);
+  row.addEventListener('click', () => showPage('desktop'));
+  PAGES.desktop = { el: 'hostPage', title: () => platform.settingsPage.name };
+}
+
+let hostRun = 0;
+
+async function openHostPage({ focus }) {
+  const el = $('hostPage');
+  const my = ++hostRun;
+  clear(el);
+  try {
+    await platform.settingsPage.open(el);
+  } catch {
+    if (my === hostRun && page === 'desktop') toastError(t('エラーが発生しました'));
+    return;
+  }
+  if (!focus || my !== hostRun || page !== 'desktop') return;
+  const first = el.querySelector('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  (first || $('setBack')).focus({ preventScroll: true });
+}
+
+function resetHostPage() {
+  hostRun++;
+  if ($('hostPage')) clear($('hostPage'));
 }
 
 function back() {
@@ -376,6 +417,7 @@ export function closeSettings() {
   resetVaults();
   resetImport();
   resetExport();
+  resetHostPage();
   revokeDownloads();
   if (!sheet.classList.contains('open')) return;
   sheet.classList.remove('open', 'dragging');
@@ -397,6 +439,7 @@ export function initSettings() {
   try {
     $('setVersion').textContent = `akari v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
+  addHostPage();
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {

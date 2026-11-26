@@ -24,6 +24,9 @@ function idleHint() {
   return m > 0 ? t('{n} 分操作しないと自動でロックします', { n: m }) : t('ブラウザを閉じるとロックします');
 }
 
+// A desktop host can ask for a reason to unlock (filling another app); it replaces the idle hint.
+const lockHint = () => platform.lockNote() ?? idleHint();
+
 function status(el, text, { err = false, detail = '' } = {}) {
   clear(el);
   el.classList.toggle('err', err);
@@ -121,7 +124,7 @@ export function showGate(mode, { instant = false } = {}) {
     $('lockInput').value = '';
     $('lockInput').disabled = false;
     $('lockField').classList.remove('err');
-    status($('lockStatus'), idleHint());
+    status($('lockStatus'), lockHint());
     const focusDelay = instant ? FOCUS_DELAY_INSTANT_MS : FOCUS_DELAY_AFTER_FADE_IN_MS;
     setTimeout(() => $('lockInput').focus(), focusDelay);
   } else {
@@ -285,7 +288,7 @@ export function initGate({ load, enter }) {
   $('lockInput').addEventListener('input', () => {
     if ($('lockField').classList.contains('err')) {
       $('lockField').classList.remove('err');
-      status($('lockStatus'), idleHint());
+      status($('lockStatus'), lockHint());
     }
   });
   $('setupForm').addEventListener('submit', setup);

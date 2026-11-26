@@ -2343,6 +2343,82 @@ function desktopScenarios() {
       await ctx.close();
     }
   };
+
+  out['desktop-lock-note'] = async () => {
+    const note = 'Slack に入力するには、ロックを解除してください';
+    const withNote = await desktop('desktop-lock-note', 'saved', { state: 'locked', lockNote: note });
+    await withNote.page.waitForSelector('#gate.on');
+    await settle(withNote.page);
+    expect(await withNote.page.locator('#lockStatus').textContent() === note, 'the lock note replaces the idle hint');
+    expect(!(await withNote.page.locator('#lockStatus').evaluate((el) => el.classList.contains('err'))), 'the note is not an error');
+    await shot(withNote.page, 'desktop-lock-note');
+    await withNote.page.click('#lockSubmit');
+    await withNote.page.waitForFunction(() => document.getElementById('lockStatus').classList.contains('err'));
+    await withNote.page.fill('#lockInput', 'x');
+    await withNote.page.waitForFunction((n) => document.getElementById('lockStatus').textContent === n, note);
+    expect(true, 'after an error, typing brings the note back');
+    await withNote.ctx.close();
+
+    const without = await desktop('desktop-lock-plain', 'saved', { state: 'locked' });
+    await without.page.waitForSelector('#gate.on');
+    const hint = await without.page.locator('#lockStatus').textContent();
+    expect(hint === '15 分操作しないと自動でロックします', `no note: the idle hint stays (${hint})`);
+    await without.ctx.close();
+  };
+
+  out['desktop-settings-page'] = async () => {
+    const { page, ctx } = await desktop('desktop-settings-page', 'saved');
+    await page.waitForSelector('.row');
+    await page.click('#menuBtn');
+    await page.click('#openSettings');
+    await page.waitForSelector('#setSheet.open');
+    await page.waitForTimeout(500);
+    const row = page.locator('#hostOpen');
+    expect(await row.count() === 1, 'one host row');
+    expect(await page.evaluate(() => document.getElementById('exportOpen').nextElementSibling?.id === 'hostOpen'), 'the row sits after Export');
+    expect(await row.locator('.sc-name').textContent() === 'デスクトップ', 'row name');
+    expect(await row.locator('.sc-desc').textContent() === 'サインイン時の起動・ショートカット', 'row desc');
+    expect(await page.evaluate(() => document.getElementById('exportPage').nextElementSibling?.id === 'hostPage'), 'the page sits after the export page');
+    expect(await page.locator('#hostPage').isHidden(), 'the page starts hidden');
+    await row.scrollIntoViewIfNeeded();
+    await shot(page, 'desktop-settings-row');
+    await row.click();
+    await page.waitForSelector('#hostPage .set-box');
+    await page.waitForTimeout(400);
+    expect(await page.locator('#setTitle').textContent() === 'デスクトップ', 'sheet title');
+    expect(await page.locator('#setSheet').getAttribute('data-page') === 'desktop', 'data-page');
+    expect(await page.locator('#setMain').isHidden() && await page.locator('#exportPage').isHidden(), 'other pages hidden');
+    expect(await page.locator('#setBack').isVisible(), 'back is shown');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'mockHostButton', 'focus moves into the host page');
+    expect(await page.evaluate(() => window.__AKARI_PLATFORM__.settingsOpen) === 1, 'open() called once');
+    await shot(page, 'desktop-settings-page');
+    await page.click('#setBack');
+    await page.waitForTimeout(300);
+    expect(await page.locator('#setMain').isVisible(), 'back returns to the main page');
+    expect(await page.evaluate(() => document.activeElement?.id) === 'hostOpen', 'focus returns to the row');
+    expect(await page.locator('#hostPage').evaluate((el) => el.childElementCount) === 0, 'leaving clears the page');
+    await row.click();
+    await page.waitForSelector('#hostPage .set-box');
+    expect(await page.locator('#hostPage .set-box').count() === 1, 'reopening draws it once');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    expect(await page.locator('#setMain').isVisible() && await page.locator('#setSheet.open').count() === 1, 'Esc goes back to the main page');
+    await row.click();
+    await page.waitForSelector('#hostPage .set-box');
+    await page.keyboard.press('Alt+ArrowLeft');
+    await page.waitForTimeout(300);
+    expect(await page.locator('#setMain').isVisible(), 'Alt+Left goes back to the main page');
+    expect(await page.evaluate(() => window.__AKARI_PLATFORM__.settingsOpen) === 3, 'open() once per visit');
+    await ctx.close();
+
+    const plain = await open({ name: 'extension-settings-page' });
+    await plain.page.waitForSelector('.row');
+    await plain.page.click('#menuBtn');
+    await plain.page.click('#openSettings');
+    await plain.page.waitForSelector('#setSheet.open');
+    expect(await plain.page.locator('#hostOpen, #hostPage').count() === 0, 'the extension has no host row or page');
+    await plain.ctx.close();
+  };
   return out;
 }
 Object.assign(scenarios, desktopScenarios());

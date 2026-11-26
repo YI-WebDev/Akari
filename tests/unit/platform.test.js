@@ -26,6 +26,8 @@ test('extension defaults without __akariPlatform', async () => {
   assert.equal(typeof p.copy, 'function');
   assert.equal(typeof p.captureQr, 'function');
   assert.equal(p.startFromBackup, undefined);
+  assert.equal(p.settingsPage, null);
+  assert.equal(p.lockNote(), null);
   assert.ok(Object.isFrozen(p) && Object.isFrozen(p.can));
 });
 
@@ -83,6 +85,43 @@ test('extension copy looks up navigator.clipboard at call time', async () => {
     if (orig) Object.defineProperty(globalThis, 'navigator', orig); else delete globalThis.navigator;
   }
   assert.deepEqual(seen, ['secret']);
+});
+
+test('settingsPage needs open(); name and desc are read each time and must be strings', async () => {
+  for (const page of [undefined, null, 'x', {}, { name: 'Desktop', open: 'x' }]) {
+    assert.equal((await load({ kind: 'desktop', settingsPage: page })).settingsPage, null, JSON.stringify(page));
+  }
+  let lang = 'ja';
+  const opened = [];
+  const host = {
+    get name() { return lang === 'ja' ? 'デスクトップ' : 'Desktop'; },
+    desc: 42,
+    open(container) { opened.push([this === host, container]); return 'done'; },
+  };
+  const p = await load({ kind: 'desktop', settingsPage: host });
+  assert.equal(p.settingsPage.name, 'デスクトップ');
+  lang = 'en';
+  assert.equal(p.settingsPage.name, 'Desktop', 'read when shown, not when loaded');
+  assert.equal(p.settingsPage.desc, '');
+  assert.equal(p.settingsPage.open('box'), 'done');
+  assert.deepEqual(opened, [[true, 'box']]);
+  assert.ok(Object.isFrozen(p.settingsPage));
+  const throwing = await load({ kind: 'desktop', settingsPage: { get name() { throw new Error('x'); }, open() {} } });
+  assert.equal(throwing.settingsPage.name, '');
+});
+
+test('lockNote returns a non-blank string or null, and never throws', async () => {
+  const cases = [
+    [() => '「Slack」に入力するには、ロックを解除してください', '「Slack」に入力するには、ロックを解除してください'],
+    [() => null, null], [() => '', null], [() => '   ', null], [() => 42, null], [() => { throw new Error('x'); }, null],
+  ];
+  for (const [fn, want] of cases) assert.equal((await load({ kind: 'desktop', lockNote: fn })).lockNote(), want);
+  assert.equal((await load({ kind: 'desktop', lockNote: 'text' })).lockNote(), null);
+  let note = null;
+  const live = await load({ kind: 'desktop', lockNote() { return note; } });
+  assert.equal(live.lockNote(), null);
+  note = 'now';
+  assert.equal(live.lockNote(), 'now', 'asked each time');
 });
 
 async function files(dir) {

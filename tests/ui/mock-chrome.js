@@ -16,6 +16,7 @@
     importSkipped: 0,
     platform: null,
     saveMode: 'saved',
+    lockNote: null,
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
 
@@ -702,6 +703,29 @@
       },
       copy: async function (value) { calls.copy.push(value); },
       startFromBackup: async function () { calls.startFromBackup++; },
+      lockNote: function () { return cfg.lockNote; },
+      settingsPage: {
+        name: 'デスクトップ',
+        desc: 'サインイン時の起動・ショートカット',
+        open: function (container) {
+          calls.settingsOpen = (calls.settingsOpen || 0) + 1;
+          var box = document.createElement('div');
+          box.className = 'set-box';
+          var row = document.createElement('div');
+          row.className = 'set-row';
+          var label = document.createElement('span');
+          label.className = 'set-label';
+          label.textContent = 'サインイン時に起動';
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-line';
+          btn.id = 'mockHostButton';
+          btn.textContent = 'オフ';
+          row.append(label, btn);
+          box.append(row);
+          container.append(box);
+        },
+      },
     };
   }
   window.close = function () { console.log('[mock] window.close()'); };
