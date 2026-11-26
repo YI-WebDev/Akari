@@ -421,7 +421,9 @@ function footConfirm(text, yesLabel, onYes, noLabel = t('やめる')) {
 function confirmDelete() {
   const pk = E.original?.passkeys?.length || 0;
   const ask = pk
-    ? t('trash.askPasskeys', { n: pk }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')
+    ? (platform.can.passkeyPage
+      ? t('trash.askPasskeys', { n: pk }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')
+      : t('trash.askPasskeysShort', { n: pk }, 'パスキー {n} 件も一緒にゴミ箱に移ります'))
     : t('trash.ask', null, 'ゴミ箱に移しますか？ 30 日間は元に戻せます');
   footConfirm(ask, t('削除する'), async (btn) => {
     const mine = E;

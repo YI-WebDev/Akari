@@ -132,15 +132,21 @@ function setCmd(text) {
   $('setCmd').textContent = text;
 }
 
+const desktop = platform.kind === 'desktop';
 const chipOf = (key, value) => document.querySelector(`#setSheet .chips[data-setting="${key}"] [data-value="${value}"]`);
 
 function hintFor(key, v) {
   if (key === 'language') {
     if (v !== 'auto') return v === 'en' ? t('画面を英語で表示します') : t('画面を日本語で表示します');
-    return t('ブラウザの言語に合わせます（いまは{lang}）', { lang: browserLocale() === 'ja' ? '日本語' : 'English' });
+    const lang = browserLocale() === 'ja' ? '日本語' : 'English';
+    return desktop ? t('PC の言語に合わせます（いまは{lang}）', { lang }) : t('ブラウザの言語に合わせます（いまは{lang}）', { lang });
   }
   if (key === 'theme') {
-    if (v === 'light') return t('settings.themeLight', null, '明るい紙の上に灯をともします。ページ上の入力メニューも同じです');
+    if (v === 'light') {
+      return desktop
+        ? t('settings.themeLightDesktop', null, '明るい紙の上に灯をともします。入力の候補ウィンドウも同じです')
+        : t('settings.themeLight', null, '明るい紙の上に灯をともします。ページ上の入力メニューも同じです');
+    }
     if (v === 'auto') {
       const now = globalThis.__akariTheme?.current() === 'light' ? t('ライト') : t('ダーク');
       return t('settings.themeAuto', { mode: now }, 'OS の設定に合わせます（いまは{mode}）');
@@ -149,7 +155,8 @@ function hintFor(key, v) {
   }
   if (key === 'autoLockMinutes') {
     if (v === NEVER_LOCK) return t('settings.hintNever', null, '自動ではロックしません。鍵のボタンでロックします');
-    return v > 0 ? t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
+    if (v > 0) return t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします');
+    return desktop ? t('settings.hintAppExit', null, 'アプリを終了するとロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
   }
   return v > 0 ? t('settings.hintClip', { n: v }, 'コピーした値は {n} 秒後にクリップボードから消えます') : t('settings.hintClipOff', null, 'コピーした値はクリップボードに残ります');
 }
@@ -200,8 +207,11 @@ function showNeverForm(open) {
   if (open) {
     setExpanded($('pwToggle'), $('pwForm'), false);
     resetPwForm();
-    $('neverWarn').textContent = t('settings.neverWarn', null,
-      'ロックしないと、この PC でブラウザを開ける人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードやパスキーを使ったりできます。保管庫の鍵はこの PC に保存され、ブラウザを再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。');
+    $('neverWarn').textContent = desktop
+      ? t('settings.neverWarnDesktop', null,
+        'ロックしないと、この PC であなたの Windows アカウントを使える人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードを使ったりできます。保管庫の鍵はこの PC に保存され、アプリや PC を再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。')
+      : t('settings.neverWarn', null,
+        'ロックしないと、この PC でブラウザを開ける人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードやパスキーを使ったりできます。保管庫の鍵はこの PC に保存され、ブラウザを再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。');
     $('neverPw').focus();
   }
 }
@@ -224,7 +234,9 @@ async function enableNeverLock(e) {
     syncChips();
     setCmd(`akari config set ${CMD_VALUES.autoLockMinutes(NEVER_LOCK)}`);
     emit('settingsChanged', 'autoLockMinutes');
-    toast(t('settings.neverDone', null, 'ロックしない設定にしました'), t('settings.neverDoneSub', null, 'ブラウザを再起動してもひらいたままになります'));
+    toast(t('settings.neverDone', null, 'ロックしない設定にしました'), desktop
+      ? t('settings.neverDoneSubDesktop', null, 'アプリや PC を再起動してもひらいたままになります')
+      : t('settings.neverDoneSub', null, 'ブラウザを再起動してもひらいたままになります'));
   } catch (e2) {
     if (!live(token)) return;
     if (e2?.code === ERR.BAD_PASSWORD) fail(t('settings.neverBadPw', null, 'マスターパスワードが違います'));
@@ -434,12 +446,15 @@ export function closeSettings() {
 }
 
 export function initSettings() {
-  const note = t('暗号化して、このブラウザの中だけに保存します');
+  const note = desktop ? t('暗号化して、この PC の中だけに保存します') : t('暗号化して、このブラウザの中だけに保存します');
   $('setVersion').textContent = `akari · ${note}`;
   try {
     $('setVersion').textContent = `akari v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
   addHostPage();
+  if (desktop) chipOf('autoLockMinutes', 0).textContent = t('アプリを終了したとき');
+  // The default email only feeds the menu on web pages.
+  if (!platform.can.autofill) $('setFillHead').closest('.set-group').hidden = true;
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {

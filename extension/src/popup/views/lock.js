@@ -21,7 +21,8 @@ let bootGen = 0;
 function idleHint() {
   const m = Number(S.settings.autoLockMinutes);
   if (m === NEVER_LOCK) return t('ひらいたあとは自動ではロックしません（鍵のボタンでロック）');
-  return m > 0 ? t('{n} 分操作しないと自動でロックします', { n: m }) : t('ブラウザを閉じるとロックします');
+  if (m > 0) return t('{n} 分操作しないと自動でロックします', { n: m });
+  return platform.kind === 'desktop' ? t('アプリを終了するとロックします') : t('ブラウザを閉じるとロックします');
 }
 
 // A desktop host can ask for a reason to unlock (filling another app); it replaces the idle hint.
@@ -270,7 +271,7 @@ async function setup(e) {
 
 export function initGate({ load, enter }) {
   hooks = { load, enter };
-  const note = t('暗号化して、このブラウザの中だけに保存します');
+  const note = platform.kind === 'desktop' ? t('暗号化して、この PC の中だけに保存します') : t('暗号化して、このブラウザの中だけに保存します');
   $('gateVersion').textContent = note;
   try {
     $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${note}`;
