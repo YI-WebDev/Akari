@@ -7,36 +7,56 @@ import { ATTACHMENT_LIMITS } from '../../shared/messages.js';
 import { normalizePasskeys } from './passkeys.js';
 import { passwordKeys, mergedHistory } from './passwords.js';
 import { cleanEmail } from '../../shared/email.js';
+import { cleanSettings } from './settings.js';
 
 export const BACKUP_FORMAT = 'akari-backup';
 export const BACKUP_VERSION = 1;
+export const MAX_BACKUP_VERSION = 1;
+export const MAX_BACKUP_CHARS = 60 * 1024 * 1024;
 const MAX_VAULT_NAME_LENGTH = 100;
 const DEFAULT_VAULT_HUE = 55;
 
-export function exportBackup(record, nowMs = Date.now(), attachments = null) {
+export function exportBackup(record, nowMs = Date.now(), attachments = null, { version = BACKUP_VERSION, settings = null } = {}) {
   checkRecord(record);
+  if (!Number.isInteger(version) || version < BACKUP_VERSION || version > MAX_BACKUP_VERSION) throw invalid('Invalid backup version');
   return JSON.stringify({
     format: BACKUP_FORMAT,
-    version: BACKUP_VERSION,
+    version,
     exportedAt: new Date(nowMs).toISOString(),
     vault: record,
     ...(attachments && Object.keys(attachments).length && { attachments }),
+    ...(settings && { settings: cleanSettings(settings) }),
   }, null, 2);
 }
 
-export async function importBackup(json, password) {
+export function parseBackup(json) {
   let obj;
   try {
     obj = JSON.parse(json);
   } catch {
     throw invalid('Not an Akari backup file');
   }
-  if (!isObject(obj) || obj.format !== BACKUP_FORMAT || obj.version !== BACKUP_VERSION
+  if (!isObject(obj) || obj.format !== BACKUP_FORMAT || !Number.isInteger(obj.version) || obj.version < 1
     || (obj.attachments !== undefined && !isObject(obj.attachments))) {
     throw invalid('Not an Akari backup file');
   }
-  const { data } = await openVaultRecord(obj.vault, password, { newer: 'keep' });
-  return { ...normalizeData(data), attachments: obj.attachments ?? {} };
+  if (obj.version > MAX_BACKUP_VERSION) {
+    const e = invalid('Backup from a newer version of Akari');
+    e.newer = true;
+    throw e;
+  }
+  return {
+    version: obj.version,
+    record: obj.vault,
+    attachments: obj.attachments ?? {},
+    settings: isObject(obj.settings) ? cleanSettings(obj.settings) : null,
+  };
+}
+
+export async function importBackup(json, password) {
+  const { record, attachments } = parseBackup(json);
+  const { data } = await openVaultRecord(record, password, { newer: 'keep' });
+  return { ...normalizeData(data), attachments };
 }
 
 function normalizeVault(v) {

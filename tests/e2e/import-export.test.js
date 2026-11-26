@@ -207,12 +207,27 @@ test('every item type through the real service worker: save, import dedupe, back
     const rec = csvToObjects(r.data.text).records.find((x) => x.name === 'E2E wifi');
     assert.equal(rec.note, `ネットワーク名: ssid 値\nパスワード: secret password\nセキュリティ: WPA2\n合言葉: やま`);
 
+    const settingsBefore = (await send('settings/get')).data;
+    r = await send('vault/addAttachment', { itemId: ids.note, name: 'trash.txt', mime: 'text/plain', data: Buffer.from('in the trash').toString('base64') });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const trashedAtt = r.data.item.attachments[0];
+    assert.equal((await send('vault/deleteItem', { id: ids.note })).ok, true);
+    assert.equal((await send('settings/set', { patch: { theme: 'light', clipboardClearSeconds: 10 } })).ok, true);
+
     const { data: { json } } = await send('vault/export');
+    const backup = JSON.parse(json);
+    assert.equal(backup.version, 1);
+    assert.ok(backup.attachments?.[trashedAtt.id]?.ct, 'the attachment box of the trashed item is in the backup');
+    assert.ok(!json.includes(Buffer.from('in the trash').toString('base64')));
+    assert.deepEqual(backup.settings, { ...settingsBefore, theme: 'light', clipboardClearSeconds: 10 });
+    assert.equal((await send('settings/set', { patch: { theme: 'auto' } })).ok, true);
     const before = (await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey);
     assert.equal((await send('vault/deleteItem', { id: ids.sshKey })).ok, true);
     r = await send('vault/import', { json, masterPassword: MASTER });
     assert.deepEqual(r, { ok: true, data: { count: 1, skippedAttachments: 0 } });
     assert.deepEqual((await send('vault/getAll')).data.items.find((i) => i.id === ids.sshKey), before);
+    assert.deepEqual((await send('settings/get')).data, { ...settingsBefore, theme: 'auto', clipboardClearSeconds: 10 }, 'importing leaves the settings alone');
+    assert.equal((await send('settings/set', { patch: settingsBefore })).ok, true);
     assert.deepEqual(ext.errors, []);
   } finally {
     for (const p of pages) await p.close();

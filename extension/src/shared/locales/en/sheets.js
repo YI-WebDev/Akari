@@ -133,6 +133,7 @@ export default {
   '{n} 件を読み込みました': 'Imported {n} items',
   'バックアップのパスワードが違います': 'Wrong password for this backup',
   'バックアップファイルを読み込めませんでした': "Could not import the backup file",
+  '新しい版の Akari で書き出されたバックアップです。Akari を更新してください': 'This backup was exported by a newer version of Akari. Update Akari to import it',
   '読み込めませんでした（{why}）': "Could not import ({why})",
   'ファイルの形式が分かりませんでした。読み込み元を選んでください': "Could not tell the file's format. Choose the source",
   '読み込む内容': 'What will be imported',

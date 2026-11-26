@@ -75,7 +75,7 @@ Akari がページから読むのは、そのページの URL、ログイン・�
 ## バックアップとエクスポート
 
 - エクスポートしたファイルは、あなたが保存先を選んで保存します。Akari はそのファイルを送信も保管もしません。
-- 暗号化バックアップは、保管庫を暗号化したまま書き出します。添付ファイルも暗号化したまま含みます（ゴミ箱の中のアイテムのものは除く）。CSV・JSON・PGP の書き出しには、添付ファイルは含まれません。
+- 暗号化バックアップは、保管庫を暗号化したまま書き出します。添付ファイル（ゴミ箱の中のアイテムのものも含む）も暗号化したまま含みます。設定（自動ロック・クリップボードの消去・表示言語・テーマ）は平文で含みます。CSV・JSON・PGP の書き出しには、添付ファイルも設定も含まれません。
 - CSV と JSON（Bitwarden 形式）は暗号化されない平文です。書き出すときにマスターパスワードをもう一度入力します。PGP 暗号化の書き出しも、マスターパスワードの入力とパスフレーズが必要です。
 - 保存したファイルの扱い（置き場所、共有、削除）は、あなたの責任です。
 
@@ -166,7 +166,7 @@ Copied passwords and similar values are cleared after the number of seconds you 
 ## Backups and exports
 
 - Exported files are saved where you choose. Akari neither uploads nor keeps them.
-- An encrypted backup keeps the vault encrypted. It also carries the attachments, still encrypted (except those of items in the trash). CSV, JSON, and PGP exports do not include attachments.
+- An encrypted backup keeps the vault encrypted. It also carries the attachments, still encrypted, including those of items in the trash. It carries the settings (auto-lock, clipboard clearing, language, and theme) in plain text. CSV, JSON, and PGP exports include neither attachments nor settings.
 - CSV and JSON (Bitwarden format) exports are plaintext. Akari asks for your master password again before it writes them. A PGP-encrypted export also needs your master password, plus a passphrase.
 - You are responsible for where you keep, share, and delete exported files.
 

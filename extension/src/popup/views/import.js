@@ -6,11 +6,12 @@ import { vaultColor } from './format.js';
 import { toast } from './toast.js';
 import { cmdLine, logLine, setTrail, arrowNav, setRoving, setBusy, goButton, sentenceWith } from './io.js';
 import { t } from '../../shared/i18n.js';
+import { MAX_BACKUP_VERSION, MAX_BACKUP_CHARS } from '../../lib/vault/backup.js';
 
 const $ = (id) => document.getElementById(id);
 const MB = 1024 * 1024;
 const MAX_BYTES = 64 * MB;
-const BACKUP_MAX = 60 * MB;
+const BACKUP_MAX = MAX_BACKUP_CHARS;
 const COLS = 4;
 const LEAD = () => t('別のパスワードマネージャーから移行するには、そのアプリでデータを書き出してから、ここで読み込みます。読み込んだら、書き出したファイルは削除してください。');
 const AKARI = Object.freeze({ id: 'akari', name: 'Akari バックアップ', exts: ['json'], own: true });
@@ -332,11 +333,18 @@ const looksLikeBackup = (bytes) => BACKUP_HEAD.test(new TextDecoder().decode(byt
 async function importBackup(pw) {
   const { els } = st;
   let json;
+  let version;
   try {
     json = new TextDecoder('utf-8', { fatal: true }).decode(st.file.bytes);
-    if (JSON.parse(json)?.format !== 'akari-backup') throw new Error('format');
+    const head = JSON.parse(json);
+    if (head?.format !== 'akari-backup') throw new Error('format');
+    version = head.version;
   } catch {
     fail(t('Akari のバックアップファイルではありません'), els.drop);
+    return;
+  }
+  if (Number.isInteger(version) && version > MAX_BACKUP_VERSION) {
+    fail(t('新しい版の Akari で書き出されたバックアップです。Akari を更新してください'), els.drop);
     return;
   }
   const my = run;
