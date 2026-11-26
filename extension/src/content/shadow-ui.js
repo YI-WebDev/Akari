@@ -66,6 +66,19 @@
 .grow { flex: 1; }
 .k { display: inline-block; margin-right: 4px; padding: 0 4px; border: 1px solid var(--ak-menu-ring); border-radius: 3px; color: var(--ak-text-muted);
   line-height: 14px; }
+.app-head { margin: -6px -6px 6px; padding: 10px 12px; background: var(--ak-bg); border-bottom: 1px solid rgb(var(--ak-ink-rgb) / .08);
+  border-radius: 8px 8px 0 0; }
+.app-id { display: flex; align-items: center; gap: 10px; }
+.app-ico { flex: none; width: 32px; height: 32px; }
+.app-txt { min-width: 0; display: flex; flex-direction: column; }
+.app-name { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-sub { color: var(--ak-text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-warn { margin-top: 8px; color: var(--ak-danger); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.app-warn::before { content: '! '; font-weight: 700; }
+.find { display: block; width: 100%; height: 30px; margin: 0 0 6px; padding: 0 10px; border: 1px solid var(--ak-border-strong); border-radius: 5px;
+  background: var(--ak-bg); color: var(--ak-text); font-size: 12px; outline: none; }
+.find::placeholder { color: var(--ak-text-faint); }
+.find:focus { border-color: var(--ak-accent-line); box-shadow: 0 0 0 3px rgb(var(--ak-accent-rgb) / .2); }
 .bar { position: fixed; top: 16px; right: 16px; width: 340px; max-width: calc(100vw - 32px); background: var(--ak-bg); color: var(--ak-text);
   border: 1px solid var(--ak-menu-ring); border-radius: 8px; overflow: hidden; font-size: 12px; line-height: 1.45;
   box-shadow: var(--ak-shadow-menu); animation: in .22s cubic-bezier(.2, .9, .2, 1) both; }
@@ -255,5 +268,7 @@
     };
   }
 
-  globalThis.__akariShadowUi = Object.freeze({ makeHost, el, orb, themed, visibilityGuard, sightWatch });
+  const timing = Object.freeze({ VISIBLE_MS, MIN_VISIBLE_RATIO, OCCLUSION_CHECK_DELAY_MS });
+
+  globalThis.__akariShadowUi = Object.freeze({ makeHost, el, orb, themed, visibilityGuard, sightWatch, timing });
 })();

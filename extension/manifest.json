@@ -29,7 +29,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/content/i18n-page.js", "src/content/shadow-ui.js", "src/content/autofill.js"],
+      "js": ["src/content/i18n-page.js", "src/content/shadow-ui.js", "src/content/menu-view.js", "src/content/autofill.js"],
       "run_at": "document_idle",
       "all_frames": true
     },
