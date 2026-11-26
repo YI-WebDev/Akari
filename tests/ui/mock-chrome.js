@@ -229,7 +229,7 @@
     vaults: [{ id: 'personal', name: '個人', hue: 55 }, { id: 'work', name: '仕事', hue: 255 }, { id: 'family', name: '家族', hue: 150 }],
     items: cfg.empty || cfg.state === 'setup' ? [] : seed().concat(cfg.featureSeed ? featureItems() : []),
     trash: [],
-    settings: { autoLockMinutes: 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
+    settings: { autoLockMinutes: cfg.autoLock ?? 15, clipboardClearSeconds: 30, language: cfg.lang, theme: cfg.theme || 'dark' },
     backup: { lastAt: null, since: now, snoozedUntil: 0, snoozes: 0 },
     defaultEmail: cfg.defaultEmail || '',
     emailCalls: 0,

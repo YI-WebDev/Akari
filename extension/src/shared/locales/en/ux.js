@@ -2,6 +2,7 @@ export default {
   'backup.since': 'Your last backup was {n} days ago',
   'backup.never': 'You have not exported a backup yet',
   'backup.why': 'Your vault lives only in this browser. Export an encrypted copy in case it breaks or is lost.',
+  'backup.whyDesktop': 'Your vault lives only on this PC. Export an encrypted copy in case it breaks or is lost.',
   'backup.now': 'Back up now',
   'backup.later': 'Later',
   'backup.snoozed': 'We will remind you again in {days} days',
@@ -30,6 +31,7 @@ export default {
   'trash.ask': 'Move to the trash? You can restore it for 30 days',
   'trash.askN': 'Move the selected items ({n}) to the trash? You can restore them for 30 days',
   'trash.askPasskeys': 'Passkeys ({n}) go to the trash too. While they are there, you cannot sign in to their sites with them',
+  'trash.askPasskeysShort': 'Passkeys ({n}) go to the trash too',
   'trash.movedOne': 'Moved {title} to the trash',
   'trash.moved': 'Moved to the trash: {n}',
   'trash.keep': 'Deleted for good after {days} days',
@@ -49,6 +51,7 @@ export default {
   'ライト': 'Light',
   'settings.themeDark': "Akari's dark screen",
   'settings.themeLight': 'The lamp on light paper. The menus on web pages follow too',
+  'settings.themeLightDesktop': 'The lamp on light paper. The fill window follows too',
   'settings.themeAuto': 'Follows your OS (now {mode})',
 
   'Caps Lock がオンです': 'Caps Lock is on',

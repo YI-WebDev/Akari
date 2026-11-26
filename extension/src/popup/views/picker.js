@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { S, emit, visibleItems } from '../state.js';
 import { h, clear, icon } from './dom.js';
 import { rise } from './fx.js';
@@ -71,7 +72,9 @@ export function renderPicker({ animate = false } = {}) {
   const warn = passkeys
     ? h('div', { class: 'weak pick-warn', role: 'note' },
       h('span', { class: 'weak-bang', 'aria-hidden': 'true' }, '!'),
-      h('span', { class: 'weak-text' }, t('trash.askPasskeys', { n: passkeys }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')))
+      h('span', { class: 'weak-text' }, platform.can.passkeyPage
+        ? t('trash.askPasskeys', { n: passkeys }, 'パスキー {n} 件も一緒にゴミ箱に移ります。ゴミ箱にある間は、そのサイトにパスキーでサインインできません')
+        : t('trash.askPasskeysShort', { n: passkeys }, 'パスキー {n} 件も一緒にゴミ箱に移ります')))
     : null;
 
   let foot;
