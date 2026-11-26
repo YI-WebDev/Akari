@@ -4,11 +4,13 @@ import { syncInert, keepFocus, isComposing } from './dom.js';
 import { shake } from './fx.js';
 import { setMeter } from './meter.js';
 import { toast, toastError } from './toast.js';
-import { setTrail, revokeDownloads, arrowNav, setRoving, setBusy } from './io.js';
+import { setTrail, arrowNav, setRoving, setBusy } from './io.js';
 import { initImport, openImport, resetImport, importBack, importDone } from './import.js';
 import { openExport, resetExport, exportBack } from './export.js';
 import { initVaults, openVaults, resetVaults, vaultsBack } from './vaults.js';
 import { t, browserLocale } from '../../shared/i18n.js';
+import { platform, revokeDownloads } from '../../shared/platform.js';
+import { h, clear } from './dom.js';
 import { cleanEmail, EMAIL_MAX_LENGTH } from '../../shared/email.js';
 
 export const REOPEN_KEY = 'akari.reopen';
@@ -40,17 +42,57 @@ function showPage(name, { focus = true } = {}) {
   if (prev === 'vaults' && name !== 'vaults') resetVaults();
   if (prev === 'import' && name !== 'import') resetImport();
   if (prev === 'export' && name !== 'export') resetExport();
+  if (prev === 'desktop' && name !== 'desktop') resetHostPage();
   if (name === 'main') {
     setTrail(null);
-    const from = { vaults: $('vaultsOpen'), import: $('importOpen'), export: $('exportOpen') }[prev];
+    const from = { vaults: $('vaultsOpen'), import: $('importOpen'), export: $('exportOpen'), desktop: $('hostOpen') }[prev];
     if (focus) (from || sheet.querySelector('[data-close]')).focus({ preventScroll: true });
   } else if (name === 'vaults') {
     openVaults({ focus });
   } else if (name === 'import') {
     openImport({ focus });
+  } else if (name === 'desktop') {
+    openHostPage({ focus });
   } else {
     openExport({ focus });
   }
+}
+
+// platform.settingsPage: a page inside this sheet whose content the desktop host draws.
+function addHostPage() {
+  const host = platform.settingsPage;
+  if (!host || !host.name) return;
+  const pageEl = h('div', { id: 'hostPage', class: 'set-page', role: 'region', 'aria-label': host.name, hidden: true });
+  $('exportPage').after(pageEl);
+  const row = h('button', { id: 'hostOpen', class: 'set-cmd-row', type: 'button' },
+    h('span', { class: 'sc-name' }, host.name),
+    h('span', { class: 'sc-desc' }, host.desc),
+    h('span', { class: 'sc-arrow', 'aria-hidden': 'true' }, '›'));
+  $('exportOpen').after(row);
+  row.addEventListener('click', () => showPage('desktop'));
+  PAGES.desktop = { el: 'hostPage', title: () => platform.settingsPage.name };
+}
+
+let hostRun = 0;
+
+async function openHostPage({ focus }) {
+  const el = $('hostPage');
+  const my = ++hostRun;
+  clear(el);
+  try {
+    await platform.settingsPage.open(el);
+  } catch {
+    if (my === hostRun && page === 'desktop') toastError(t('エラーが発生しました'));
+    return;
+  }
+  if (!focus || my !== hostRun || page !== 'desktop') return;
+  const first = el.querySelector('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  (first || $('setBack')).focus({ preventScroll: true });
+}
+
+function resetHostPage() {
+  hostRun++;
+  if ($('hostPage')) clear($('hostPage'));
 }
 
 function back() {
@@ -90,15 +132,21 @@ function setCmd(text) {
   $('setCmd').textContent = text;
 }
 
+const desktop = platform.kind === 'desktop';
 const chipOf = (key, value) => document.querySelector(`#setSheet .chips[data-setting="${key}"] [data-value="${value}"]`);
 
 function hintFor(key, v) {
   if (key === 'language') {
     if (v !== 'auto') return v === 'en' ? t('画面を英語で表示します') : t('画面を日本語で表示します');
-    return t('ブラウザの言語に合わせます（いまは{lang}）', { lang: browserLocale() === 'ja' ? '日本語' : 'English' });
+    const lang = browserLocale() === 'ja' ? '日本語' : 'English';
+    return desktop ? t('PC の言語に合わせます（いまは{lang}）', { lang }) : t('ブラウザの言語に合わせます（いまは{lang}）', { lang });
   }
   if (key === 'theme') {
-    if (v === 'light') return t('settings.themeLight', null, '明るい紙の上に灯をともします。ページ上の入力メニューも同じです');
+    if (v === 'light') {
+      return desktop
+        ? t('settings.themeLightDesktop', null, '明るい紙の上に灯をともします。入力の候補ウィンドウも同じです')
+        : t('settings.themeLight', null, '明るい紙の上に灯をともします。ページ上の入力メニューも同じです');
+    }
     if (v === 'auto') {
       const now = globalThis.__akariTheme?.current() === 'light' ? t('ライト') : t('ダーク');
       return t('settings.themeAuto', { mode: now }, 'OS の設定に合わせます（いまは{mode}）');
@@ -107,7 +155,8 @@ function hintFor(key, v) {
   }
   if (key === 'autoLockMinutes') {
     if (v === NEVER_LOCK) return t('settings.hintNever', null, '自動ではロックしません。鍵のボタンでロックします');
-    return v > 0 ? t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
+    if (v > 0) return t('settings.hintIdle', { n: v }, '{n} 分操作しないと自動でロックします');
+    return desktop ? t('settings.hintAppExit', null, 'アプリを終了するとロックします') : t('settings.hintBrowser', null, 'ブラウザを閉じるとロックします');
   }
   return v > 0 ? t('settings.hintClip', { n: v }, 'コピーした値は {n} 秒後にクリップボードから消えます') : t('settings.hintClipOff', null, 'コピーした値はクリップボードに残ります');
 }
@@ -158,8 +207,11 @@ function showNeverForm(open) {
   if (open) {
     setExpanded($('pwToggle'), $('pwForm'), false);
     resetPwForm();
-    $('neverWarn').textContent = t('settings.neverWarn', null,
-      'ロックしないと、この PC でブラウザを開ける人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードやパスキーを使ったりできます。保管庫の鍵はこの PC に保存され、ブラウザを再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。');
+    $('neverWarn').textContent = desktop
+      ? t('settings.neverWarnDesktop', null,
+        'ロックしないと、この PC であなたの Windows アカウントを使える人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードを使ったりできます。保管庫の鍵はこの PC に保存され、アプリや PC を再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。')
+      : t('settings.neverWarn', null,
+        'ロックしないと、この PC でブラウザを開ける人なら誰でも、マスターパスワードなしで保管庫を見たり、パスワードやパスキーを使ったりできます。保管庫の鍵はこの PC に保存され、ブラウザを再起動してもひらいたままになります。鍵のボタンでいつでも手動でロックできます。');
     $('neverPw').focus();
   }
 }
@@ -182,7 +234,9 @@ async function enableNeverLock(e) {
     syncChips();
     setCmd(`akari config set ${CMD_VALUES.autoLockMinutes(NEVER_LOCK)}`);
     emit('settingsChanged', 'autoLockMinutes');
-    toast(t('settings.neverDone', null, 'ロックしない設定にしました'), t('settings.neverDoneSub', null, 'ブラウザを再起動してもひらいたままになります'));
+    toast(t('settings.neverDone', null, 'ロックしない設定にしました'), desktop
+      ? t('settings.neverDoneSubDesktop', null, 'アプリや PC を再起動してもひらいたままになります')
+      : t('settings.neverDoneSub', null, 'ブラウザを再起動してもひらいたままになります'));
   } catch (e2) {
     if (!live(token)) return;
     if (e2?.code === ERR.BAD_PASSWORD) fail(t('settings.neverBadPw', null, 'マスターパスワードが違います'));
@@ -375,6 +429,7 @@ export function closeSettings() {
   resetVaults();
   resetImport();
   resetExport();
+  resetHostPage();
   revokeDownloads();
   if (!sheet.classList.contains('open')) return;
   sheet.classList.remove('open', 'dragging');
@@ -391,10 +446,15 @@ export function closeSettings() {
 }
 
 export function initSettings() {
+  const note = desktop ? t('暗号化して、この PC の中だけに保存します') : t('暗号化して、このブラウザの中だけに保存します');
+  $('setVersion').textContent = `akari · ${note}`;
   try {
-    const m = chrome.runtime.getManifest();
-    $('setVersion').textContent = `akari v${m.version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
+    $('setVersion').textContent = `akari v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
+  addHostPage();
+  if (desktop) chipOf('autoLockMinutes', 0).textContent = t('アプリを終了したとき');
+  // The default email only feeds the menu on web pages.
+  if (!platform.can.autofill) $('setFillHead').closest('.set-group').hidden = true;
   $('setSheet').querySelector('[data-close]').addEventListener('click', closeSettings);
   $('setBack').addEventListener('click', back);
   for (const group of document.querySelectorAll('#setSheet .chips[data-setting]')) {

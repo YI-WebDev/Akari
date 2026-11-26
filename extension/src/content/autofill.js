@@ -431,27 +431,24 @@
   }
 
   const quietUntil = new WeakMap();
-  const field = { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, token: 0, guard: null, sight: null };
+  const field = { el: null, role: null, host: null, root: null, btn: null, menu: null, view: null, open: false, state: null, token: 0, sight: null };
 
   function removeFieldUi() {
     field.token++;
-    if (field.guard) field.guard.stop();
+    if (field.view) field.view.destroy();
     if (field.sight) field.sight.stop();
     if (field.host) {
       hosts.delete(field.host);
       field.host.remove();
     }
-    Object.assign(field, { el: null, role: null, host: null, root: null, btn: null, menu: null, open: false, hi: -1, rows: [], state: null, guard: null, sight: null });
+    Object.assign(field, { el: null, role: null, host: null, root: null, btn: null, menu: null, view: null, open: false, state: null, sight: null });
   }
 
   function closeMenu() {
-    if (field.guard) field.guard.stop();
-    field.guard = null;
-    if (field.menu) field.menu.remove();
+    if (field.view) field.view.destroy();
+    field.view = null;
     field.menu = null;
     field.open = false;
-    field.hi = -1;
-    field.rows = [];
   }
 
   function placeMenu(r) {
@@ -471,7 +468,7 @@
         moved = true;
       }
     }
-    if (moved && field.guard) field.guard.reset();
+    if (moved && field.view) field.view.reset();
   }
 
   function place() {
@@ -538,51 +535,19 @@
 
   function renderMenu(rowsData, noteText) {
     if (!field.root || !field.el) return;
-    if (field.guard) field.guard.stop();
-    if (field.menu) field.menu.remove();
-    const menu = themed(el('div', 'menu'));
-    menu.setAttribute('role', 'listbox');
-    menu.addEventListener('mousedown', (e) => e.preventDefault());
-    field.rows = [];
-    field.hi = -1;
-    if (noteText) menu.appendChild(el('div', 'note', noteText));
-    for (const it of rowsData || []) {
-      const row = el('div', 'row');
-      row.setAttribute('role', 'option');
-      const tile = el('span', 'tile', it.glyph);
-      tile.style.setProperty('--h', String(Number(it.hue) || 0));
-      const txt = el('span', 'txt');
-      txt.appendChild(el('span', 't', it.title));
-      if (it.sub) txt.appendChild(el('span', 'u', it.sub));
-      row.append(tile, txt);
-      row.addEventListener('click', (e) => {
-        if (field.guard && field.guard.ok(e)) it.choose();
-      });
-      menu.appendChild(row);
-      field.rows.push({ row, choose: it.choose });
-    }
-    const foot = el('div', 'foot');
-    foot.append(el('span', 'mark', '灯'), el('span', 'grow'));
-    const keys = field.rows.length ? [['↑↓', t('選択')], ['⏎', t('入力')]] : [];
-    for (const [key, label] of keys) {
-      const hint = el('span');
-      hint.append(el('span', 'k', key), label);
-      foot.appendChild(hint);
-    }
-    const close = el('button', 'x x-sm', '×');
-    close.type = 'button';
-    close.title = t('閉じる (esc)');
-    close.setAttribute('aria-label', t('閉じる'));
-    close.addEventListener('click', (e) => {
-      if (e.isTrusted) closeMenu();
+    if (field.view) field.view.destroy();
+    const view = globalThis.__akariMenuView.render({
+      root: field.root,
+      rows: rowsData,
+      note: noteText,
+      onClose: closeMenu,
+      getHost: () => field.host,
+      t,
     });
-    foot.appendChild(close);
-    menu.appendChild(foot);
-    field.root.appendChild(menu);
-    field.menu = menu;
+    field.view = view;
+    field.menu = view.menu;
     field.open = true;
     place();
-    if (field.menu === menu) field.guard = visibilityGuard(menu, () => field.host);
   }
 
   function openMenu(byItself = false) {
@@ -710,12 +675,6 @@
     const cur = currentPassword(passwordsIn(scope));
     if (cur) return { password: cur, username: findUsername(scope, cur, true) };
     return field.role === 'username' ? { username: el } : { password: el };
-  }
-
-  function moveHighlight(delta) {
-    if (!field.rows.length) return;
-    field.hi = (field.hi + delta + field.rows.length) % field.rows.length;
-    field.rows.forEach((r, i) => r.row.classList.toggle('hi', i === field.hi));
   }
 
   async function onFieldFocus(input, role) {
@@ -1111,25 +1070,10 @@
 
   document.addEventListener('keydown', (e) => {
     if (!e.isTrusted) return;
-    if (field.open) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        closeMenu();
-        return;
-      }
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        e.stopPropagation();
-        moveHighlight(e.key === 'ArrowDown' ? 1 : -1);
-        return;
-      }
-      if (e.key === 'Enter' && field.hi >= 0 && field.guard && field.guard.ok(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        field.rows[field.hi].choose();
-        return;
-      }
+    if (field.open && field.view && field.view.key(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
     }
     if (e.key === 'Enter' && !e.isComposing) {
       const input = e.composedPath()[0];

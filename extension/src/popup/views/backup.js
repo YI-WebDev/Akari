@@ -1,5 +1,6 @@
 import { MSG, BACKUP_SNOOZE_DAYS } from '../../shared/messages.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { S, call, liveToken, live } from '../state.js';
 import { h, clear } from './dom.js';
 import { toast } from './toast.js';
@@ -23,7 +24,9 @@ function render(st) {
   if (!isDue(st)) return;
   slot.append(h('div', { class: 'bk' },
     h('p', { class: 'bk-title' }, titleOf(st)),
-    h('p', { class: 'bk-why' }, t('backup.why', null, '保管庫はこのブラウザの中だけにあります。壊れたり消えたりしたときのために、暗号化して書き出しておきましょう。')),
+    h('p', { class: 'bk-why' }, platform.kind === 'desktop'
+      ? t('backup.whyDesktop', null, '保管庫はこの PC の中だけにあります。壊れたり消えたりしたときのために、暗号化して書き出しておきましょう。')
+      : t('backup.why', null, '保管庫はこのブラウザの中だけにあります。壊れたり消えたりしたときのために、暗号化して書き出しておきましょう。')),
     h('div', { class: 'bk-acts' },
       h('button', { class: 'btn-primary btn-sm', type: 'button', onclick: () => openBackup() }, t('backup.now', null, 'バックアップする')),
       h('button', { class: 'btn-text', type: 'button', onclick: snooze }, t('backup.later', null, 'あとで')))));

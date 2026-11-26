@@ -9,7 +9,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const EXT_DIR = path.join(ROOT, 'extension');
 export const MASTER = 'correct horse battery staple 42';
 
-const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+export const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 export async function launch() {
   const userDataDir = await mkdtemp(path.join(tmpdir(), 'akari-e2e-'));

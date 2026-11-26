@@ -55,6 +55,7 @@ export default {
   '30分': '30 min',
   '60分': '60 min',
   'ブラウザを閉じたとき': 'Browser close',
+  'アプリを終了したとき': 'App exit',
   'しない': 'Never',
   'settings.clipOff': 'Off',
   'マスターパスワード': 'Master password',
@@ -87,6 +88,7 @@ export default {
   'エクスポート': 'Export',
   '暗号化バックアップ・CSV・JSON・PGP 暗号化': 'Encrypted backup, CSV, JSON, PGP-encrypted',
   '暗号化して、このブラウザの中だけに保存します': 'Encrypted and stored only in this browser',
+  '暗号化して、この PC の中だけに保存します': 'Encrypted and stored only on this PC',
 
   '問題の種類': 'Issue types',
 
@@ -101,6 +103,7 @@ export default {
   'ひらいたあとは自動ではロックしません（鍵のボタンでロック）': 'Stays unlocked until you lock it (lock button)',
   '{n} 分操作しないと自動でロックします': 'Locks after {n} min without activity',
   'ブラウザを閉じるとロックします': 'Locks when the browser closes',
+  'アプリを終了するとロックします': 'Locks when the app exits',
   'パスワードを入力してください': 'Enter your password',
   '認証しています…': 'Unlocking…',
   '鍵を導出': 'Derive key',

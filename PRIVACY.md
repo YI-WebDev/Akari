@@ -54,7 +54,7 @@
 
 あわせて、次の content script を宣言しています。
 
-- `http://*/*` と `https://*/*` のすべてのページ（iframe を含む）: 入力欄のボタンと、自動入力・保存の提案（`autofill.js`、`shadow-ui.js`、`i18n-page.js`）。
+- `http://*/*` と `https://*/*` のすべてのページ（iframe を含む）: 入力欄のボタンと、自動入力・保存の提案（`autofill.js`、`menu-view.js`、`shadow-ui.js`、`i18n-page.js`）。
 - `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*` の最上位のページ: パスキーの作成・サインインを受け取る（`webauthn-page.js`、`webauthn-bridge.js`）。
 
 Akari がページから読むのは、そのページの URL、ログイン・登録・住所・メールアドレス・認証コードの入力欄の様子、そして保存の提案のために入力された ID とパスワードです。サイトの照合も保存の提案も端末の中で行い、外へは出しません。キーボードショートカット `Ctrl+Shift+L`（Mac は `Command+Shift+L`）でも自動入力できます。
@@ -145,7 +145,7 @@ Permissions declared in `extension/manifest.json`:
 
 It also declares these content scripts:
 
-- All `http://*/*` and `https://*/*` pages, including iframes: the field button, autofill, and save prompts (`autofill.js`, `shadow-ui.js`, `i18n-page.js`).
+- All `http://*/*` and `https://*/*` pages, including iframes: the field button, autofill, and save prompts (`autofill.js`, `menu-view.js`, `shadow-ui.js`, `i18n-page.js`).
 - Top-level pages on `https://*/*`, `http://localhost/*`, and `http://127.0.0.1/*`: receive passkey create and sign-in requests (`webauthn-page.js`, `webauthn-bridge.js`).
 
 From a page, Akari reads its URL, the layout of its login, sign-up, address, email, and verification-code fields, and the username and password you enter so it can offer to save them. Matching and save prompts happen on your device, and nothing leaves it. You can also autofill with the shortcut `Ctrl+Shift+L` (`Command+Shift+L` on Mac).

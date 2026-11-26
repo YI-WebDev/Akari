@@ -1,6 +1,7 @@
 import { MSG, ERR, NEVER_LOCK } from '../../shared/messages.js';
 import { send } from '../../shared/api.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { S, strengthOf, setPhase } from '../state.js';
 import { h, clear, syncInert, icon } from './dom.js';
 import { shake, wait, reducedMotion } from './fx.js';
@@ -20,8 +21,12 @@ let bootGen = 0;
 function idleHint() {
   const m = Number(S.settings.autoLockMinutes);
   if (m === NEVER_LOCK) return t('ひらいたあとは自動ではロックしません（鍵のボタンでロック）');
-  return m > 0 ? t('{n} 分操作しないと自動でロックします', { n: m }) : t('ブラウザを閉じるとロックします');
+  if (m > 0) return t('{n} 分操作しないと自動でロックします', { n: m });
+  return platform.kind === 'desktop' ? t('アプリを終了するとロックします') : t('ブラウザを閉じるとロックします');
 }
+
+// A desktop host can ask for a reason to unlock (filling another app); it replaces the idle hint.
+const lockHint = () => platform.lockNote() ?? idleHint();
 
 function status(el, text, { err = false, detail = '' } = {}) {
   clear(el);
@@ -120,7 +125,7 @@ export function showGate(mode, { instant = false } = {}) {
     $('lockInput').value = '';
     $('lockInput').disabled = false;
     $('lockField').classList.remove('err');
-    status($('lockStatus'), idleHint());
+    status($('lockStatus'), lockHint());
     const focusDelay = instant ? FOCUS_DELAY_INSTANT_MS : FOCUS_DELAY_AFTER_FADE_IN_MS;
     setTimeout(() => $('lockInput').focus(), focusDelay);
   } else {
@@ -266,8 +271,10 @@ async function setup(e) {
 
 export function initGate({ load, enter }) {
   hooks = { load, enter };
+  const note = platform.kind === 'desktop' ? t('暗号化して、この PC の中だけに保存します') : t('暗号化して、このブラウザの中だけに保存します');
+  $('gateVersion').textContent = note;
   try {
-    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${t('暗号化して、このブラウザの中だけに保存します')}`;
+    $('gateVersion').textContent = `v${chrome.runtime.getManifest().version} · ${note}`;
   } catch { }
   $('lockForm').addEventListener('submit', unlock);
   $('lockReveal').addEventListener('pointerdown', (e) => e.preventDefault());
@@ -282,10 +289,22 @@ export function initGate({ load, enter }) {
   $('lockInput').addEventListener('input', () => {
     if ($('lockField').classList.contains('err')) {
       $('lockField').classList.remove('err');
-      status($('lockStatus'), idleHint());
+      status($('lockStatus'), lockHint());
     }
   });
   $('setupForm').addEventListener('submit', setup);
+  if (platform.can.startFromBackup) {
+    // gate-setup: hidden on the lock screen like the rest of the setup UI (popup.css).
+    const btn = h('button', { class: 'btn-text gate-setup', type: 'button' }, t('Akari のバックアップから始める'));
+    btn.addEventListener('click', async () => {
+      try {
+        await platform.startFromBackup();
+      } catch (err) {
+        status($('setupStatus'), t('バックアップから始められませんでした'), { err: true, detail: err?.message || '' });
+      }
+    });
+    $('setupForm').after(btn);
+  }
   $('setupPw').addEventListener('input', updateSetup);
   $('setupPw2').addEventListener('input', updateSetup);
 }
