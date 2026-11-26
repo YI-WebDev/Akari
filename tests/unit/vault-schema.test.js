@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DATA_SCHEMA, defaultData, migrateData, createVault, openVaultRecord, readVaultData, checkRecord,
-  normalizeData, mergeData, exportBackup, importBackup,
+  normalizeData, mergeData, exportBackup, importBackup, backupVersionFor, MAX_BACKUP_VERSION,
 } from '../../extension/src/lib/vault.js';
 import { AkariError } from '../../extension/src/shared/errors.js';
 
@@ -130,4 +130,27 @@ test('only known record versions are read', async () => {
   }
   assert.throws(() => checkRecord({ ...record, kdf: { ...record.kdf, name: 'scrypt' } }), isInvalid);
   assert.throws(() => checkRecord({ ...record, kdf: { ...record.kdf, iterations: 999 } }), isInvalid);
+});
+
+test('backups carry version 2 only when a live login has apps; DATA_SCHEMA stays 2', async () => {
+  assert.equal(DATA_SCHEMA, 2);
+  const app = { exe: 'slack.exe', signer: null, title: null };
+  const plain = defaultData(1);
+  plain.items.push({ id: 'a', type: 'login', vault: 'personal', title: 'A', extra: [], createdAt: 1, updatedAt: 1 });
+  assert.equal(backupVersionFor(plain), 1);
+  assert.equal(backupVersionFor({ ...plain, items: [{ ...plain.items[0], apps: [] }] }), 1);
+  assert.equal(backupVersionFor({ ...plain, trash: [{ ...plain.items[0], apps: [app], deletedAt: 2 }] }), 1, 'trash is not merged, so it does not count');
+  const linked = { ...plain, items: [{ ...plain.items[0], apps: [app] }] };
+  assert.equal(backupVersionFor(linked), 2);
+
+  const { record } = await createVault('pw', linked, { iterations: ITER });
+  const v2 = exportBackup(record, 5, null, { version: backupVersionFor(linked) });
+  assert.equal(JSON.parse(v2).version, 2);
+  assert.deepEqual((await importBackup(v2, 'pw')).items[0].apps, [app]);
+  const v1 = exportBackup(record, 5);
+  assert.equal(JSON.parse(v1).version, 1);
+  await importBackup(v1, 'pw');
+  const v3 = JSON.stringify({ ...JSON.parse(v1), version: 3 });
+  await assert.rejects(importBackup(v3, 'pw'), (e) => isInvalid(e) && e.newer === true);
+  assert.equal(MAX_BACKUP_VERSION, 2);
 });

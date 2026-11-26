@@ -452,6 +452,9 @@ svg { display: block; }
 .pk-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .pk-confirm { display: flex; align-items: center; gap: 4px; animation: akt-rise .2s var(--ease-out); }
 .pk-q { color: var(--danger); font-weight: 700; margin-right: 2px; }
+.app-row.removed .pk-user { text-decoration: line-through; color: var(--text-soft); }
+.app-row.removed .pk-meta { color: var(--danger-text); }
+.app-row .btn-mini { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 
 .detail.is-empty { min-height: 100%; justify-content: center; }
 .welcome { display: flex; flex-direction: column; gap: 14px; padding: 0 10px; }

@@ -14,6 +14,7 @@ import {
   setLoginPassword, setPendingPassword, pruneTrash, trashItems, restoreItems, purgeTrash, liveTrash,
   isAttachmentId, attachmentStorageKey, maxAttachmentB64Length, cleanAttachmentName, attachmentNameFits, pickBox, cleanMime, newAttachmentKey,
   encryptAttachment, decryptAttachment, attachmentsIn, attachmentIdsIn, attachmentBytesIn, MAX_BACKUP_CHARS, SETTING_RULES, cleanSettings,
+  backupVersionFor, APP_LIMITS, cleanApp, sameApp,
 } from '../lib/vault.js';
 import { toCsv } from '../lib/export/csv.js';
 import { toBitwardenJson } from '../lib/export/bitwarden.js';
@@ -473,6 +474,7 @@ export function createVaultService({
           else target.password = password;
         }
         if (Array.isArray(target.attachments) && !target.attachments.length) delete target.attachments;
+        if (Array.isArray(target.apps) && !target.apps.length) delete target.apps;
         stripLegacyLoginKeys(target);
       } else {
         target = makeItemAt(fields, t);
@@ -558,6 +560,38 @@ export function createVaultService({
       item.updatedAt = now();
     });
     return {};
+  }
+
+  async function linkApp(itemId, app) {
+    checkItemId(itemId);
+    const clean = cleanApp(app);
+    return mutateData((draft) => {
+      const item = draft.items.find((i) => i.id === itemId);
+      if (!item) throw fail(ERR.NOT_FOUND, 'Item not found');
+      if ((item.type ?? 'login') !== 'login') throw fail(ERR.INVALID, 'apps are only for logins');
+      const list = Array.isArray(item.apps) ? item.apps : [];
+      if (list.some((a) => sameApp(a, clean))) return { added: false, item: sanitizeItem(item) };
+      if (list.length >= APP_LIMITS.count) throw fail(ERR.QUOTA, 'Too many apps on this item');
+      item.apps = [...list, clean];
+      item.updatedAt = now();
+      return { added: true, item: sanitizeItem(item) };
+    });
+  }
+
+  async function unlinkApp(itemId, exe, signer) {
+    checkItemId(itemId);
+    if (typeof exe !== 'string' || !exe || (signer != null && typeof signer !== 'string')) throw fail(ERR.INVALID, 'exe and signer required');
+    const key = { exe: exe.toLowerCase(), signer: typeof signer === 'string' && signer.trim() ? signer.trim() : null };
+    return mutateData((draft) => {
+      const item = draft.items.find((i) => i.id === itemId);
+      const list = Array.isArray(item?.apps) ? item.apps : [];
+      const rest = list.filter((a) => !sameApp(a, key));
+      if (!item || rest.length === list.length) throw fail(ERR.NOT_FOUND, 'App link not found');
+      if (rest.length) item.apps = rest;
+      else delete item.apps;
+      item.updatedAt = now();
+      return { item: sanitizeItem(item) };
+    });
   }
 
   async function addVault(name, hue) {
@@ -661,7 +695,7 @@ export function createVaultService({
 
   async function exportVault() {
     await ensureUnlocked();
-    const { record, boxes } = await runWrite(async () => {
+    const { record, boxes, version } = await runWrite(async () => {
       const c = await ensureUnlocked();
       const ids = attachmentsIn(c.data).map((a) => a.id).filter(isAttachmentId);
       const keys = ids.map(attachmentStorageKey);
@@ -671,9 +705,9 @@ export function createVaultService({
         const box = stored[attachmentStorageKey(id)];
         if (isObject(box)) out[id] = pickBox(box);
       }
-      return { record: await loadRecord(), boxes: out };
+      return { record: await loadRecord(), boxes: out, version: backupVersionFor(c.data) };
     });
-    const json = exportBackup(record, now(), boxes, { settings: await getSettings() });
+    const json = exportBackup(record, now(), boxes, { version, settings: await getSettings() });
     return { json };
   }
 
@@ -775,6 +809,8 @@ export function createVaultService({
     [MSG.VAULT_RESTORE_ITEMS]: (m) => restoreFromTrash(m.ids),
     [MSG.VAULT_PURGE_ITEMS]: (m) => purgeFromTrash(m.ids, m.all),
     [MSG.VAULT_DELETE_PASSKEY]: (m) => deletePasskey(m.itemId, m.credentialId),
+    [MSG.VAULT_LINK_APP]: (m) => linkApp(m.itemId, m.app),
+    [MSG.VAULT_UNLINK_APP]: (m) => unlinkApp(m.itemId, m.exe, m.signer),
     [MSG.VAULT_ADD_ATTACHMENT]: (m) => addAttachment(m.itemId, m.name, m.mime, m.data),
     [MSG.VAULT_GET_ATTACHMENT]: (m) => getAttachment(m.itemId, m.attachmentId),
     [MSG.VAULT_PENDING_PASSWORD]: (m) => pendingPassword(m.id, m.action, m.password),
@@ -796,7 +832,7 @@ export function createVaultService({
   };
   const ACTIVE = new Set([
     MSG.VAULT_GET_ALL, MSG.VAULT_SAVE_ITEM, MSG.VAULT_DELETE_ITEM, MSG.VAULT_DELETE_ITEMS, MSG.VAULT_RESTORE_ITEMS, MSG.VAULT_PURGE_ITEMS,
-    MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_PENDING_PASSWORD, MSG.VAULT_ADD_ATTACHMENT,
+    MSG.VAULT_DELETE_PASSKEY, MSG.VAULT_LINK_APP, MSG.VAULT_UNLINK_APP, MSG.VAULT_PENDING_PASSWORD, MSG.VAULT_ADD_ATTACHMENT,
     MSG.VAULT_CHANGE_PASSWORD, MSG.VAULT_EXPORT, MSG.VAULT_IMPORT, MSG.VAULT_IMPORT_ITEMS, MSG.VAULT_EXPORT_PLAIN,
     MSG.VAULT_CREATE_VAULT, MSG.VAULT_UPDATE_VAULT, MSG.VAULT_DELETE_VAULT, MSG.VAULT_SET_DEFAULT_EMAIL, MSG.SETTINGS_SET, MSG.ACTIVITY_PING,
     MSG.BACKUP_SNOOZE, MSG.BACKUP_RECORD,

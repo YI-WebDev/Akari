@@ -10,6 +10,8 @@ export const MSG = Object.freeze({
   VAULT_RESTORE_ITEMS: 'vault/restoreItems',
   VAULT_PURGE_ITEMS: 'vault/purgeItems',
   VAULT_DELETE_PASSKEY: 'vault/deletePasskey',
+  VAULT_LINK_APP: 'vault/linkApp',
+  VAULT_UNLINK_APP: 'vault/unlinkApp',
   VAULT_PENDING_PASSWORD: 'vault/pendingPassword',
   VAULT_CHANGE_PASSWORD: 'vault/changePassword',
   VAULT_EXPORT: 'vault/export',

@@ -2156,6 +2156,141 @@ function featureScenarios() {
 }
 Object.assign(scenarios, featureScenarios());
 
+// Logins linked to desktop apps (apps): shown on the detail and editor; added only by Akari Desktop.
+function appsScenarios() {
+  const out = {};
+  const VARIANTS = [
+    { tag: 'ja-dark', lang: 'ja', theme: 'dark' }, { tag: 'ja-light', lang: 'ja', theme: 'light' },
+    { tag: 'en-dark', lang: 'en', theme: 'dark' }, { tag: 'en-light', lang: 'en', theme: 'light' },
+  ];
+  const appRows = (page, scope = '.detail') => page.$$eval(`${scope} .app-row`, (rows) => rows.map((r) => [
+    r.querySelector('.pk-user').textContent, r.querySelector('.pk-meta').textContent, r.classList.contains('removed'),
+  ]));
+  const watchToasts = (page) => page.evaluate(() => {
+    window.__toasts = [];
+    const el = document.getElementById('toast');
+    new MutationObserver(() => {
+      if (el.classList.contains('on')) window.__toasts.push({ msg: document.getElementById('toastMsg').textContent, err: el.classList.contains('err') });
+    }).observe(el, { attributes: true, attributeFilter: ['class'] });
+  });
+
+  out['apps-detail'] = async () => {
+    for (const v of VARIANTS) {
+      const { page, ctx } = await open({ name: `apps-${v.tag}`, appsSeed: true, lang: v.lang, uiLang: v.lang, theme: v.theme });
+      await page.waitForSelector('.row');
+      await pickItem(page, 'github', 'github');
+      await page.waitForSelector('.detail .app-row');
+      const unsigned = v.lang === 'ja' ? '署名なし' : 'Unsigned';
+      const rows = await appRows(page);
+      expect(JSON.stringify(rows) === JSON.stringify([
+        ['githubdesktop.exe', 'GitHub, Inc. · GitHub Desktop', false],
+        ['code.exe', 'Microsoft Corporation', false],
+        ['portable-git-tool.exe', unsigned, false],
+      ]), `${v.tag}: rows ${JSON.stringify(rows)}`);
+      const head = await page.locator('.detail .sect', { hasText: v.lang === 'ja' ? 'アプリ' : 'Apps' }).count();
+      expect(head === 1, `${v.tag}: one Apps section`);
+      await page.locator('.detail .app-row').first().scrollIntoViewIfNeeded();
+      await settle(page, 400);
+      await shot(page, `apps-detail-${v.tag}`);
+      await ctx.close();
+    }
+  };
+
+  out['apps-unlink'] = async () => {
+    const { page, ctx } = await open({ name: 'apps-unlink', appsSeed: true });
+    await page.waitForSelector('.row');
+    await pickItem(page, 'github', 'github');
+    await page.waitForSelector('.detail .app-row');
+    await watchToasts(page);
+    const first = page.locator('.detail .app-row').first();
+    await first.locator('.ibtn').click();
+    await page.waitForSelector('.detail .app-row .pk-confirm');
+    expect(await page.evaluate(() => document.activeElement?.textContent) === '外す', 'focus on the confirm button');
+    await first.scrollIntoViewIfNeeded();
+    await settle(page, 300);
+    await shot(page, 'apps-detail-confirm');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelectorAll('.detail .app-row').length === 2);
+    expect(JSON.stringify(await page.evaluate(() => window.__AKARI_UNLINKED__)) === '["githubdesktop.exe"]', 'unlinkApp sent once, right away');
+    await page.waitForTimeout(300);
+    const seen = await page.evaluate(() => window.__toasts);
+    expect(seen.length >= 1 && !seen[0].err && seen[0].msg === '紐付けを外しました', `toast ${JSON.stringify(seen)}`);
+    expect(await page.locator('.detail .sect .sect-line + span').filter({ hasText: '2' }).count() >= 1, 'count updates');
+
+    await page.click('.d-head .d-acts .ibtn >> nth=0');
+    await page.waitForSelector('.ed-form .app-row');
+    let rows = await appRows(page, '.ed-form');
+    expect(rows.length === 2 && rows.every((r) => !r[2]), `editor rows ${JSON.stringify(rows)}`);
+    await page.locator('.ed-form .app-row').first().locator('.ibtn').click();
+    rows = await appRows(page, '.ed-form');
+    expect(rows[0][2] && rows[0][1] === '保存すると紐付けを外します', `marked ${JSON.stringify(rows[0])}`);
+    expect(JSON.stringify(await page.evaluate(() => window.__AKARI_UNLINKED__)) === '["githubdesktop.exe"]', 'marking sends nothing');
+    await page.locator('.ed-form .app-row').first().scrollIntoViewIfNeeded();
+    await settle(page, 300);
+    await shot(page, 'apps-editor-marked');
+    await page.locator('.ed-form .app-row').first().locator('.btn-mini').click();
+    rows = await appRows(page, '.ed-form');
+    expect(!rows[0][2] && rows[0][1] === 'Microsoft Corporation', 'keep undoes the mark');
+    await page.locator('.ed-form .app-row').nth(1).locator('.ibtn').click();
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('.ed-form', { state: 'detached' });
+    await page.waitForSelector('.detail .app-row');
+    await page.waitForTimeout(300);
+    rows = await appRows(page);
+    expect(JSON.stringify(rows) === JSON.stringify([['code.exe', 'Microsoft Corporation', false]]), `after save ${JSON.stringify(rows)}`);
+    expect(JSON.stringify(await page.evaluate(() => window.__AKARI_UNLINKED__)) === '["githubdesktop.exe","portable-git-tool.exe"]', 'the save unlinked the marked app');
+
+    await page.click('.d-head .d-acts .ibtn >> nth=0');
+    await page.waitForSelector('.ed-form .app-row');
+    await page.locator('.ed-form .app-row').first().locator('.ibtn').click();
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.ed-foot .ed-confirm');
+    const ask = await page.locator('.ed-foot .ed-confirm').textContent();
+    expect(/破棄/.test(ask), `a marked app makes the editor dirty (${ask})`);
+    await ctx.close();
+  };
+
+  out['apps-unlink-fails'] = async () => {
+    const { page, ctx } = await open({ name: 'apps-unlink-fails', appsSeed: true, failUnlink: 'INTERNAL' });
+    await page.waitForSelector('.row');
+    await pickItem(page, 'github', 'github');
+    await page.waitForSelector('.detail .app-row');
+    await watchToasts(page);
+    await page.locator('.detail .app-row').first().locator('.ibtn').click();
+    await page.locator('.detail .app-row .pk-confirm .btn-mini.danger').click();
+    await page.waitForTimeout(600);
+    const seen = await page.evaluate(() => window.__toasts);
+    expect(seen.length >= 1 && seen[0].err && seen[0].msg === '紐付けを外せませんでした', `error toast ${JSON.stringify(seen)}`);
+    expect((await appRows(page)).length === 3, 'nothing removed');
+    expect(await page.locator('.detail .app-row .pk-confirm .btn-mini.danger').isEnabled(), 'the button is usable again');
+
+    await page.click('.d-head .d-acts .ibtn >> nth=0');
+    await page.waitForSelector('.ed-form .app-row');
+    await page.locator('.ed-form .app-row').first().locator('.ibtn').click();
+    await page.evaluate(() => { window.__toasts = []; });
+    await page.click('.ed-foot .btn-primary');
+    await page.waitForSelector('.ed-form', { state: 'detached' });
+    await page.waitForTimeout(600);
+    const after = await page.evaluate(() => window.__toasts);
+    expect(after.some((x) => x.err && x.msg === '紐付けを外せませんでした'), `editor save reports the failed unlink ${JSON.stringify(after)}`);
+    expect((await appRows(page)).length === 3, 'the item was saved and the links stay');
+    await ctx.close();
+  };
+
+  out['apps-none'] = async () => {
+    const { page, ctx } = await open({ name: 'apps-none' });
+    await page.waitForSelector('.row');
+    await pickItem(page, 'github', 'github');
+    expect(await page.locator('.app-row').count() === 0, 'no section without apps');
+    await page.click('.d-head .d-acts .ibtn >> nth=0');
+    await page.waitForSelector('.ed-form');
+    expect(await page.locator('.ed-form .app-row').count() === 0, 'no editor section without apps');
+    await ctx.close();
+  };
+  return out;
+}
+Object.assign(scenarios, appsScenarios());
+
 try {
   for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !name.includes(only)) continue;
