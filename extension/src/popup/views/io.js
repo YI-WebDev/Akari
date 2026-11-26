@@ -66,30 +66,6 @@ export function arrowNav(root, selector, { cols = 1, onMove } = {}) {
   });
 }
 
-const DOWNLOAD_URL_LIFETIME_MS = 4000;
-const revokeTimers = new Map();
-
-function revoke(url) {
-  clearTimeout(revokeTimers.get(url));
-  revokeTimers.delete(url);
-  URL.revokeObjectURL(url);
-}
-
-export function downloadFile(data, name, type) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  revokeTimers.set(url, setTimeout(() => revoke(url), DOWNLOAD_URL_LIFETIME_MS));
-}
-
-export function revokeDownloads() {
-  for (const url of [...revokeTimers.keys()]) revoke(url);
-}
-
 const FILE_NAME_MAX = 120;
 const INVISIBLE = /[­؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ￹-￻]/g;
 const trimEnds = (s) => s.replace(/^[.\s]+|[.\s]+$/g, '');

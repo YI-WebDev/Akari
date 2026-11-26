@@ -1,12 +1,14 @@
 import { MSG } from '../../shared/messages.js';
 import { hostnameOf, registrableDomain } from '../../shared/domain.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 import { S, call, errText, itemById, replaceItem, liveToken, live, setAutofill } from '../state.js';
 import { siteOf } from '../views/format.js';
 import { toast, toastError } from '../views/toast.js';
 import { renderList, setAfState, afCandidate } from '../views/list.js';
 
 export async function activeTab() {
+  if (!platform.can.autofill) return null;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     return tab || null;

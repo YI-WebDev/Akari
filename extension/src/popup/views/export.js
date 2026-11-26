@@ -3,8 +3,9 @@ import { S, call, errText, liveToken, live, emit } from '../state.js';
 import { h, clear } from './dom.js';
 import { yyyymmdd } from './format.js';
 import { shake, rise } from './fx.js';
-import { cmdLine, logLine, setTrail, arrowNav, setRoving, setBusy, goButton, downloadFile, safeFileName, sentenceWith } from './io.js';
+import { cmdLine, logLine, setTrail, arrowNav, setRoving, setBusy, goButton, safeFileName, sentenceWith } from './io.js';
 import { t } from '../../shared/i18n.js';
+import { platform } from '../../shared/platform.js';
 
 const $ = (id) => document.getElementById(id);
 const PGP_MIN = 8;
@@ -222,9 +223,25 @@ async function doExport(e) {
       name += '.pgp';
       type = 'application/pgp-encrypted';
     }
-    downloadFile(data, name, type);
+    let saved;
+    try {
+      saved = await platform.saveFile(name, new Blob([data], { type }));
+    } catch (e3) {
+      data = null;
+      wipeInputs();
+      if (my !== run || !live(token)) return;
+      els.log.replaceChildren();
+      fail(t('保存できませんでした（{why}）', { why: errText(e3) }));
+      return;
+    }
     data = null;
     wipeInputs();
+    if (my !== run || !live(token)) return;
+    if (!saved) {
+      els.log.replaceChildren();
+      fail(t('保存しませんでした'));
+      return;
+    }
     done(name, res?.count, { plain: !encrypt });
     if (encrypt) await noteBackup();
   } finally {
@@ -256,7 +273,13 @@ async function exportBackup() {
     if (my !== run || !live(token)) return;
     const json = typeof res?.json === 'string' ? res.json : JSON.stringify(res?.json ?? res);
     const name = `akari-backup-${yyyymmdd()}.json`;
-    downloadFile(json, name, 'application/json');
+    const saved = await platform.saveFile(name, new Blob([json], { type: 'application/json' }));
+    if (my !== run || !live(token)) return;
+    if (!saved) {
+      els.log.replaceChildren();
+      fail(t('保存しませんでした'));
+      return;
+    }
     done(name, null, { plain: false });
     await noteBackup();
   } catch (e) {

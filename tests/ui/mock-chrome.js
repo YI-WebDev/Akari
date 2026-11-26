@@ -14,6 +14,9 @@
     failUpload: params.get('failUpload') || null,
     failCode: params.get('failCode') || 'QUOTA',
     importSkipped: 0,
+    platform: null,
+    saveMode: 'saved',
+    lockNote: null,
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
 
@@ -631,7 +634,10 @@
     item.passwordUpdatedAt = t;
   }
 
+  var sent = window.__AKARI_SENT__ = [];
+
   async function sendMessage(msg) {
+    sent.push(msg && msg.type);
     var h = handlers[msg && msg.type];
     if (!h) return { ok: false, error: { code: 'INTERNAL', message: 'mock: no handler for ' + (msg && msg.type) } };
     try {
@@ -681,6 +687,46 @@
     Object.defineProperty(window, 'chrome', { value: chromeMock, configurable: true, writable: true });
   } catch (e) {
     window.chrome = chromeMock;
+  }
+  // platform: 'desktop' fakes the desktop shell's host object before any module reads it (shared/platform.js).
+  // saveMode ('saved' | 'cancel' | 'throw') is read per call, so a test can change it on window.__AKARI_MOCK__.
+  // Every call is recorded in window.__AKARI_PLATFORM__.
+  if (cfg.platform === 'desktop') {
+    var calls = window.__AKARI_PLATFORM__ = { saveFile: [], copy: [], startFromBackup: 0 };
+    window.__akariPlatform = {
+      kind: 'desktop',
+      can: { autofill: false, passkeyPage: false, appFill: false, captureQr: false, startFromBackup: true },
+      saveFile: async function (name, blob) {
+        calls.saveFile.push({ name: name, type: blob.type, size: blob.size });
+        if (cfg.saveMode === 'throw') throw new Error('mock: disk full');
+        return cfg.saveMode !== 'cancel';
+      },
+      copy: async function (value) { calls.copy.push(value); },
+      startFromBackup: async function () { calls.startFromBackup++; },
+      lockNote: function () { return cfg.lockNote; },
+      settingsPage: {
+        name: 'デスクトップ',
+        desc: 'サインイン時の起動・ショートカット',
+        open: function (container) {
+          calls.settingsOpen = (calls.settingsOpen || 0) + 1;
+          var box = document.createElement('div');
+          box.className = 'set-box';
+          var row = document.createElement('div');
+          row.className = 'set-row';
+          var label = document.createElement('span');
+          label.className = 'set-label';
+          label.textContent = 'サインイン時に起動';
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-line';
+          btn.id = 'mockHostButton';
+          btn.textContent = 'オフ';
+          row.append(label, btn);
+          box.append(row);
+          container.append(box);
+        },
+      },
+    };
   }
   window.close = function () { console.log('[mock] window.close()'); };
 })();
