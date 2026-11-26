@@ -14,6 +14,8 @@
     failUpload: params.get('failUpload') || null,
     failCode: params.get('failCode') || 'QUOTA',
     importSkipped: 0,
+    platform: null,
+    saveMode: 'saved',
   }, window.__AKARI_MOCK__ || {});
   window.__AKARI_MOCK__ = cfg;
 
@@ -631,7 +633,10 @@
     item.passwordUpdatedAt = t;
   }
 
+  var sent = window.__AKARI_SENT__ = [];
+
   async function sendMessage(msg) {
+    sent.push(msg && msg.type);
     var h = handlers[msg && msg.type];
     if (!h) return { ok: false, error: { code: 'INTERNAL', message: 'mock: no handler for ' + (msg && msg.type) } };
     try {
@@ -681,6 +686,23 @@
     Object.defineProperty(window, 'chrome', { value: chromeMock, configurable: true, writable: true });
   } catch (e) {
     window.chrome = chromeMock;
+  }
+  // platform: 'desktop' fakes the desktop shell's host object before any module reads it (shared/platform.js).
+  // saveMode ('saved' | 'cancel' | 'throw') is read per call, so a test can change it on window.__AKARI_MOCK__.
+  // Every call is recorded in window.__AKARI_PLATFORM__.
+  if (cfg.platform === 'desktop') {
+    var calls = window.__AKARI_PLATFORM__ = { saveFile: [], copy: [], startFromBackup: 0 };
+    window.__akariPlatform = {
+      kind: 'desktop',
+      can: { autofill: false, passkeyPage: false, appFill: false, captureQr: false, startFromBackup: true },
+      saveFile: async function (name, blob) {
+        calls.saveFile.push({ name: name, type: blob.type, size: blob.size });
+        if (cfg.saveMode === 'throw') throw new Error('mock: disk full');
+        return cfg.saveMode !== 'cancel';
+      },
+      copy: async function (value) { calls.copy.push(value); },
+      startFromBackup: async function () { calls.startFromBackup++; },
+    };
   }
   window.close = function () { console.log('[mock] window.close()'); };
 })();

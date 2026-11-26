@@ -2156,6 +2156,197 @@ function featureScenarios() {
 }
 Object.assign(scenarios, featureScenarios());
 
+// Desktop platform (shared/platform.js): the mock installs a fake host object when platform === 'desktop'.
+function desktopScenarios() {
+  const out = {};
+  const desktop = (name, saveMode, extra = {}) => open({ name, platform: 'desktop', saveMode, ...extra });
+  const sent = (page) => page.evaluate(() => window.__AKARI_SENT__.filter((x) => x === 'backup/record').length);
+  const saves = (page) => page.evaluate(() => window.__AKARI_PLATFORM__.saveFile);
+  const watchToasts = (page) => page.evaluate(() => {
+    window.__toasts = [];
+    const el = document.getElementById('toast');
+    new MutationObserver(() => {
+      if (el.classList.contains('on')) window.__toasts.push({ msg: document.getElementById('toastMsg').textContent, err: el.classList.contains('err') });
+    }).observe(el, { attributes: true, attributeFilter: ['class'] });
+  });
+  const toasts = (page) => page.evaluate(() => window.__toasts);
+  const openExport = async (page) => {
+    await page.waitForSelector('.row');
+    await openSheetPage(page, '#exportOpen');
+    await page.waitForSelector('.fmt');
+    await page.waitForTimeout(400);
+  };
+  const exportErr = (page) => page.locator('#exportPage .field-err').textContent();
+  const okLines = (page) => page.locator('#exportPage .io-line[data-state="ok"]').count();
+  const waitSaveCall = (page) => page.waitForFunction(() => window.__AKARI_PLATFORM__.saveFile.length > 0);
+
+  out['desktop-export-backup'] = async () => {
+    for (const mode of ['cancel', 'saved', 'throw']) {
+      const { page, ctx } = await desktop(`desktop-backup-${mode}`, mode);
+      await openExport(page);
+      expect(await page.locator('.fmt[aria-checked="true"]').getAttribute('data-fmt') === 'akari', 'Akari backup is preselected');
+      await page.click('#exportPage .btn-primary');
+      await waitSaveCall(page);
+      const call = (await saves(page))[0];
+      expect(/^akari-backup-\d{8}\.json$/.test(call.name) && call.type === 'application/json' && call.size > 0, `saveFile got the backup (${JSON.stringify(call)})`);
+      if (mode === 'saved') {
+        await page.waitForSelector('#exportPage .io-line[data-state="ok"]');
+        await page.waitForFunction(() => window.__AKARI_SENT__.includes('backup/record'));
+        expect(await sent(page) === 1, 'saved: backup/record sent exactly once');
+        expect(await exportErr(page) === '', 'saved: no error text');
+      } else {
+        const want = mode === 'cancel' ? '保存しませんでした' : '書き出せませんでした';
+        await page.waitForFunction((w) => document.querySelector('#exportPage .field-err')?.textContent.includes(w), want);
+        await page.waitForTimeout(500);
+        expect(await okLines(page) === 0, `${mode}: the done line is not shown`);
+        expect(await sent(page) === 0, `${mode}: backup/record is not sent`);
+        const err = await exportErr(page);
+        if (mode === 'cancel') expect(err === '保存しませんでした', `cancel message: ${err}`);
+        else expect(err.startsWith('書き出せませんでした'), `throw message: ${err}`);
+        expect(await page.locator('#exportPage .btn-primary').isEnabled(), `${mode}: the button is usable again`);
+      }
+      await ctx.close();
+    }
+  };
+
+  out['desktop-export-backup-clock'] = async () => {
+    // The reminder must keep showing after a cancelled backup and clear after a saved one.
+    for (const mode of ['cancel', 'saved']) {
+      const { page, ctx } = await desktop(`desktop-clock-${mode}`, mode, { backup: { lastAt: Date.now() - 45 * 86400000 } });
+      await page.waitForSelector('#backupNote .bk');
+      await openSheetPage(page, '#exportOpen');
+      await page.waitForSelector('.fmt');
+      await page.click('#exportPage .btn-primary');
+      await waitSaveCall(page);
+      if (mode === 'saved') {
+        await page.waitForSelector('#backupNote:empty', { state: 'attached' });
+      } else {
+        await page.waitForFunction(() => document.querySelector('#exportPage .field-err')?.textContent === '保存しませんでした');
+        await page.waitForTimeout(500);
+        expect(await page.locator('#backupNote .bk').count() === 1, 'cancel: the backup reminder stays');
+        expect(Date.now() - await page.evaluate(() => window.__AKARI_DB__.backup.lastAt) > 40 * 86400000, 'cancel: the backup clock is not reset');
+      }
+      await ctx.close();
+    }
+  };
+
+  out['desktop-export-plain'] = async () => {
+    for (const mode of ['cancel', 'throw']) {
+      const { page, ctx } = await desktop(`desktop-csv-${mode}`, mode);
+      await openExport(page);
+      await page.click('.fmt[data-fmt="csv"]');
+      await page.fill('#expMaster', 'akari-master');
+      await page.click('#exportPage .btn-primary');
+      await waitSaveCall(page);
+      const call = (await saves(page))[0];
+      expect(/^akari-export-\d{8}\.csv$/.test(call.name) && call.type.startsWith('text/csv') && call.size > 0, `saveFile got the CSV (${JSON.stringify(call)})`);
+      const want = mode === 'cancel' ? '保存しませんでした' : '保存できませんでした';
+      await page.waitForFunction((w) => document.querySelector('#exportPage .field-err')?.textContent.includes(w), want);
+      await page.waitForTimeout(400);
+      expect(await page.inputValue('#expMaster') === '', `${mode}: the master password is wiped`);
+      expect(await okLines(page) === 0, `${mode}: no done line`);
+      expect(await page.locator('#exportPage .io-alert-title').count() === 0, `${mode}: no "delete the file" notice`);
+      expect(await sent(page) === 0, `${mode}: no backup/record`);
+      await ctx.close();
+    }
+  };
+
+  out['desktop-export-pgp'] = async () => {
+    for (const mode of ['cancel', 'saved']) {
+      const { page, ctx } = await desktop(`desktop-pgp-${mode}`, mode);
+      await openExport(page);
+      await page.click('.fmt[data-fmt="pgp"]');
+      await page.fill('#expMaster', 'akari-master');
+      await page.fill('#expPass', 'kotatsu-mikan-2026');
+      await page.fill('#expPass2', 'kotatsu-mikan-2026');
+      await page.click('#exportPage .btn-primary');
+      await waitSaveCall(page);
+      const call = (await saves(page))[0];
+      expect(/^akari-export-\d{8}\.csv\.pgp$/.test(call.name) && call.type === 'application/pgp-encrypted', `saveFile got the PGP file (${JSON.stringify(call)})`);
+      if (mode === 'saved') {
+        await page.waitForFunction(() => window.__AKARI_SENT__.includes('backup/record'));
+        expect(await okLines(page) === 1, 'saved: done line shown');
+      } else {
+        await page.waitForFunction(() => document.querySelector('#exportPage .field-err')?.textContent === '保存しませんでした');
+        await page.waitForTimeout(400);
+        expect(await sent(page) === 0, 'cancel: no backup/record');
+        expect(await okLines(page) === 0, 'cancel: no done line');
+      }
+      expect(await page.inputValue('#expPass') === '' && await page.inputValue('#expMaster') === '', `${mode}: secrets wiped`);
+      await ctx.close();
+    }
+  };
+
+  out['desktop-attachment-download'] = async () => {
+    for (const mode of ['saved', 'cancel', 'throw']) {
+      const { page, ctx } = await desktop(`desktop-attach-${mode}`, mode, { featureSeed: true, tabUrl: NEW_TAB });
+      await pickItem(page, '確定申告', 'att-docs');
+      await watchToasts(page);
+      await page.click('.at-dbox .at-ditem:nth-child(3) .at-btn:not([aria-expanded])');
+      await waitSaveCall(page);
+      const call = (await saves(page))[0];
+      expect(call.name && call.type === 'application/octet-stream' && call.size > 0, `saveFile got the attachment (${JSON.stringify(call)})`);
+      await page.waitForTimeout(700);
+      const seen = await toasts(page);
+      if (mode === 'saved') {
+        expect(seen.length >= 1 && !seen[0].err && seen[0].msg === 'ダウンロードしました', `saved: success toast (${JSON.stringify(seen)})`);
+      } else if (mode === 'cancel') {
+        expect(seen.length === 0, `cancel: no toast at all (${JSON.stringify(seen)})`);
+      } else {
+        expect(seen.length >= 1 && seen[0].err && seen[0].msg === 'ダウンロードできませんでした', `throw: error toast (${JSON.stringify(seen)})`);
+      }
+      await ctx.close();
+    }
+  };
+
+  out['desktop-gate'] = async () => {
+    const setup = await desktop('desktop-setup', 'saved', { state: 'setup' });
+    await setup.page.waitForSelector('#gate.on');
+    expect(await setup.page.locator('#gate').getAttribute('data-mode') === 'setup', 'gate is in setup mode');
+    const btn = setup.page.locator('#gate button.gate-setup');
+    expect(await btn.count() === 1, 'one backup-start button');
+    expect(await btn.textContent() === 'Akari のバックアップから始める', 'button label');
+    expect(await btn.isVisible(), 'visible on the setup screen');
+    expect(await setup.page.evaluate(() => document.querySelector('#setupForm').nextElementSibling?.tagName === 'BUTTON'), 'sits right after #setupForm');
+    expect(await setup.page.evaluate(() => window.__AKARI_PLATFORM__.startFromBackup) === 0, 'not called before the click');
+    await btn.click();
+    await setup.page.waitForFunction(() => window.__AKARI_PLATFORM__.startFromBackup === 1);
+    expect(await setup.page.evaluate(() => window.__AKARI_PLATFORM__.startFromBackup) === 1, 'click calls startFromBackup once');
+    await setup.ctx.close();
+
+    const lock = await desktop('desktop-lock', 'saved', { state: 'locked' });
+    await lock.page.waitForSelector('#gate.on');
+    expect(await lock.page.locator('#gate').getAttribute('data-mode') === 'lock', 'gate is in lock mode');
+    const lbtn = lock.page.locator('#gate button.gate-setup');
+    expect(await lbtn.count() === 1, 'the button exists in the DOM on the lock screen');
+    expect(!(await lbtn.isVisible()), 'but it is not visible on the lock screen');
+    await lock.ctx.close();
+
+    const plain = await open({ name: 'extension-setup', state: 'setup' });
+    await plain.page.waitForSelector('#gate.on');
+    expect(await plain.page.locator('button.gate-setup').count() === 0, 'the extension has no backup-start button');
+    expect(await plain.page.evaluate(() => window.__akariPlatform === undefined), 'no platform object without the desktop switch');
+    await plain.ctx.close();
+  };
+
+  out['desktop-qr'] = async () => {
+    for (const [platform, rows] of [['desktop', 0], [null, 1]]) {
+      const { page, ctx } = await open({ name: `qr-${platform}`, tabUrl: NEW_TAB, ...(platform ? { platform } : {}) });
+      await page.waitForSelector('.row');
+      await page.click('#plusBtn');
+      await page.click('#newLogin');
+      await page.waitForSelector('.ed-form');
+      await page.waitForTimeout(500);
+      expect(await page.locator('#edUser').count() === 1, 'the login editor is open');
+      expect(await page.locator('.ed-totp-tools').count() === rows, `${platform || 'extension'}: QR row count ${rows}`);
+      expect(await page.locator('.ed-totp-tools button').count() === rows, `${platform || 'extension'}: QR button count ${rows}`);
+      await ctx.close();
+    }
+  };
+  return out;
+}
+Object.assign(scenarios, desktopScenarios());
+
 try {
   for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !name.includes(only)) continue;
